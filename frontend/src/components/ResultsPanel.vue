@@ -30,10 +30,11 @@ const emit = defineEmits<{
         >
           <div>
             <strong>{{ item.title }}</strong>
-            <span>{{ item.sourceName }} {{ item.chapter ? ` / ${item.chapter}` : "" }}</span>
+            <span class="source-pill">{{ item.sourceType === "manual" ? "手册" : "案例" }}</span>
           </div>
+          <span class="source-line">{{ item.sourceName }} {{ item.chapter ? ` / ${item.chapter}` : "" }}</span>
           <p>{{ item.snippet }}</p>
-          <small>置信度 {{ Math.round(item.confidence * 100) }}%</small>
+          <small>置信度 {{ Math.round(item.confidence * 100) }}% {{ item.page ? ` · p.${item.page}` : "" }}</small>
         </button>
       </div>
     </template>

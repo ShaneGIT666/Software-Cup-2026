@@ -54,7 +54,7 @@ function handleFileChange(event: Event) {
         </el-button>
         <label class="upload-button" :class="{ disabled: uploading }">
           <Upload :size="16" />
-          <span>{{ uploading ? "上传中" : "上传图片" }}</span>
+          <span>{{ uploading ? "上传中" : "上传材料" }}</span>
           <input type="file" accept="image/*,.pdf" :disabled="uploading" @change="handleFileChange" />
         </label>
       </div>

@@ -28,19 +28,19 @@
 
 最近确认状态：
 
-1. 本迭代提交后，本地分支预计领先 `origin/main` 7 个提交。
-2. 当前代码已完成后端可信边界迭代：空查询拒绝、审核 action 枚举、上传类型/大小/空文件/MIME 校验和统一错误响应。
+1. 本迭代提交后，本地分支预计领先 `origin/main` 10 个提交。
+2. 当前代码已完成后端可信边界迭代和前端工业控制台风格优化。
 3. 后端测试通过：`12 passed`。
 4. 前端构建通过：`vue-tsc -b && vite build`。
 5. 当前 Vite 版本固定为 `7.3.3`。
 
 最近关键提交：
 
-1. `fix: harden api validation and upload boundaries`
-2. `0d5ebac docs: add coding agent startup context`
-3. `db21815 feat: add case review panel and handoff guidance`
-4. `e66bc98 feat: complete mvp case workflow`
-5. `f64786d chore: standardize backend anaconda setup`
+1. `style: refine industrial cockpit interface`
+2. `74403f3 fix: keep dev startup session alive`
+3. `d762665 fix: harden api validation and upload boundaries`
+4. `0d5ebac docs: add coding agent startup context`
+5. `db21815 feat: add case review panel and handoff guidance`
 
 ## 3. 当前技术栈
 
@@ -125,6 +125,7 @@
 5. 案例审核区。
 6. 图片/PDF 上传入口。
 7. 基础空状态、加载状态、焦点可访问性和 reduced-motion 支持。
+8. 工业控制台风格界面：深色顶部、状态芯片、来源标签、流程元信息和更清晰的卡片层级。
 
 验证：
 
@@ -142,10 +143,9 @@
 
 中优先级风险：
 
-1. 前端首屏仍显示 `Mock 模型`、`关键词检索`，评委感知上可能削弱智能系统印象。
-2. 生产构建存在 chunk size 警告，当前不阻塞 MVP，但后续可优化。
-3. 浏览器插件曾出现 localhost/127.0.0.1 被拦截的情况，必要时用构建和接口测试作为替代验证。
-4. 项目本地分支领先远端，若多人协作需尽快明确 push/分支策略。
+1. 生产构建存在 chunk size 警告，当前不阻塞 MVP，但后续可优化。
+2. 浏览器插件曾出现 localhost/127.0.0.1 被拦截的情况，必要时用构建和接口测试作为替代验证。
+3. 项目本地分支领先远端，若多人协作需尽快明确 push/分支策略。
 
 ## 7. 当前推荐下一步
 
@@ -154,8 +154,8 @@
 1. `PLAN-02-01`：设计检索排序和来源引用规则，让结果能解释命中原因、来源章节和页码。
 2. `PLAN-01-07`：编写 3 到 5 分钟端到端演示检查清单，包含固定输入和失败兜底。
 3. `PLAN-02-02 / PLAN-02-03`：设计 OpenAI-compatible 模型适配层和 mock 降级策略，先设计接口，不急于接真实模型。
-4. UI 审美优化：保持现有轻量 B/S 架构，增强工业控制台质感，不做大规模主题重写。
-5. 继续补充 mock 数据，让至少 3 条演示路径都有手册、案例、流程和验收标准。
+4. 继续补充 mock 数据，让至少 3 条演示路径都有手册、案例、流程和验收标准。
+5. 结合真实演示录屏继续微调 UI 细节，避免大规模主题重写。
 
 普通 Agent 可执行：
 

@@ -1,7 +1,20 @@
 :root {
-  color: #17211b;
-  background: #edf1e8;
+  --ink-950: #14211d;
+  --ink-800: #24362f;
+  --ink-650: #405047;
+  --muted-600: #687369;
+  --surface: rgba(255, 255, 255, 0.84);
+  --surface-solid: #fbfcf7;
+  --surface-muted: #f2f5ed;
+  --line: rgba(23, 33, 27, 0.12);
+  --line-strong: rgba(23, 33, 27, 0.2);
+  --brand: #2f6a45;
+  --brand-dark: #274b36;
+  --accent: #F97316;
+  --warning-bg: #fff6e7;
+  color: var(--ink-950);
   font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif;
+  background: #dfe7db;
 }
 
 * {
@@ -20,7 +33,7 @@ textarea {
 }
 
 :focus-visible {
-  outline: 2px solid #F97316;
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
   border-radius: 2px;
 }
@@ -39,9 +52,9 @@ textarea {
   min-height: 100vh;
   padding: 28px;
   background:
-    linear-gradient(135deg, rgba(57, 96, 74, 0.14), transparent 38%),
-    linear-gradient(45deg, rgba(196, 85, 48, 0.11), transparent 42%),
-    #edf1e8;
+    radial-gradient(circle at top left, rgba(249, 115, 22, 0.18), transparent 28%),
+    radial-gradient(circle at 78% 6%, rgba(47, 106, 69, 0.2), transparent 32%),
+    linear-gradient(180deg, #15231f 0, #24372f 260px, #dfe7db 260px);
 }
 
 .hero {
@@ -49,16 +62,39 @@ textarea {
   align-items: end;
   justify-content: space-between;
   gap: 24px;
-  margin: 0 auto 22px;
+  margin: 0 auto 20px;
   max-width: 1480px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 24px;
+  padding: 26px;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.1), transparent),
+    rgba(9, 18, 15, 0.42);
+  color: #f7f8f2;
+  box-shadow: 0 22px 60px rgba(10, 20, 16, 0.24);
+  overflow: hidden;
+  position: relative;
+}
+
+.hero::after {
+  content: "";
+  position: absolute;
+  inset: auto 24px 20px auto;
+  width: 190px;
+  height: 190px;
+  border: 1px solid rgba(249, 115, 22, 0.24);
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(249, 115, 22, 0.14), transparent 62%);
+  pointer-events: none;
 }
 
 .eyebrow {
   margin: 0 0 8px;
-  color: #6b3d2b;
+  color: #f7b777;
   font-size: 13px;
   font-weight: 700;
   text-transform: uppercase;
+  letter-spacing: 0.08em;
 }
 
 h1,
@@ -69,8 +105,10 @@ p {
 
 h1 {
   margin-bottom: 10px;
-  font-size: 34px;
+  max-width: 760px;
+  font-size: clamp(28px, 4vw, 44px);
   line-height: 1.15;
+  letter-spacing: -0.03em;
 }
 
 h2 {
@@ -80,7 +118,36 @@ h2 {
 
 .subtle,
 .summary {
-  color: #58645c;
+  color: var(--muted-600);
+}
+
+.hero .subtle {
+  max-width: 780px;
+  color: rgba(247, 248, 242, 0.76);
+}
+
+.hero-insights {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.hero-insights span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(247, 248, 242, 0.82);
+  font-size: 13px;
+}
+
+.hero-insights strong {
+  color: #ffffff;
+  font-size: 18px;
 }
 
 .status-strip {
@@ -90,12 +157,13 @@ h2 {
 }
 
 .status-strip span {
-  border: 1px solid rgba(23, 33, 27, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 999px;
-  padding: 8px 12px;
-  background: rgba(255, 255, 255, 0.58);
-  color: #344039;
+  padding: 9px 13px;
+  background: rgba(255, 255, 255, 0.1);
+  color: #f7f8f2;
   font-size: 13px;
+  backdrop-filter: blur(10px);
 }
 
 .workspace {
@@ -114,11 +182,12 @@ h2 {
 .results-panel,
 .workflow-panel,
 .case-panel {
-  border: 1px solid rgba(23, 33, 27, 0.12);
-  border-radius: 8px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
   padding: 18px;
-  background: rgba(255, 255, 255, 0.78);
-  box-shadow: 0 18px 36px rgba(44, 53, 45, 0.08);
+  background: var(--surface);
+  box-shadow: 0 18px 46px rgba(44, 53, 45, 0.12);
+  backdrop-filter: blur(14px);
 }
 
 .query-panel {
@@ -139,11 +208,12 @@ h2 {
 
 .review-panel {
   grid-area: review;
-  border: 1px solid rgba(23, 33, 27, 0.12);
-  border-radius: 8px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
   padding: 18px;
-  background: rgba(255, 255, 255, 0.78);
-  box-shadow: 0 18px 36px rgba(44, 53, 45, 0.08);
+  background: var(--surface);
+  box-shadow: 0 18px 46px rgba(44, 53, 45, 0.12);
+  backdrop-filter: blur(14px);
 }
 
 .review-panel .el-button svg {
@@ -158,6 +228,9 @@ h2 {
   padding: 28px 18px;
   color: #64748B;
   font-size: 14px;
+  border: 1px dashed rgba(47, 106, 69, 0.22);
+  border-radius: 14px;
+  background: rgba(242, 245, 237, 0.66);
 }
 
 .section-title {
@@ -165,8 +238,12 @@ h2 {
   align-items: center;
   gap: 8px;
   margin-bottom: 14px;
-  color: #274b36;
+  color: var(--brand-dark);
   font-weight: 800;
+}
+
+.section-title svg {
+  color: var(--accent);
 }
 
 .action-row {
@@ -181,11 +258,18 @@ h2 {
   justify-content: center;
   min-height: 32px;
   border: 1px solid #c6d2c8;
-  border-radius: 4px;
+  border-radius: 999px;
   padding: 8px 14px;
-  background: #fbfcf7;
+  background: var(--surface-solid);
   color: #2f5d42;
   cursor: pointer;
+  transition: border-color 0.16s ease, transform 0.16s ease, box-shadow 0.16s ease;
+}
+
+.upload-button:hover:not(.disabled) {
+  border-color: var(--brand);
+  box-shadow: 0 8px 18px rgba(47, 106, 69, 0.12);
+  transform: translateY(-1px);
 }
 
 .upload-button.disabled {
@@ -202,9 +286,9 @@ h2 {
   gap: 4px;
   margin-top: 14px;
   border: 1px solid rgba(39, 75, 54, 0.18);
-  border-radius: 8px;
+  border-radius: 14px;
   padding: 12px;
-  background: #f7f8f2;
+  background: var(--surface-muted);
 }
 
 .upload-result span {
@@ -222,9 +306,9 @@ h2 {
 
 .metric-grid div {
   border: 1px solid rgba(39, 75, 54, 0.18);
-  border-radius: 8px;
+  border-radius: 16px;
   padding: 14px;
-  background: #f7f8f2;
+  background: linear-gradient(180deg, #ffffff, var(--surface-muted));
 }
 
 .metric-grid strong {
@@ -246,29 +330,48 @@ h2 {
 .result-item {
   width: 100%;
   border: 1px solid rgba(23, 33, 27, 0.13);
-  border-radius: 8px;
+  border-radius: 16px;
   padding: 14px;
-  background: #fbfcf7;
+  background: var(--surface-solid);
   color: inherit;
   text-align: left;
   cursor: pointer;
-  transition: border-color 0.16s ease, transform 0.16s ease;
+  transition: border-color 0.16s ease, transform 0.16s ease, box-shadow 0.16s ease;
 }
 
 .result-item:hover,
 .result-item.active {
-  border-color: #2f6a45;
+  border-color: var(--brand);
+  box-shadow: 0 12px 28px rgba(47, 106, 69, 0.14);
   transform: translateY(-1px);
 }
 
 .result-item div {
   display: flex;
   justify-content: space-between;
+  align-items: flex-start;
   gap: 14px;
 }
 
-.result-item span,
 .result-item small {
+  color: #6f796f;
+  font-size: 12px;
+}
+
+.source-pill {
+  flex: 0 0 auto;
+  border: 1px solid rgba(249, 115, 22, 0.2);
+  border-radius: 999px;
+  padding: 3px 8px;
+  background: rgba(249, 115, 22, 0.1);
+  color: #9a4a0d;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.source-line {
+  display: block;
+  margin-top: 5px;
   color: #6f796f;
   font-size: 12px;
 }
@@ -291,10 +394,27 @@ h2 {
   align-items: center;
   gap: 8px;
   margin-top: 14px;
-  border-radius: 8px;
+  border-radius: 14px;
   padding: 12px;
-  background: #fff6e7;
+  background: var(--warning-bg);
   color: #6d4a17;
+}
+
+.workflow-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: -2px 0 14px;
+}
+
+.workflow-meta span {
+  border: 1px solid rgba(47, 106, 69, 0.18);
+  border-radius: 999px;
+  padding: 5px 9px;
+  background: rgba(47, 106, 69, 0.08);
+  color: var(--brand-dark);
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .review-list {
@@ -304,14 +424,14 @@ h2 {
 
 .review-card {
   border: 1px solid rgba(23, 33, 27, 0.13);
-  border-radius: 8px;
+  border-radius: 16px;
   padding: 14px;
-  background: #fbfcf7;
+  background: var(--surface-solid);
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .review-card:hover {
-  border-color: #F97316;
+  border-color: var(--accent);
   box-shadow: 0 2px 8px rgba(249, 115, 22, 0.12);
 }
 
@@ -358,6 +478,15 @@ h2 {
   margin-right: 6px;
 }
 
+.el-button {
+  border-radius: 999px;
+}
+
+.el-input__wrapper,
+.el-textarea__inner {
+  border-radius: 12px;
+}
+
 @media (max-width: 1080px) {
   .workspace {
     grid-template-columns: 1fr;
@@ -372,6 +501,10 @@ h2 {
   .hero {
     align-items: start;
     flex-direction: column;
+  }
+
+  .status-strip {
+    justify-content: flex-start;
   }
 }
 

@@ -93,14 +93,19 @@ runSearch();
   <main class="shell">
     <section class="hero">
       <div>
-        <p class="eyebrow">Software Cup 2026 MVP</p>
+        <p class="eyebrow">Software Cup 2026 · Maintenance Copilot</p>
         <h1>设备检修知识检索与作业辅助系统</h1>
-        <p class="subtle">围绕检索、作业指导、经验沉淀三个环节搭建最小可运行闭环。</p>
+        <p class="subtle">面向一线检修场景，把手册、案例、作业流程和审核沉淀整合到一个可演示的工业知识工作台。</p>
+        <div class="hero-insights" aria-label="系统能力摘要">
+          <span><strong>{{ resultCount }}</strong> 条当前结果</span>
+          <span><strong>{{ selectedWorkflow?.steps.length ?? 0 }}</strong> 个作业步骤</span>
+          <span><strong>{{ uploadResult ? "1" : "0" }}</strong> 份现场材料</span>
+        </div>
       </div>
       <div class="status-strip">
-        <span>Mock 模型</span>
-        <span>关键词检索</span>
-        <span>本地样例数据</span>
+        <span>可解释检索</span>
+        <span>Mock 降级模式</span>
+        <span>本地知识库</span>
       </div>
     </section>
 

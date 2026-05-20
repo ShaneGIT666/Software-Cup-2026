@@ -15,6 +15,11 @@ defineProps<{
     </div>
     <template v-if="selectedWorkflow">
       <h2>{{ selectedWorkflow.title }}</h2>
+      <div class="workflow-meta">
+        <span>{{ selectedWorkflow.deviceType }}</span>
+        <span>{{ selectedWorkflow.faultType }}</span>
+        <span>{{ selectedWorkflow.level }}</span>
+      </div>
       <div class="tag-row">
         <el-tag v-for="tool in selectedWorkflow.tools" :key="tool" effect="plain">{{ tool }}</el-tag>
       </div>
