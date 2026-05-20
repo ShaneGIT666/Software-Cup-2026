@@ -101,6 +101,8 @@ MVP 完成前，优先保证“能打开、能搜索、能看步骤、能提交�
 powershell -ExecutionPolicy Bypass -File .\scripts\start-dev.ps1
 ```
 
+启动脚本会占用当前 PowerShell 窗口，请保持窗口打开。需要停止时按 `Ctrl+C`。
+
 启动后访问：
 
 ```text
@@ -110,7 +112,7 @@ http://localhost:5173
 停止后台服务：
 
 ```powershell
-Stop-Job software-cup-* -WarningAction SilentlyContinue; Remove-Job software-cup-* -WarningAction SilentlyContinue
+powershell -ExecutionPolicy Bypass -File .\scripts\stop-dev.ps1
 ```
 
 如果需要分别启动，也可以使用 `scripts/start-backend.ps1` 和 `scripts/start-frontend.ps1`。
