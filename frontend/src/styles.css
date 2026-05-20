@@ -129,6 +129,50 @@ h2 {
   font-weight: 800;
 }
 
+.action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.upload-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  border: 1px solid #c6d2c8;
+  border-radius: 4px;
+  padding: 8px 14px;
+  background: #fbfcf7;
+  color: #2f5d42;
+  cursor: pointer;
+}
+
+.upload-button.disabled {
+  cursor: not-allowed;
+  opacity: 0.68;
+}
+
+.upload-button input {
+  display: none;
+}
+
+.upload-result {
+  display: grid;
+  gap: 4px;
+  margin-top: 14px;
+  border: 1px solid rgba(39, 75, 54, 0.18);
+  border-radius: 8px;
+  padding: 12px;
+  background: #f7f8f2;
+}
+
+.upload-result span {
+  color: #687369;
+  font-size: 12px;
+  word-break: break-all;
+}
+
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);

@@ -1,0 +1,35 @@
+<script setup lang="ts">
+import { ShieldCheck, Wrench } from "@lucide/vue";
+import type { WorkflowPayload } from "../api";
+
+defineProps<{
+  selectedWorkflow: WorkflowPayload | null;
+}>();
+</script>
+
+<template>
+  <section class="workflow-panel">
+    <div class="section-title">
+      <Wrench :size="18" />
+      <span>作业指导</span>
+    </div>
+    <template v-if="selectedWorkflow">
+      <h2>{{ selectedWorkflow.title }}</h2>
+      <div class="tag-row">
+        <el-tag v-for="tool in selectedWorkflow.tools" :key="tool" effect="plain">{{ tool }}</el-tag>
+      </div>
+      <el-steps direction="vertical" :active="selectedWorkflow.steps.length">
+        <el-step
+          v-for="step in selectedWorkflow.steps"
+          :key="step.order"
+          :title="`${step.order}. ${step.title}`"
+          :description="step.description"
+        />
+      </el-steps>
+      <div class="notice">
+        <ShieldCheck :size="18" />
+        <span>{{ selectedWorkflow.safetyNotes.join(" / ") }}</span>
+      </div>
+    </template>
+  </section>
+</template>

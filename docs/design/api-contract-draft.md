@@ -82,7 +82,9 @@ POST /api/search
         "sourceName": "示例检修手册",
         "confidence": 0.86,
         "snippet": "检查燃油、火花塞、进气管路和怠速控制部件。",
-        "workflowId": "wf-001"
+        "workflowId": "wf-001",
+        "chapter": "故障诊断",
+        "page": 15
       }
     ]
   },
@@ -147,14 +149,17 @@ GET /api/workflows/{workflowId}
     "id": "wf-001",
     "title": "发动机启动困难标准检查流程",
     "deviceType": "发动机",
+    "faultType": "启动困难",
     "level": "常规检修",
     "tools": ["万用表", "火花塞套筒", "压力表"],
+    "safetyNotes": ["确认设备停止运行", "保持作业区域通风"],
     "steps": [
       {
         "order": 1,
         "title": "安全确认",
         "description": "确认设备停止运行，现场无高温和泄漏风险。",
-        "checkRequired": true
+        "checkRequired": true,
+        "warning": "未完成安全确认不得拆检。"
       }
     ],
     "acceptanceCriteria": [
@@ -199,6 +204,12 @@ POST /api/cases
 }
 ```
 
+说明：
+
+1. MVP 阶段案例保存到本地 JSON 数据文件。
+2. 新提交案例默认进入 `pending_review`。
+3. 审核通过后，案例进入检索范围。
+
 ## 7. 案例列表
 
 ```text
@@ -215,8 +226,10 @@ GET /api/cases?status=pending_review
       {
         "id": "case-001",
         "deviceModel": "发动机-示例型号 A",
+        "faultTitle": "启动困难",
         "faultText": "启动困难，怠速不稳",
         "status": "pending_review",
+        "tags": ["启动困难", "点火系统"],
         "createdAt": "2026-05-19T00:00:00Z"
       }
     ],
@@ -276,9 +289,10 @@ POST /api/uploads
     "id": "file-001",
     "fileName": "fault-image.jpg",
     "fileType": "image/jpeg",
-    "url": "/uploads/file-001"
+    "url": "/uploads/file-001.jpg"
   },
   "message": ""
 }
 ```
 
+开发和测试环境可通过 `APP_UPLOAD_DIR` 覆盖上传目录。

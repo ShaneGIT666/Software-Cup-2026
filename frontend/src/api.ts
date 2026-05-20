@@ -43,11 +43,14 @@ export interface WorkflowPayload {
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const isFormData = options?.body instanceof FormData;
   const response = await fetch(path, {
-    headers: {
-      "Content-Type": "application/json",
-      ...options?.headers
-    },
+    headers: isFormData
+      ? options?.headers
+      : {
+          "Content-Type": "application/json",
+          ...options?.headers
+        },
     ...options
   });
   const payload = (await response.json()) as ApiResponse<T>;
@@ -84,5 +87,21 @@ export function submitCase(payload: {
   return request<{ id: string; status: string }>("/api/cases", {
     method: "POST",
     body: JSON.stringify(payload)
+  });
+}
+
+export interface UploadPayload {
+  id: string;
+  fileName: string;
+  fileType: string;
+  url: string;
+}
+
+export function uploadFaultFile(file: File) {
+  const formData = new FormData();
+  formData.append("file", file);
+  return request<UploadPayload>("/api/uploads", {
+    method: "POST",
+    body: formData
   });
 }

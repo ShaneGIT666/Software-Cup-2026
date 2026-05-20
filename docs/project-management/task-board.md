@@ -21,11 +21,11 @@
 | PM-03 | 确认 MVP 范围 | 全员 | Todo | 第 1 天 | `mvp-scope.md` |
 | PM-04 | 确认第一批设备和故障场景 | 全员 | Todo | 第 1 天 | `sample-data-plan.md` |
 | PM-05 | 建立 `dev` 分支 | C | Todo | 第 1 天 | Git 分支 |
-| PM-06 | 初始化前端工程 | A | Todo | 第 2 天 | `frontend/` 可启动 |
-| PM-07 | 初始化后端工程 | B | Todo | 第 2 天 | `backend/` 可启动 |
-| PM-08 | 输出 API 契约第一版 | B | Todo | 第 2 天 | `api-contract-draft.md` |
-| PM-09 | 准备第一批 mock 数据 | B/C | Todo | 第 2 天 | `data/examples/` |
-| PM-10 | 输出本地启动说明 | C | Todo | 第 3 天 | `docs/deployment/` |
+| PM-06 | 初始化前端工程 | A | Done | 第 2 天 | `frontend/` 可启动，已通过生产构建 |
+| PM-07 | 初始化后端工程 | B | Done | 第 2 天 | `backend/` 可启动，已通过接口测试 |
+| PM-08 | 输出 API 契约第一版 | B | Review | 第 2 天 | `api-contract-draft.md` 已与当前接口同步，待团队复审 |
+| PM-09 | 准备第一批 mock 数据 | B/C | Done | 第 2 天 | `data/examples/` 已含设备、手册、案例、流程 |
+| PM-10 | 输出本地启动说明 | C | Done | 第 3 天 | `docs/deployment/` 已记录 Anaconda 后端环境和启动命令 |
 
 ## 3. P1 增强任务
 

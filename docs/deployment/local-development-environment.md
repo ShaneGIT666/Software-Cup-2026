@@ -25,6 +25,8 @@
 | Git | 2.40 或更高 |
 | SQLite | 3.x |
 
+当前前端构建工具固定使用 Vite 7.3.3。Vite 8 在当前 Windows 环境下曾出现 HTML 构建路径异常，因此暂不升级。
+
 ## 3. 环境变量规划
 
 后续开发可能需要：
@@ -38,6 +40,8 @@ LLM_PROVIDER=mock
 LLM_API_KEY=
 LLM_BASE_URL=
 UPLOAD_DIR=./data/uploads
+APP_EXAMPLES_DIR=./data/examples
+APP_UPLOAD_DIR=./data/uploads
 ```
 
 原则：

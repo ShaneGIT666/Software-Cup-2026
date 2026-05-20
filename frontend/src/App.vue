@@ -1,16 +1,21 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { ClipboardCheck, FileText, Search, Send, ShieldCheck, Wrench } from "@lucide/vue";
 import { ElMessage } from "element-plus";
-import { fetchWorkflow, searchKnowledge, submitCase, type SearchPayload, type SearchResult, type WorkflowPayload } from "./api";
+import { fetchWorkflow, searchKnowledge, submitCase, uploadFaultFile, type SearchPayload, type SearchResult, type UploadPayload, type WorkflowPayload } from "./api";
+import CasePanel from "./components/CasePanel.vue";
+import QueryPanel from "./components/QueryPanel.vue";
+import ResultsPanel from "./components/ResultsPanel.vue";
+import WorkflowPanel from "./components/WorkflowPanel.vue";
 
 const deviceModel = ref("发动机-示例型号 A");
 const faultText = ref("启动困难，怠速不稳，排气异常");
 const loading = ref(false);
 const submitting = ref(false);
+const uploading = ref(false);
 const searchPayload = ref<SearchPayload | null>(null);
 const selectedWorkflow = ref<WorkflowPayload | null>(null);
 const selectedResult = ref<SearchResult | null>(null);
+const uploadResult = ref<UploadPayload | null>(null);
 
 const caseForm = ref({
   cause: "火花塞积碳",
@@ -66,6 +71,18 @@ async function createCase() {
   }
 }
 
+async function uploadFile(file: File) {
+  uploading.value = true;
+  try {
+    uploadResult.value = await uploadFaultFile(file);
+    ElMessage.success(`文件已上传：${uploadResult.value.id}`);
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : "上传失败");
+  } finally {
+    uploading.value = false;
+  }
+}
+
 runSearch();
 </script>
 
@@ -85,109 +102,27 @@ runSearch();
     </section>
 
     <section class="workspace">
-      <aside class="query-panel">
-        <div class="section-title">
-          <Search :size="18" />
-          <span>检索输入</span>
-        </div>
-        <el-form label-position="top">
-          <el-form-item label="设备型号">
-            <el-input v-model="deviceModel" />
-          </el-form-item>
-          <el-form-item label="故障现象">
-            <el-input v-model="faultText" type="textarea" :rows="5" />
-          </el-form-item>
-          <el-button type="primary" :loading="loading" @click="runSearch">
-            <Search :size="16" />
-            开始检索
-          </el-button>
-        </el-form>
-
-        <div class="metric-grid">
-          <div>
-            <strong>{{ resultCount }}</strong>
-            <span>条结果</span>
-          </div>
-          <div>
-            <strong>{{ selectedWorkflow?.steps.length ?? 0 }}</strong>
-            <span>个步骤</span>
-          </div>
-        </div>
-      </aside>
-
-      <section class="results-panel">
-        <div class="section-title">
-          <FileText :size="18" />
-          <span>知识结果</span>
-        </div>
-        <p class="summary">{{ searchPayload?.summary }}</p>
-        <div class="result-list">
-          <button
-            v-for="item in searchPayload?.results"
-            :key="item.id"
-            class="result-item"
-            :class="{ active: selectedResult?.id === item.id }"
-            @click="openWorkflow(item)"
-          >
-            <div>
-              <strong>{{ item.title }}</strong>
-              <span>{{ item.sourceName }} {{ item.chapter ? ` / ${item.chapter}` : "" }}</span>
-            </div>
-            <p>{{ item.snippet }}</p>
-            <small>置信度 {{ Math.round(item.confidence * 100) }}%</small>
-          </button>
-        </div>
-      </section>
-
-      <section class="workflow-panel">
-        <div class="section-title">
-          <Wrench :size="18" />
-          <span>作业指导</span>
-        </div>
-        <template v-if="selectedWorkflow">
-          <h2>{{ selectedWorkflow.title }}</h2>
-          <div class="tag-row">
-            <el-tag v-for="tool in selectedWorkflow.tools" :key="tool" effect="plain">{{ tool }}</el-tag>
-          </div>
-          <el-steps direction="vertical" :active="selectedWorkflow.steps.length">
-            <el-step
-              v-for="step in selectedWorkflow.steps"
-              :key="step.order"
-              :title="`${step.order}. ${step.title}`"
-              :description="step.description"
-            />
-          </el-steps>
-          <div class="notice">
-            <ShieldCheck :size="18" />
-            <span>{{ selectedWorkflow.safetyNotes.join(" / ") }}</span>
-          </div>
-        </template>
-      </section>
-
-      <section class="case-panel">
-        <div class="section-title">
-          <ClipboardCheck :size="18" />
-          <span>经验案例提交</span>
-        </div>
-        <el-form label-position="top">
-          <el-form-item label="可能原因">
-            <el-input v-model="caseForm.cause" />
-          </el-form-item>
-          <el-form-item label="处理方案">
-            <el-input v-model="caseForm.solution" type="textarea" :rows="3" />
-          </el-form-item>
-          <el-form-item label="处理结果">
-            <el-input v-model="caseForm.result" />
-          </el-form-item>
-          <el-form-item label="标签">
-            <el-input v-model="caseForm.tags" />
-          </el-form-item>
-          <el-button type="success" :loading="submitting" @click="createCase">
-            <Send :size="16" />
-            提交审核
-          </el-button>
-        </el-form>
-      </section>
+      <QueryPanel
+        v-model:device-model="deviceModel"
+        v-model:fault-text="faultText"
+        :loading="loading"
+        :result-count="resultCount"
+        :step-count="selectedWorkflow?.steps.length ?? 0"
+        :upload-result="uploadResult"
+        :uploading="uploading"
+        @search="runSearch"
+        @upload="uploadFile"
+      />
+      <ResultsPanel :search-payload="searchPayload" :selected-result="selectedResult" @open-workflow="openWorkflow" />
+      <WorkflowPanel :selected-workflow="selectedWorkflow" />
+      <CasePanel
+        v-model:cause="caseForm.cause"
+        v-model:solution="caseForm.solution"
+        v-model:result="caseForm.result"
+        v-model:tags="caseForm.tags"
+        :submitting="submitting"
+        @submit="createCase"
+      />
     </section>
   </main>
 </template>
