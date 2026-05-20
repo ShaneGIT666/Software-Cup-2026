@@ -8,6 +8,7 @@
 | --- | --- | --- |
 | Git | 版本管理 | 已规划 |
 | Node.js | 前端开发环境 | 已规划 |
+| Anaconda | 后端 Python 环境来源 | 已规划 |
 | Python | 后端和模型相关能力 | 已规划 |
 | VS Code 或 JetBrains IDE | 开发工具 | 待确认 |
 | API 调试工具 | 调试后端接口 | 待确认 |
@@ -59,6 +60,7 @@ UPLOAD_DIR=./data/uploads
 1. 启动后端：
 
 ```powershell
+.\scripts\setup-anaconda.ps1
 .\scripts\start-backend.ps1
 ```
 
