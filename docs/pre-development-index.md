@@ -22,6 +22,8 @@
 | `deployment/local-development-environment.md` | 本地环境、环境变量、国产化适配记录 |
 | `product/demo-script-outline.md` | 比赛演示主线和兜底方案 |
 | `project-management/task-board.md` | 开发前期任务认领 |
+| `project-management/development-plan.md` | 后续开发阶段、任务分流与验收计划 |
+| `project-management/model-task-classification.md` | 高智能模型任务与普通模型任务分流 |
 | `research/open-source-architecture-research.md` | 开源项目与技术栈调研结论 |
 
 ## 3. 开工前最低完成标准

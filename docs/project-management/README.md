@@ -9,6 +9,8 @@
 3. `kickoff-meeting-agenda.md`：启动会议程和会后行动。
 4. `technical-decision-record.md`：技术选型记录。
 5. `task-board.md`：前期任务看板。
+6. `development-plan.md`：后续开发阶段、任务分流与验收计划。
+7. `model-task-classification.md`：模型能力分级与任务分类。
 
 相关文档：
 

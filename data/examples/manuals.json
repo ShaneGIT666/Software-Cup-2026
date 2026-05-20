@@ -1,0 +1,62 @@
+[
+  {
+    "id": "doc-001",
+    "title": "发动机启动困难检查流程",
+    "deviceType": "发动机",
+    "deviceModel": "发动机-示例型号 A",
+    "chapter": "故障诊断",
+    "page": 15,
+    "content": "启动困难时，应依次检查燃油供给、火花塞状态、进气管路密封和怠速控制部件。",
+    "sourceName": "示例检修手册",
+    "tags": ["启动困难", "燃油", "点火", "怠速"],
+    "workflowId": "wf-001"
+  },
+  {
+    "id": "doc-002",
+    "title": "怠速不稳排查要点",
+    "deviceType": "发动机",
+    "deviceModel": "发动机-示例型号 A",
+    "chapter": "运行异常",
+    "page": 23,
+    "content": "怠速不稳通常与进气漏气、节气门积碳、火花塞积碳或燃油压力异常有关。",
+    "sourceName": "示例检修手册",
+    "tags": ["怠速不稳", "进气", "节气门", "燃油压力"],
+    "workflowId": "wf-001"
+  },
+  {
+    "id": "doc-003",
+    "title": "排气异常检查说明",
+    "deviceType": "发动机",
+    "deviceModel": "发动机-示例型号 C",
+    "chapter": "排放系统",
+    "page": 31,
+    "content": "排气颜色异常时，应检查燃油混合比、空气滤清器、喷油状态和气缸密封情况。",
+    "sourceName": "示例检修手册",
+    "tags": ["排气异常", "喷油", "空气滤清器"],
+    "workflowId": "wf-002"
+  },
+  {
+    "id": "doc-004",
+    "title": "发动机异响初步定位",
+    "deviceType": "发动机",
+    "deviceModel": "发动机-示例型号 B",
+    "chapter": "机械系统",
+    "page": 42,
+    "content": "发动机异响应先区分敲击声、摩擦声和气门噪声，再检查润滑油、紧固件和传动部件。",
+    "sourceName": "示例检修手册",
+    "tags": ["异响", "润滑", "机械磨损"],
+    "workflowId": "wf-003"
+  },
+  {
+    "id": "doc-005",
+    "title": "点火系统安全检修",
+    "deviceType": "发动机",
+    "deviceModel": "发动机-示例型号 A",
+    "chapter": "安全作业",
+    "page": 51,
+    "content": "拆检点火系统前应确认设备停止运行，避免高温烫伤和高压点火风险。",
+    "sourceName": "示例安全手册",
+    "tags": ["点火系统", "安全", "火花塞"],
+    "workflowId": "wf-001"
+  }
+]

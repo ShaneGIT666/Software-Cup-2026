@@ -1,0 +1,94 @@
+[
+  {
+    "id": "wf-001",
+    "title": "发动机启动困难标准检查流程",
+    "deviceType": "发动机",
+    "faultType": "启动困难",
+    "level": "常规检修",
+    "tools": ["万用表", "火花塞套筒", "燃油压力表"],
+    "safetyNotes": ["确认设备停止运行", "保持作业区域通风", "远离明火"],
+    "steps": [
+      {
+        "order": 1,
+        "title": "安全确认",
+        "description": "确认设备停止运行，现场无高温、泄漏和明火风险。",
+        "checkRequired": true,
+        "warning": "未完成安全确认不得拆检。"
+      },
+      {
+        "order": 2,
+        "title": "检查燃油供给",
+        "description": "检查燃油量、燃油滤清器和燃油压力是否满足要求。",
+        "checkRequired": true,
+        "warning": ""
+      },
+      {
+        "order": 3,
+        "title": "检查点火系统",
+        "description": "拆检火花塞，检查积碳、间隙和点火强度。",
+        "checkRequired": true,
+        "warning": "注意高温部件和高压点火风险。"
+      },
+      {
+        "order": 4,
+        "title": "复测启动和怠速",
+        "description": "完成处理后启动设备，观察怠速稳定性和异常报警。",
+        "checkRequired": true,
+        "warning": ""
+      }
+    ],
+    "acceptanceCriteria": ["设备可正常启动", "怠速稳定", "无异常报警"]
+  },
+  {
+    "id": "wf-002",
+    "title": "发动机排气异常检查流程",
+    "deviceType": "发动机",
+    "faultType": "排气异常",
+    "level": "常规检修",
+    "tools": ["诊断仪", "空气滤清器工具", "喷油器检测工具"],
+    "safetyNotes": ["保持通风", "避免长时间吸入尾气"],
+    "steps": [
+      {
+        "order": 1,
+        "title": "观察排气颜色",
+        "description": "记录黑烟、蓝烟或白烟特征，并确认出现工况。",
+        "checkRequired": true,
+        "warning": ""
+      },
+      {
+        "order": 2,
+        "title": "检查进气与喷油",
+        "description": "检查空气滤清器、进气通道和喷油器状态。",
+        "checkRequired": true,
+        "warning": ""
+      }
+    ],
+    "acceptanceCriteria": ["排气颜色恢复正常", "无明显油耗异常"]
+  },
+  {
+    "id": "wf-003",
+    "title": "发动机异响初步检查流程",
+    "deviceType": "发动机",
+    "faultType": "异响",
+    "level": "常规检修",
+    "tools": ["听诊器", "扭矩扳手", "润滑油尺"],
+    "safetyNotes": ["保持防护距离", "旋转部件附近禁止佩戴松散物品"],
+    "steps": [
+      {
+        "order": 1,
+        "title": "确认异响工况",
+        "description": "记录异响出现的转速、负载和持续时间。",
+        "checkRequired": true,
+        "warning": ""
+      },
+      {
+        "order": 2,
+        "title": "检查润滑和紧固",
+        "description": "检查润滑油液位、油质和关键紧固件状态。",
+        "checkRequired": true,
+        "warning": "运转部件附近操作需保持安全距离。"
+      }
+    ],
+    "acceptanceCriteria": ["异响消除或明显降低", "关键紧固件无松动"]
+  }
+]

@@ -11,16 +11,19 @@ logs/
 # Environment
 .env
 .env.*
+!.env.example
 
 # Dependencies
 node_modules/
+.npm-cache/
 .venv/
 venv/
 __pycache__/
+.pytest_cache/
 
 # Build outputs
 dist/
 build/
 target/
 out/
-
+*.tsbuildinfo
