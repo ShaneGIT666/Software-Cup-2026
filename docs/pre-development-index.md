@@ -6,11 +6,12 @@
 
 | 顺序 | 文档 | 用途 |
 | --- | --- | --- |
-| 1 | `project-management/development-workflow.md` | 理解整体流程和三人分工 |
-| 2 | `project-management/pre-development-checklist.md` | 确认开工准入项 |
-| 3 | `project-management/kickoff-meeting-agenda.md` | 开启动会并形成结论 |
-| 4 | `project-management/technical-decision-record.md` | 固化技术选型 |
-| 5 | `requirements/mvp-scope.md` | 收敛第一版功能 |
+| 1 | `project-management/agent-startup-context.md` | Coding Agent 第一入口，了解当前状态、风险和下一步 |
+| 2 | `project-management/development-workflow.md` | 理解整体流程和三人分工 |
+| 3 | `project-management/pre-development-checklist.md` | 确认开工准入项 |
+| 4 | `project-management/kickoff-meeting-agenda.md` | 开启动会并形成结论 |
+| 5 | `project-management/technical-decision-record.md` | 固化技术选型 |
+| 6 | `requirements/mvp-scope.md` | 收敛第一版功能 |
 
 ## 2. 再确认这些
 
@@ -21,6 +22,7 @@
 | `requirements/sample-data-plan.md` | 第一批样例数据和演示资料 |
 | `deployment/local-development-environment.md` | 本地环境、环境变量、国产化适配记录 |
 | `product/demo-script-outline.md` | 比赛演示主线和兜底方案 |
+| `project-management/agent-startup-context.md` | Coding Agent 动态交接入口和最新工作状态 |
 | `project-management/task-board.md` | 开发前期任务认领 |
 | `project-management/development-plan.md` | 后续开发阶段、任务分流与验收计划 |
 | `project-management/model-task-classification.md` | 高智能模型任务与普通模型任务分流 |

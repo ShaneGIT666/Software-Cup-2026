@@ -70,11 +70,11 @@
 
 建议团队成员按以下顺序阅读和确认：
 
-1. `docs/pre-development-index.md`：开发前期准备总览。
-2. `docs/project-management/development-workflow.md`：完整开发流程与三人分工。
-3. `docs/project-management/pre-development-checklist.md`：正式编码前检查清单。
-4. `docs/project-management/technical-decision-record.md`：技术选型记录。
-5. `docs/requirements/mvp-scope.md`：MVP 功能范围。
+1. `docs/project-management/agent-startup-context.md`：Coding Agent 第一入口，记录最新状态、风险、验证和下一步。
+2. `docs/pre-development-index.md`：开发前期准备总览。
+3. `docs/project-management/development-plan.md`：后续开发阶段、任务分流与验收计划。
+4. `docs/project-management/model-task-classification.md`：高智能模型任务与普通模型任务分流。
+5. `docs/project-management/ordinary-agent-development-guide.md`：普通模型 Agent 交接、执行边界与风险管理。
 6. `docs/design/api-contract-draft.md`：前后端接口契约草案。
 7. `docs/research/open-source-architecture-research.md`：开源项目与架构调研结论。
 
@@ -97,19 +97,19 @@ MVP 完成前，优先保证“能打开、能搜索、能看步骤、能提交�
 
 当前仓库已完成：
 
-1. 基础目录结构初始化。
-2. 开发流程与三人分工文档。
-3. 开发前期准备清单。
-4. MVP 范围定义。
-5. API 契约草案。
-6. 数据模型草案。
-7. 样例数据准备计划。
-8. 开源项目与技术架构调研。
+1. Vue 3 + TypeScript + Vite + Element Plus 前端工作台。
+2. FastAPI 后端 API 骨架。
+3. 本地 JSON 样例数据，包括设备、手册、案例和流程。
+4. 检索、流程查看、上传、案例提交、案例审核、审核后再检索的 MVP 闭环。
+5. 前端组件拆分：检索输入、结果列表、作业流程、案例提交、案例审核。
+6. Anaconda 本地环境脚本、前端启动脚本、后端启动脚本和后端测试脚本。
+7. 后端接口测试通过，前端生产构建通过。
+8. Coding Agent 动态交接入口：`docs/project-management/agent-startup-context.md`。
 
 下一步建议：
 
-1. 团队确认技术栈和参赛信息。
-2. 初始化前端工程。
-3. 初始化后端工程。
-4. 准备第一批样例设备、故障案例和手册片段。
-5. 三天内完成最小可运行闭环。
+1. 扩展后端边界测试，覆盖非法审核 action、空查询、非法/空上传。
+2. 设计检索排序和来源引用规则，让结果能解释命中原因、来源章节和页码。
+3. 编写 3 到 5 分钟端到端演示检查清单，包含固定输入和失败兜底。
+4. 同步更新 `development-plan.md` 和 `task-board.md` 的完成状态。
+5. 设计 OpenAI-compatible 模型适配层和 mock 降级策略，先设计接口，不急于接真实模型。
