@@ -28,18 +28,19 @@
 
 最近确认状态：
 
-1. 本地分支领先 `origin/main` 5 个提交。
-2. 创建本文档前工作区干净；若本文档尚未提交，预期未提交变更只应包含 `README.md`、`docs/pre-development-index.md`、`docs/project-management/README.md` 和本文档。
-3. 后端测试通过：`5 passed`。
+1. 本迭代提交后，本地分支预计领先 `origin/main` 7 个提交。
+2. 当前代码已完成后端可信边界迭代：空查询拒绝、审核 action 枚举、上传类型/大小/空文件/MIME 校验和统一错误响应。
+3. 后端测试通过：`12 passed`。
 4. 前端构建通过：`vue-tsc -b && vite build`。
 5. 当前 Vite 版本固定为 `7.3.3`。
 
 最近关键提交：
 
-1. `db21815 feat: add case review panel and handoff guidance`
-2. `e66bc98 feat: complete mvp case workflow`
-3. `f64786d chore: standardize backend anaconda setup`
-4. `f767643 feat: initialize mvp development skeleton`
+1. `fix: harden api validation and upload boundaries`
+2. `0d5ebac docs: add coding agent startup context`
+3. `db21815 feat: add case review panel and handoff guidance`
+4. `e66bc98 feat: complete mvp case workflow`
+5. `f64786d chore: standardize backend anaconda setup`
 
 ## 3. 当前技术栈
 
@@ -127,18 +128,17 @@
 
 验证：
 
-1. 后端接口测试覆盖健康检查、检索、流程查询、上传目录配置、案例提交审核再检索闭环。
+1. 后端接口测试覆盖健康检查、检索、空查询、流程查询、上传目录配置、上传成功、空文件、非法扩展名、MIME 不匹配、超大文件、案例提交审核再检索闭环和非法审核 action。
 2. 前端生产构建通过。
 
 ## 6. 当前主要风险
 
 高优先级风险：
 
-1. 上传接口仍是 MVP 本地上传，没有文件大小、后缀白名单、MIME 校验和空文件处理。
-2. 案例审核 `action` 目前仍需严格枚举校验，避免非法 action 被默认为拒绝。
-3. 检索仍是关键词匹配，摘要是固定文案，真实 RAG/LLM 能力尚未接入。
-4. 新建案例默认绑定 `wf-001`，多故障类型扩展时需要改为可推断或可选择流程。
-5. 演示材料仍需要从“大纲”升级为“逐步检查清单 + 兜底输入 + 截图点”。
+1. 检索仍是关键词匹配，摘要是固定文案，真实 RAG/LLM 能力尚未接入。
+2. 新建案例默认绑定 `wf-001`，多故障类型扩展时需要改为可推断或可选择流程。
+3. 演示材料仍需要从“大纲”升级为“逐步检查清单 + 兜底输入 + 截图点”。
+4. 上传接口已具备 MVP 级类型/大小/空文件/MIME 校验，但仍不是生产级安全方案，不包含鉴权、病毒扫描或对象存储治理。
 
 中优先级风险：
 
@@ -151,12 +151,11 @@
 
 优先级从高到低：
 
-1. `PLAN-03-01+`：扩展后端边界测试，覆盖非法审核 action、空查询、非法/空上传。
-2. `PLAN-02-01`：设计检索排序和来源引用规则，让结果能解释命中原因、来源章节和页码。
-3. `PLAN-01-07`：编写 3 到 5 分钟端到端演示检查清单，包含固定输入和失败兜底。
-4. `PLAN-00-05 / 文档同步`：更新 `development-plan.md` 和 `task-board.md`，标记前端审核区域已完成。
-5. `PLAN-02-02 / PLAN-02-03`：设计 OpenAI-compatible 模型适配层和 mock 降级策略，先设计接口，不急于接真实模型。
-6. UI 审美优化：保持现有轻量 B/S 架构，增强工业控制台质感，不做大规模主题重写。
+1. `PLAN-02-01`：设计检索排序和来源引用规则，让结果能解释命中原因、来源章节和页码。
+2. `PLAN-01-07`：编写 3 到 5 分钟端到端演示检查清单，包含固定输入和失败兜底。
+3. `PLAN-02-02 / PLAN-02-03`：设计 OpenAI-compatible 模型适配层和 mock 降级策略，先设计接口，不急于接真实模型。
+4. UI 审美优化：保持现有轻量 B/S 架构，增强工业控制台质感，不做大规模主题重写。
+5. 继续补充 mock 数据，让至少 3 条演示路径都有手册、案例、流程和验收标准。
 
 普通 Agent 可执行：
 

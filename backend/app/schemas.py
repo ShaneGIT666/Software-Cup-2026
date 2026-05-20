@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -34,6 +34,6 @@ class CaseCreateRequest(BaseModel):
 
 
 class CaseReviewRequest(BaseModel):
-    action: str
+    action: Literal["approve", "reject"]
     reviewNote: str = ""
     normalizedTags: list[str] = Field(default_factory=list)

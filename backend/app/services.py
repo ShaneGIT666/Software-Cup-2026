@@ -40,6 +40,8 @@ def find_workflow(workflow_id: str) -> dict[str, Any]:
 def search_knowledge(request: SearchRequest) -> dict[str, Any]:
     data = load_seed_data()
     query_tokens = tokens(request.deviceModel, request.faultText)
+    if not query_tokens:
+        raise HTTPException(status_code=400, detail="设备型号和故障现象不能同时为空")
 
     manual_results = []
     for manual in data["manuals"]:

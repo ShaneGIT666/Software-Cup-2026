@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .data_store import PROJECT_ROOT, upload_dir
@@ -14,6 +17,14 @@ from .services import create_repair_case, find_workflow, list_repair_cases, revi
 
 UPLOAD_DIR = upload_dir()
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+ALLOWED_UPLOAD_TYPES = {
+    "jpg": {"image/jpeg"},
+    "jpeg": {"image/jpeg"},
+    "png": {"image/png"},
+    "webp": {"image/webp"},
+    "pdf": {"application/pdf"},
+}
 
 app = FastAPI(title="设备检修知识检索与作业辅助系统", version="0.1.0")
 
@@ -26,6 +37,33 @@ app.add_middleware(
 )
 
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+
+
+def error_response(status_code: int, message: str) -> JSONResponse:
+    return JSONResponse(
+        status_code=status_code,
+        content=ApiResponse(success=False, data=None, message=message).model_dump(),
+    )
+
+
+def validation_message(errors: list[dict[str, Any]]) -> str:
+    if not errors:
+        return "请求参数校验失败"
+    first_error = errors[0]
+    location = ".".join(str(item) for item in first_error.get("loc", []) if item != "body")
+    message = first_error.get("msg", "请求参数校验失败")
+    return f"{location}: {message}" if location else message
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(_: Any, exc: HTTPException) -> JSONResponse:
+    detail = exc.detail if isinstance(exc.detail, str) else "请求处理失败"
+    return error_response(exc.status_code, detail)
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_exception_handler(_: Any, exc: RequestValidationError) -> JSONResponse:
+    return error_response(422, validation_message(exc.errors()))
 
 
 @app.get("/api/health", response_model=ApiResponse)
@@ -76,12 +114,25 @@ def review_case(case_id: str, request: CaseReviewRequest) -> ApiResponse:
 
 @app.post("/api/uploads", response_model=ApiResponse)
 async def upload_file(file: UploadFile = File(...)) -> ApiResponse:
-    suffix = Path(file.filename or "").suffix
+    suffix = Path(file.filename or "").suffix.lower().lstrip(".")
+    if not suffix or suffix not in ALLOWED_UPLOAD_TYPES:
+        raise HTTPException(status_code=400, detail="仅支持 jpg、jpeg、png、webp 和 pdf 文件")
+
+    content_type = (file.content_type or "").split(";", 1)[0].lower()
+    if content_type not in ALLOWED_UPLOAD_TYPES[suffix]:
+        raise HTTPException(status_code=400, detail="文件扩展名与 MIME 类型不匹配")
+
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="上传文件不能为空")
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=400, detail="上传文件不能超过 10MB")
+
     file_id = f"file-{uuid4().hex[:8]}"
     target_dir = upload_dir()
     target_dir.mkdir(parents=True, exist_ok=True)
-    target = target_dir / f"{file_id}{suffix}"
-    target.write_bytes(await file.read())
+    target = target_dir / f"{file_id}.{suffix}"
+    target.write_bytes(content)
     return ApiResponse(
         data={
             "id": file_id,
