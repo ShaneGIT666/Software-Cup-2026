@@ -93,6 +93,28 @@
 
 MVP 完成前，优先保证“能打开、能搜索、能看步骤、能提交案例、能演示”，暂缓完整权限系统、复杂知识图谱、高精度图片识别和本地大模型部署。
 
+## 本地运行
+
+一键启动前后端开发服务：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\start-dev.ps1
+```
+
+启动后访问：
+
+```text
+http://localhost:5173
+```
+
+停止后台服务：
+
+```powershell
+Stop-Job software-cup-* -WarningAction SilentlyContinue; Remove-Job software-cup-* -WarningAction SilentlyContinue
+```
+
+如果需要分别启动，也可以使用 `scripts/start-backend.ps1` 和 `scripts/start-frontend.ps1`。
+
 ## 当前状态
 
 当前仓库已完成：
