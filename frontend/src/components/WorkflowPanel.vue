@@ -31,5 +31,8 @@ defineProps<{
         <span>{{ selectedWorkflow.safetyNotes.join(" / ") }}</span>
       </div>
     </template>
+    <div v-else class="empty-hint">
+      <span>点击知识结果查看对应作业流程</span>
+    </div>
   </section>
 </template>

@@ -24,6 +24,7 @@
 | `project-management/task-board.md` | 开发前期任务认领 |
 | `project-management/development-plan.md` | 后续开发阶段、任务分流与验收计划 |
 | `project-management/model-task-classification.md` | 高智能模型任务与普通模型任务分流 |
+| `project-management/ordinary-agent-development-guide.md` | 普通模型 Agent 交接、执行边界与风险管理 |
 | `research/open-source-architecture-research.md` | 开源项目与技术栈调研结论 |
 
 ## 3. 开工前最低完成标准

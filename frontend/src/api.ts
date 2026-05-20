@@ -105,3 +105,33 @@ export function uploadFaultFile(file: File) {
     body: formData
   });
 }
+
+export interface CaseItem {
+  id: string;
+  deviceModel: string;
+  faultTitle: string;
+  faultText: string;
+  status: string;
+  tags: string[];
+  createdAt: string;
+  solution?: string;
+  cause?: string;
+  result?: string;
+}
+
+export interface CaseListPayload {
+  items: CaseItem[];
+  total: number;
+}
+
+export function fetchCases(status?: string) {
+  const query = status ? `?status=${encodeURIComponent(status)}` : "";
+  return request<CaseListPayload>(`/api/cases${query}`);
+}
+
+export function reviewCase(caseId: string, action: "approve" | "reject", reviewNote?: string) {
+  return request<{ id: string; status: string }>(`/api/cases/${caseId}/review`, {
+    method: "PATCH",
+    body: JSON.stringify({ action, reviewNote: reviewNote ?? "" })
+  });
+}

@@ -5,6 +5,7 @@ import { fetchWorkflow, searchKnowledge, submitCase, uploadFaultFile, type Searc
 import CasePanel from "./components/CasePanel.vue";
 import QueryPanel from "./components/QueryPanel.vue";
 import ResultsPanel from "./components/ResultsPanel.vue";
+import ReviewPanel from "./components/ReviewPanel.vue";
 import WorkflowPanel from "./components/WorkflowPanel.vue";
 
 const deviceModel = ref("发动机-示例型号 A");
@@ -16,6 +17,7 @@ const searchPayload = ref<SearchPayload | null>(null);
 const selectedWorkflow = ref<WorkflowPayload | null>(null);
 const selectedResult = ref<SearchResult | null>(null);
 const uploadResult = ref<UploadPayload | null>(null);
+const reviewPanel = ref<InstanceType<typeof ReviewPanel> | null>(null);
 
 const caseForm = ref({
   cause: "火花塞积碳",
@@ -64,6 +66,7 @@ async function createCase() {
       tags: caseForm.value.tags.split(",").map((tag) => tag.trim()).filter(Boolean)
     });
     ElMessage.success(`案例已提交：${result.id}`);
+    reviewPanel.value?.loadCases();
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : "提交失败");
   } finally {
@@ -123,6 +126,7 @@ runSearch();
         :submitting="submitting"
         @submit="createCase"
       />
+      <ReviewPanel ref="reviewPanel" />
     </section>
   </main>
 </template>

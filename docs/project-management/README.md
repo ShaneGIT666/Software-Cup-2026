@@ -11,6 +11,7 @@
 5. `task-board.md`：前期任务看板。
 6. `development-plan.md`：后续开发阶段、任务分流与验收计划。
 7. `model-task-classification.md`：模型能力分级与任务分类。
+8. `ordinary-agent-development-guide.md`：普通模型 Agent 交接、执行边界与风险管理指南。
 
 相关文档：
 

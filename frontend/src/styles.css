@@ -19,6 +19,22 @@ textarea {
   font: inherit;
 }
 
+:focus-visible {
+  outline: 2px solid #F97316;
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 .shell {
   min-height: 100vh;
   padding: 28px;
@@ -87,7 +103,8 @@ h2 {
   grid-template-columns: minmax(260px, 0.9fr) minmax(320px, 1.25fr) minmax(320px, 1.15fr);
   grid-template-areas:
     "query results workflow"
-    "query case case";
+    "query case case"
+    "review review review";
   gap: 16px;
   max-width: 1480px;
   margin: 0 auto;
@@ -118,6 +135,29 @@ h2 {
 
 .case-panel {
   grid-area: case;
+}
+
+.review-panel {
+  grid-area: review;
+  border: 1px solid rgba(23, 33, 27, 0.12);
+  border-radius: 8px;
+  padding: 18px;
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: 0 18px 36px rgba(44, 53, 45, 0.08);
+}
+
+.review-panel .el-button svg {
+  margin-right: 4px;
+}
+
+.empty-hint,
+.loading-hint {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 28px 18px;
+  color: #64748B;
+  font-size: 14px;
 }
 
 .section-title {
@@ -257,6 +297,63 @@ h2 {
   color: #6d4a17;
 }
 
+.review-list {
+  display: grid;
+  gap: 10px;
+}
+
+.review-card {
+  border: 1px solid rgba(23, 33, 27, 0.13);
+  border-radius: 8px;
+  padding: 14px;
+  background: #fbfcf7;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.review-card:hover {
+  border-color: #F97316;
+  box-shadow: 0 2px 8px rgba(249, 115, 22, 0.12);
+}
+
+.review-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.review-card-meta {
+  display: flex;
+  gap: 14px;
+  color: #64748B;
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.review-card-text {
+  color: #334155;
+  line-height: 1.6;
+  margin: 0 0 8px;
+}
+
+.review-card-text .label {
+  color: #64748B;
+  font-size: 13px;
+}
+
+.review-card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.review-card-actions {
+  display: flex;
+  gap: 10px;
+}
+
 .el-button svg {
   margin-right: 6px;
 }
@@ -268,7 +365,8 @@ h2 {
       "query"
       "results"
       "workflow"
-      "case";
+      "case"
+      "review";
   }
 
   .hero {

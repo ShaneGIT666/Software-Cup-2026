@@ -21,6 +21,9 @@ venv/
 __pycache__/
 .pytest_cache/
 
+# AI coding assistant
+.claude/
+
 # Build outputs
 dist/
 build/
