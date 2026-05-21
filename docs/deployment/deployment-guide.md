@@ -174,12 +174,17 @@ npm run dev
 
 ### 3.2 生产模式部署
 
+生产模式需要同时提供前端静态文件和后端 API 服务。仅启动 FastAPI 后端不会自动托管 `frontend/dist`，因此推荐使用 Nginx 提供前端静态文件，并将 `/api/`、`/uploads/`、`/knowledge/` 反向代理到后端。
+
 ```bash
-cd frontend && npm run build     # 构建前端静态文件
-cd ../backend && python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+cd frontend
+npm run build
+
+cd ../backend
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-#### Nginx 反向代理配置（可选）
+#### Nginx 反向代理配置（推荐）
 
 ```nginx
 server {
@@ -207,6 +212,15 @@ server {
     }
 }
 ```
+
+如果比赛演示只需要验证生产构建结果，也可以在前端目录临时运行：
+
+```bash
+cd frontend
+npm run preview -- --host 127.0.0.1 --port 4173
+```
+
+此方式适合本地演示，不等同于最终 LoongArch + 银河麒麟生产部署证明。
 
 ### 3.3 停止服务
 
