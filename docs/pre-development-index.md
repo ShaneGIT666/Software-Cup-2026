@@ -6,6 +6,7 @@
 
 | 顺序 | 文档 | 用途 |
 | --- | --- | --- |
+| 0 | `requirements/official-problem-baseline.md` | 固定官方赛题题面、硬约束、当前对齐与差距，避免后续开发偏题 |
 | 1 | `project-management/agent-startup-context.md` | Coding Agent 第一入口，了解当前状态、风险和下一步 |
 | 2 | `project-management/development-workflow.md` | 理解整体流程和三人分工 |
 | 3 | `project-management/pre-development-checklist.md` | 确认开工准入项 |
@@ -20,6 +21,7 @@
 | `design/api-contract-draft.md` | 前后端接口字段和响应结构 |
 | `design/data-model-draft.md` | 核心数据实体和字段 |
 | `requirements/sample-data-plan.md` | 第一批样例数据和演示资料 |
+| `requirements/official-problem-baseline.md` | 对照官方赛题要求，判断实现是否偏移 |
 | `deployment/local-development-environment.md` | 本地环境、环境变量、国产化适配记录 |
 | `product/demo-script-outline.md` | 比赛演示主线和兜底方案 |
 | `project-management/agent-startup-context.md` | Coding Agent 动态交接入口和最新工作状态 |
