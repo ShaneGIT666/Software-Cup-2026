@@ -23,6 +23,7 @@ def citation_from_result(result: dict[str, Any]) -> dict[str, Any]:
         "documentId": result.get("documentId"),
         "chunkId": result.get("chunkId"),
         "reason": result.get("reason", ""),
+        "scoreBreakdown": result.get("scoreBreakdown", {}),
     }
 
 
@@ -75,6 +76,7 @@ def build_context_prompt(device_model: str, fault_text: str, contexts: list[dict
         context_lines.append(
             f"[{index}] {item['title']} ({source}{page})\n"
             f"命中原因：{item.get('reason', '')}\n"
+            f"排序分：{item.get('scoreBreakdown', {}).get('score', 0)}\n"
             f"片段：{item['snippet']}"
         )
     context_text = "\n\n".join(context_lines) if context_lines else "暂无检索上下文。"

@@ -44,7 +44,11 @@ function sourceLabel(sourceType: SearchResult["sourceType"]) {
           <span class="source-line">{{ item.sourceName }} {{ item.chapter ? ` / ${item.chapter}` : "" }}</span>
           <p>{{ item.snippet }}</p>
           <small v-if="item.reason" class="reason-line">{{ item.reason }}</small>
-          <small>置信度 {{ Math.round(item.confidence * 100) }}% {{ item.page ? ` · p.${item.page}` : "" }}</small>
+          <small>
+            置信度 {{ Math.round(item.confidence * 100) }}%
+            {{ item.scoreBreakdown ? ` · 排序分 ${item.scoreBreakdown.score}` : "" }}
+            {{ item.page ? ` · p.${item.page}` : "" }}
+          </small>
         </button>
       </div>
     </template>

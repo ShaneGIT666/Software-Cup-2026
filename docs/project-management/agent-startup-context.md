@@ -30,18 +30,20 @@
 最近确认状态：
 
 1. 本迭代提交后，本地 `main` 预计领先 `origin/main` 2 个提交。
-2. 当前代码已完成后端可信边界迭代、前端工业控制台风格优化、Windows 批处理统一启动入口、资料入库 MVP、Mock RAG 辅助回答和可选 OpenAI/Anthropic Provider。
+2. 当前代码已完成后端可信边界迭代、前端工业控制台风格优化、Windows 批处理统一启动入口、资料入库 MVP、Mock RAG 辅助回答、可选 OpenAI/Anthropic Provider 和 MVP 级检索排序解释。
 3. 后端测试通过：`27 passed`。
 4. 前端构建通过：`vue-tsc -b && vite build`。
 5. 当前 Vite 版本固定为 `7.3.3`。
 
 最近关键提交：
 
-1. `chore: add windows batch dev entrypoints`
-2. `style: refine industrial cockpit interface`
-3. `feat: add knowledge document ingestion and management APIs`
-4. `feat: add mock rag answer workflow`
-5. `d762665 fix: harden api validation and upload boundaries`
+1. `fix: harden api validation and upload boundaries`
+2. `chore: add windows batch dev entrypoints`
+3. `style: refine industrial cockpit interface`
+4. `feat: add knowledge document ingestion and management APIs`
+5. `feat: add mock rag answer workflow`
+6. `feat: add optional openai and anthropic rag providers`
+7. `feat: improve search ranking explainability`
 
 ## 3. 当前技术栈
 
@@ -127,6 +129,12 @@
 13. `DELETE /api/knowledge/documents/{document_id}`
 14. `POST /api/rag/answer`
 
+检索能力说明：
+
+1. `POST /api/search` 当前支持 `manual`、`case`、`document` 三类来源统一排序。
+2. 排序依据为字段权重、来源类型基础权重和连续短语命中加分。
+3. 每条结果返回 `matchedTerms`、`reason` 和 `scoreBreakdown`，用于前端解释、RAG prompt 和 citations 展示。
+
 前端：
 
 1. 检索输入区。
@@ -143,14 +151,14 @@
 
 验证：
 
-1. 后端接口测试覆盖健康检查、检索、空查询、流程查询、上传目录配置、上传成功、空文件、非法扩展名、MIME 不匹配、超大文件、案例提交审核再检索闭环、非法审核 action、资料入库成功、资料列表、资料详情、chunk 列表、删除资料、资料入库后检索命中、Mock RAG 回答、OpenAI/Anthropic provider、provider 降级和资料 citation 边界。
+1. 后端接口测试覆盖健康检查、检索排序解释、空查询、流程查询、上传目录配置、上传成功、空文件、非法扩展名、MIME 不匹配、超大文件、案例提交审核再检索闭环、非法审核 action、资料入库成功、资料列表、资料详情、chunk 列表、删除资料、资料入库后检索命中、Mock RAG 回答、OpenAI/Anthropic provider、provider 降级和资料 citation 边界。
 2. 前端生产构建通过。
 
 ## 6. 当前主要风险
 
 高优先级风险：
 
-1. 检索仍是关键词匹配；OpenAI/Anthropic provider 已可选接入，但尚未使用真实密钥做端到端联网验证。
+1. 检索已具备 MVP 级加权排序和解释字段，但仍是关键词方案，不是语义向量检索；OpenAI/Anthropic provider 已可选接入，但尚未使用真实密钥做端到端联网验证。
 2. 新建案例默认绑定 `wf-001`，多故障类型扩展时需要改为可推断或可选择流程。
 3. 演示材料仍需要从“大纲”升级为“逐步检查清单 + 兜底输入 + 截图点”。
 4. 上传接口已具备 MVP 级类型/大小/空文件/MIME 校验，但仍不是生产级安全方案，不包含鉴权、病毒扫描或对象存储治理。
@@ -166,11 +174,11 @@
 
 优先级从高到低：
 
-1. `PLAN-02-01`：继续完善检索排序和来源引用规则，让 mock 手册、案例、入库资料都能解释命中原因、来源章节和页码。
-2. `PLAN-01-07`：编写 3 到 5 分钟端到端演示检查清单，包含固定输入和失败兜底。
-3. `PLAN-02-02 / PLAN-02-03`：用真实 API Key 做一次可控联网验证，记录模型、超时、失败降级和费用风险。
-4. `PLAN-02-05`：基于 Docling、MinerU、PaddleOCR 做文档解析/OCR 小样本验证，记录许可证、依赖体积和环境风险。
-5. 继续补充 mock 数据和可入库资料样例，让至少 3 条演示路径都有手册、案例、流程和验收标准。
+1. `PLAN-01-07`：编写 3 到 5 分钟端到端演示检查清单，包含固定输入和失败兜底。
+2. `PLAN-02-02 / PLAN-02-03`：用真实 API Key 做一次可控联网验证，记录模型、超时、失败降级和费用风险。
+3. `PLAN-02-05`：基于 Docling、MinerU、PaddleOCR 做文档解析/OCR 小样本验证，记录许可证、依赖体积和环境风险。
+4. 继续补充 mock 数据和可入库资料样例，让至少 3 条演示路径都有手册、案例、流程和验收标准。
+5. 评估是否需要在前端增加 provider 选择器；当前前端默认走后端环境变量或 mock fallback。
 
 普通 Agent 可执行：
 

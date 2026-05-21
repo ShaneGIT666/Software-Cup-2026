@@ -41,6 +41,7 @@
 | BE-03 | 后端可信边界测试 | B/C | Done | 12 个接口测试，覆盖非法审核、空查询、上传类型/大小/空文件/MIME 边界 |
 | BE-04 | 资料入库 MVP | B/A | Done | `POST /api/knowledge/documents`、资料列表、chunk 检索、前端资料入库面板 |
 | BE-05 | RAG 辅助回答和模型适配 | B/A | Done | `POST /api/rag/answer`，支持 mock/openai/anthropic，失败自动 fallback |
+| BE-06 | 检索排序和来源引用解释 | B/A | Done | `POST /api/search` 返回字段权重、来源权重、排序分和 `scoreBreakdown`，前端与 RAG citations 可展示 |
 
 ## 4. 阻塞项记录
 
@@ -55,7 +56,7 @@
 已纳入计划的近期重点：
 
 1. 编写 3 到 5 分钟端到端演示检查清单。
-2. 设计检索排序、命中原因和来源引用规则。
-3. 设计 OpenAI-compatible 模型适配层和 mock 降级策略。
+2. 用真实 API Key 做一次 OpenAI/Anthropic provider 可控联网验证，并记录超时、失败降级和费用风险。
+3. 编写 3 到 5 分钟端到端演示检查清单。
 4. 评估 Docling、MinerU、PaddleOCR、LlamaIndex/LangChain 的后续集成成本、许可证和国产化风险。
 5. 对国产化部署、答辩材料和最终参赛信息进行重点复审。

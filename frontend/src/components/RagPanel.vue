@@ -57,7 +57,11 @@ function sourceLabel(sourceType: string) {
         <div v-for="citation in ragAnswer.citations" :key="citation.id" class="citation-card">
           <span class="source-pill">{{ sourceLabel(citation.sourceType) }}</span>
           <strong>{{ citation.title }}</strong>
-          <small>{{ citation.sourceName }} {{ citation.page ? ` · p.${citation.page}` : "" }}</small>
+          <small>
+            {{ citation.sourceName }}
+            {{ citation.scoreBreakdown ? ` · 排序分 ${citation.scoreBreakdown.score}` : "" }}
+            {{ citation.page ? ` · p.${citation.page}` : "" }}
+          </small>
           <p>{{ citation.snippet }}</p>
         </div>
       </div>

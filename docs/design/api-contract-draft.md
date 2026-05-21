@@ -84,7 +84,7 @@ POST /api/search
   "success": true,
   "data": {
     "queryId": "q-001",
-    "summary": "可能与燃油供给、点火系统或进气系统异常有关。",
+    "summary": "已按字段权重、来源类型和短语命中排序，返回手册 2 条、案例 1 条。当前首要参考《发动机启动困难检查流程》，主要命中：启动困难、怠速不稳。",
     "results": [
       {
         "id": "doc-001",
@@ -97,7 +97,21 @@ POST /api/search
         "chapter": "故障诊断",
         "page": 15,
         "matchedTerms": ["启动困难", "怠速不稳"],
-        "reason": "命中手册字段：启动困难, 怠速不稳"
+        "reason": "命中手册字段：启动困难、怠速不稳；来源位置：故障诊断 / p.15",
+        "scoreBreakdown": {
+          "score": 24,
+          "sourceType": "manual",
+          "sourceWeight": 3,
+          "phraseBonus": 0,
+          "fieldMatches": [
+            {
+              "field": "title",
+              "terms": ["启动困难"],
+              "weight": 5,
+              "score": 5
+            }
+          ]
+        }
       }
     ]
   },
@@ -109,7 +123,8 @@ POST /api/search
 
 1. `sourceType` 当前支持 `manual`、`case` 和 `document`。
 2. `document` 表示由资料入库接口解析生成的本地知识片段。
-3. `matchedTerms` 和 `reason` 用于展示命中原因，支撑后续 RAG 引用解释。
+3. `matchedTerms`、`reason` 和 `scoreBreakdown` 用于展示命中原因，支撑后续 RAG 引用解释。
+4. 当前排序仍是 MVP 级关键词方案，不引入向量库；排序依据为字段权重、来源类型基础权重和连续短语命中加分。
 
 ## 4. 故障诊断建议
 
@@ -159,7 +174,7 @@ POST /api/rag/answer
   "success": true,
   "data": {
     "queryId": "q-001",
-    "summary": "可能与燃油供给、点火系统或进气系统异常有关。",
+    "summary": "已按字段权重、来源类型和短语命中排序，返回手册 2 条、案例 1 条。",
     "answer": "基于已检索到的 3 条资料，发动机-示例型号 A 的“启动困难，怠速不稳”优先按来源资料进行排查...",
     "recommendedActions": [
       "优先查看引用来源中的手册页码或资料片段，确认安全前置条件。"
@@ -173,7 +188,14 @@ POST /api/rag/answer
         "snippet": "检查燃油、火花塞、进气管路和怠速控制部件。",
         "confidence": 0.86,
         "page": 15,
-        "reason": "命中手册字段：启动困难"
+        "reason": "命中手册字段：启动困难；来源位置：故障诊断 / p.15",
+        "scoreBreakdown": {
+          "score": 18,
+          "sourceType": "manual",
+          "sourceWeight": 3,
+          "phraseBonus": 0,
+          "fieldMatches": []
+        }
       }
     ],
     "provider": "mock",

@@ -18,6 +18,22 @@ export interface SearchResult {
   chunkId?: string;
   matchedTerms?: string[];
   reason?: string;
+  scoreBreakdown?: SearchScoreBreakdown;
+}
+
+export interface SearchFieldMatch {
+  field: string;
+  terms: string[];
+  weight: number;
+  score: number;
+}
+
+export interface SearchScoreBreakdown {
+  score: number;
+  sourceType: SearchResult["sourceType"];
+  sourceWeight: number;
+  phraseBonus: number;
+  fieldMatches: SearchFieldMatch[];
 }
 
 export interface SearchPayload {
@@ -195,6 +211,7 @@ export interface RagCitation {
   documentId?: string;
   chunkId?: string;
   reason?: string;
+  scoreBreakdown?: SearchScoreBreakdown;
 }
 
 export interface RagAnswerPayload {

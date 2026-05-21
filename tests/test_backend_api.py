@@ -45,6 +45,11 @@ def test_search_returns_seed_results(tmp_path, monkeypatch) -> None:
     payload = response.json()
     assert payload["success"] is True
     assert payload["data"]["results"]
+    first_result = payload["data"]["results"][0]
+    assert "字段权重" in payload["data"]["summary"]
+    assert first_result["matchedTerms"]
+    assert first_result["scoreBreakdown"]["score"] > 0
+    assert first_result["scoreBreakdown"]["fieldMatches"]
 
 
 def test_search_rejects_empty_query(tmp_path, monkeypatch) -> None:
@@ -85,6 +90,7 @@ def test_rag_answer_returns_mock_response_with_citations(tmp_path, monkeypatch) 
     assert payload["data"]["provider"] == "mock"
     assert payload["data"]["fallback"] is True
     assert payload["data"]["citations"]
+    assert payload["data"]["citations"][0]["scoreBreakdown"]["score"] > 0
     assert "基于已检索到" in payload["data"]["answer"]
 
 
