@@ -170,12 +170,24 @@ export interface KnowledgeDocument {
   fileType: string;
   suffix: string;
   sourceName: string;
-  status: "indexed" | "needs_parser" | "needs_ocr" | "empty" | string;
+  status: "indexed" | "needs_parser" | "needs_ocr" | "needs_multimodal_analysis" | "analyzing" | "analyzed" | "empty" | string;
   chunkCount: number;
   parser: string;
   uploadedAt: string;
   url: string;
   chunks?: KnowledgeChunkPreview[];
+  analysis?: {
+    summary: string;
+    keyComponents: string[];
+    faultSymptoms: string[];
+    inspectionSteps: string[];
+    safetyNotes: string[];
+    provider: string;
+    requestedProvider: string;
+    fallback: boolean;
+    fallbackReason?: string;
+    analyzedAt?: string;
+  };
 }
 
 export interface KnowledgeDocumentListPayload {
@@ -197,6 +209,13 @@ export function uploadKnowledgeDocument(file: File, sourceName?: string) {
 
 export function fetchKnowledgeDocuments() {
   return request<KnowledgeDocumentListPayload>("/api/knowledge/documents");
+}
+
+export function analyzeKnowledgeDocument(documentId: string, provider?: "mock" | "openai" | "anthropic") {
+  return request<KnowledgeDocument>(`/api/knowledge/documents/${documentId}/analyze`, {
+    method: "POST",
+    body: JSON.stringify(provider ? { provider } : {})
+  });
 }
 
 export interface RagCitation {
@@ -234,6 +253,40 @@ export function requestRagAnswer(deviceModel: string, faultText: string, provide
       faultText,
       topK: 5,
       ...(provider ? { provider } : {})
+    })
+  });
+}
+
+export interface KnowledgeGraphNode {
+  id: string;
+  label: string;
+  type: "device" | "fault" | "manual" | "case" | "document" | "workflow" | "source" | "term" | "provider" | string;
+  weight: number;
+}
+
+export interface KnowledgeGraphEdge {
+  id: string;
+  source: string;
+  target: string;
+  relation: string;
+  evidence: string;
+}
+
+export interface KnowledgeGraphPayload {
+  queryId: string;
+  summary: string;
+  nodes: KnowledgeGraphNode[];
+  edges: KnowledgeGraphEdge[];
+}
+
+export function fetchKnowledgeGraph(deviceModel: string, faultText: string) {
+  return request<KnowledgeGraphPayload>("/api/knowledge/graph", {
+    method: "POST",
+    body: JSON.stringify({
+      deviceModel,
+      faultText,
+      inputType: "text",
+      topK: 6
     })
   });
 }

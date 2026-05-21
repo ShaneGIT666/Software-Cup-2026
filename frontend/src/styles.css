@@ -172,6 +172,7 @@ h2 {
   grid-template-areas:
     "query results workflow"
     "query knowledge case"
+    "graph graph graph"
     "rag rag rag"
     "review review review";
   gap: 16px;
@@ -183,6 +184,7 @@ h2 {
 .results-panel,
 .workflow-panel,
 .knowledge-panel,
+.knowledge-graph-panel,
 .rag-panel,
 .case-panel {
   border: 1px solid var(--line);
@@ -211,6 +213,10 @@ h2 {
 
 .knowledge-panel {
   grid-area: knowledge;
+}
+
+.knowledge-graph-panel {
+  grid-area: graph;
 }
 
 .rag-panel {
@@ -366,6 +372,70 @@ h2 {
   margin: 8px 0 6px;
   color: #405047;
   word-break: break-all;
+}
+
+.knowledge-analysis-summary {
+  line-height: 1.6;
+}
+
+.knowledge-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.knowledge-analyze-button {
+  margin-top: 12px;
+}
+
+.graph-content {
+  display: grid;
+  gap: 14px;
+}
+
+.graph-node-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.graph-node {
+  display: grid;
+  gap: 3px;
+  border: 1px solid rgba(47, 106, 69, 0.18);
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--text);
+}
+
+.graph-node small {
+  color: #64748B;
+  font-size: 11px;
+}
+
+.graph-edge-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.graph-edge {
+  display: grid;
+  gap: 5px;
+  border: 1px solid rgba(23, 33, 27, 0.1);
+  border-radius: 14px;
+  padding: 12px;
+  background: var(--surface-solid);
+}
+
+.graph-edge span {
+  color: #405047;
+}
+
+.graph-edge small {
+  color: #64748B;
 }
 
 .rag-answer {
@@ -627,6 +697,7 @@ h2 {
       "results"
       "workflow"
       "knowledge"
+      "graph"
       "rag"
       "case"
       "review";
@@ -656,6 +727,10 @@ h2 {
   }
 
   .knowledge-upload {
+    grid-template-columns: 1fr;
+  }
+
+  .graph-edge-list {
     grid-template-columns: 1fr;
   }
 }

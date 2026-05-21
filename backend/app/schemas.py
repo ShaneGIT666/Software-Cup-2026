@@ -31,6 +31,10 @@ class RagAnswerRequest(BaseModel):
     provider: Literal["mock", "openai", "anthropic"] | None = None
 
 
+class MultimodalAnalyzeRequest(BaseModel):
+    provider: Literal["mock", "openai", "anthropic"] | None = None
+
+
 class CaseCreateRequest(BaseModel):
     deviceModel: str
     faultText: str

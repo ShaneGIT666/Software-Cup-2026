@@ -12,14 +12,24 @@ from fastapi.staticfiles import StaticFiles
 
 from .data_store import PROJECT_ROOT, knowledge_dir, upload_dir
 from .knowledge import (
+    analyze_knowledge_document,
     delete_knowledge_document,
     get_knowledge_document,
     ingest_knowledge_document,
     list_knowledge_document_chunks,
     list_knowledge_documents,
 )
+from .knowledge_graph import build_knowledge_graph
 from .rag import answer_with_rag
-from .schemas import ApiResponse, CaseCreateRequest, CaseReviewRequest, DiagnosisRequest, RagAnswerRequest, SearchRequest
+from .schemas import (
+    ApiResponse,
+    CaseCreateRequest,
+    CaseReviewRequest,
+    DiagnosisRequest,
+    MultimodalAnalyzeRequest,
+    RagAnswerRequest,
+    SearchRequest,
+)
 from .services import create_repair_case, find_workflow, list_repair_cases, review_repair_case, search_knowledge
 
 
@@ -105,6 +115,11 @@ def rag_answer(request: RagAnswerRequest) -> ApiResponse:
     return ApiResponse(data=answer_with_rag(request), message="当前为 Mock RAG 回答")
 
 
+@app.post("/api/knowledge/graph", response_model=ApiResponse)
+def knowledge_graph(request: SearchRequest) -> ApiResponse:
+    return ApiResponse(data=build_knowledge_graph(request))
+
+
 @app.get("/api/workflows/{workflow_id}", response_model=ApiResponse)
 def get_workflow(workflow_id: str) -> ApiResponse:
     return ApiResponse(data=find_workflow(workflow_id))
@@ -183,6 +198,12 @@ def get_knowledge_document_detail(document_id: str) -> ApiResponse:
 @app.get("/api/knowledge/documents/{document_id}/chunks", response_model=ApiResponse)
 def get_knowledge_document_chunks(document_id: str) -> ApiResponse:
     return ApiResponse(data=list_knowledge_document_chunks(document_id))
+
+
+@app.post("/api/knowledge/documents/{document_id}/analyze", response_model=ApiResponse)
+def analyze_document(document_id: str, request: MultimodalAnalyzeRequest | None = None) -> ApiResponse:
+    provider = request.provider if request else None
+    return ApiResponse(data=analyze_knowledge_document(document_id, provider), message="资料多模态分析完成")
 
 
 @app.delete("/api/knowledge/documents/{document_id}", response_model=ApiResponse)

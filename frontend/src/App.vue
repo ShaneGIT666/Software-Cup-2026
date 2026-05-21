@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { ElMessage } from "element-plus";
-import { fetchWorkflow, requestRagAnswer, searchKnowledge, submitCase, uploadFaultFile, type RagAnswerPayload, type SearchPayload, type SearchResult, type UploadPayload, type WorkflowPayload } from "./api";
+import { fetchKnowledgeGraph, fetchWorkflow, requestRagAnswer, searchKnowledge, submitCase, uploadFaultFile, type KnowledgeGraphPayload, type RagAnswerPayload, type SearchPayload, type SearchResult, type UploadPayload, type WorkflowPayload } from "./api";
 import CasePanel from "./components/CasePanel.vue";
+import KnowledgeGraphPanel from "./components/KnowledgeGraphPanel.vue";
 import KnowledgePanel from "./components/KnowledgePanel.vue";
 import QueryPanel from "./components/QueryPanel.vue";
 import RagPanel from "./components/RagPanel.vue";
@@ -13,10 +14,12 @@ import WorkflowPanel from "./components/WorkflowPanel.vue";
 const deviceModel = ref("发动机-示例型号 A");
 const faultText = ref("启动困难，怠速不稳，排气异常");
 const loading = ref(false);
+const graphLoading = ref(false);
 const ragLoading = ref(false);
 const submitting = ref(false);
 const uploading = ref(false);
 const searchPayload = ref<SearchPayload | null>(null);
+const knowledgeGraph = ref<KnowledgeGraphPayload | null>(null);
 const selectedWorkflow = ref<WorkflowPayload | null>(null);
 const selectedResult = ref<SearchResult | null>(null);
 const uploadResult = ref<UploadPayload | null>(null);
@@ -43,6 +46,7 @@ async function runSearch() {
     if (firstWorkflowId) {
       await openWorkflow(searchPayload.value.results[0]);
     }
+    await refreshKnowledgeGraph();
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : "检索失败");
   } finally {
@@ -59,6 +63,17 @@ async function generateRagAnswer() {
     ElMessage.error(error instanceof Error ? error.message : "辅助建议生成失败");
   } finally {
     ragLoading.value = false;
+  }
+}
+
+async function refreshKnowledgeGraph() {
+  graphLoading.value = true;
+  try {
+    knowledgeGraph.value = await fetchKnowledgeGraph(deviceModel.value, faultText.value);
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : "知识关系网络生成失败");
+  } finally {
+    graphLoading.value = false;
   }
 }
 
@@ -142,6 +157,7 @@ runSearch();
       <ResultsPanel :search-payload="searchPayload" :selected-result="selectedResult" @open-workflow="openWorkflow" />
       <WorkflowPanel :selected-workflow="selectedWorkflow" />
       <KnowledgePanel />
+      <KnowledgeGraphPanel :graph="knowledgeGraph" :loading="graphLoading" @refresh="refreshKnowledgeGraph" />
       <RagPanel :rag-answer="ragAnswer" :loading="ragLoading" @answer="generateRagAnswer" />
       <CasePanel
         v-model:cause="caseForm.cause"

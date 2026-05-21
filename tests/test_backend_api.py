@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import shutil
@@ -588,3 +588,113 @@ def test_knowledge_document_upload_rejects_oversized_file(tmp_path, monkeypatch)
     payload = response.json()
     assert payload["success"] is False
     assert "20MB" in payload["message"]
+
+
+def test_image_knowledge_document_can_be_multimodal_analyzed_and_searched(tmp_path, monkeypatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+
+    upload_response = client.post(
+        "/api/knowledge/documents",
+        files={"file": ("fault-photo.jpg", b"fake image bytes", "image/jpeg")},
+        data={"source_name": "field-photo"},
+    )
+    assert upload_response.status_code == 200
+    uploaded = upload_response.json()["data"]
+    assert uploaded["status"] == "needs_multimodal_analysis"
+    assert uploaded["chunkCount"] == 0
+
+    analyze_response = client.post(f"/api/knowledge/documents/{uploaded['id']}/analyze", json={"provider": "mock"})
+    assert analyze_response.status_code == 200
+    analyzed = analyze_response.json()["data"]
+    assert analyzed["status"] == "analyzed"
+    assert analyzed["chunkCount"] > 0
+    assert analyzed["analysis"]["provider"] == "mock"
+    assert analyzed["analysis"]["fallback"] is True
+
+    search_response = client.post(
+        "/api/search",
+        json={"deviceModel": "A", "faultText": "mock", "inputType": "text", "topK": 5},
+    )
+    results = search_response.json()["data"]["results"]
+    assert any(item.get("documentId") == uploaded["id"] and item["sourceType"] == "document" for item in results)
+
+
+def test_multimodal_analysis_falls_back_when_real_provider_is_unconfigured(tmp_path, monkeypatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    upload_response = client.post(
+        "/api/knowledge/documents",
+        files={"file": ("manual-scan.png", b"fake png bytes", "image/png")},
+    )
+    document_id = upload_response.json()["data"]["id"]
+
+    response = client.post(f"/api/knowledge/documents/{document_id}/analyze", json={"provider": "openai"})
+
+    assert response.status_code == 200
+    analysis = response.json()["data"]["analysis"]
+    assert analysis["provider"] == "mock"
+    assert analysis["requestedProvider"] == "openai"
+    assert analysis["fallback"] is True
+
+
+def test_multimodal_analyzed_document_is_used_by_rag(tmp_path, monkeypatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    upload_response = client.post(
+        "/api/knowledge/documents",
+        files={"file": ("fault-photo.webp", b"fake webp bytes", "image/webp")},
+        data={"source_name": "multimodal-field-data"},
+    )
+    document_id = upload_response.json()["data"]["id"]
+    client.post(f"/api/knowledge/documents/{document_id}/analyze", json={"provider": "mock"})
+
+    response = client.post(
+        "/api/rag/answer",
+        json={"deviceModel": "A", "faultText": "mock", "topK": 5, "provider": "mock"},
+    )
+
+    assert response.status_code == 200
+    citations = response.json()["data"]["citations"]
+    assert any(item.get("documentId") == document_id for item in citations)
+
+
+def test_multimodal_analysis_missing_document_returns_404(tmp_path, monkeypatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+
+    response = client.post("/api/knowledge/documents/kdoc-missing/analyze", json={"provider": "mock"})
+
+    assert response.status_code == 404
+    payload = response.json()
+    assert payload["success"] is False
+    assert payload["data"] is None
+
+
+def test_knowledge_graph_returns_nodes_and_edges(tmp_path, monkeypatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+
+    response = client.post(
+        "/api/knowledge/graph",
+        json={"deviceModel": "A", "faultText": "A", "inputType": "text", "topK": 5},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["success"] is True
+    graph = payload["data"]
+    assert graph["nodes"]
+    assert graph["edges"]
+    assert any(node["type"] == "device" for node in graph["nodes"])
+    assert any(node["type"] == "fault" for node in graph["nodes"])
+    assert any(edge["relation"] for edge in graph["edges"])
+
+
+def test_knowledge_graph_rejects_empty_query(tmp_path, monkeypatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+
+    response = client.post(
+        "/api/knowledge/graph",
+        json={"deviceModel": " ", "faultText": "", "inputType": "text", "topK": 5},
+    )
+
+    assert response.status_code == 400
+    payload = response.json()
+    assert payload["success"] is False
+    assert payload["data"] is None

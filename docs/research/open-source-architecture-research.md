@@ -481,3 +481,16 @@ PDF/Markdown/JSON -> 文档解析 -> 切分 -> 元数据标注 -> 向量化 -> C
 2. OCR 优先评估 [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR)，重点验证中文扫描手册、故障图片和 PP-Structure 文档版面分析能力。
 3. RAG ingestion 与索引编排后续评估 [LlamaIndex Ingestion Pipeline](https://docs.llamaindex.ai/en/stable/module_guides/loading/ingestion_pipeline/) 和 [LangChain RAG](https://docs.langchain.com/oss/python/langchain/rag)，但业务代码必须保留可替换边界，避免绑定单一框架。
 4. 真正引入上述依赖前必须补充小样本验证记录：安装命令、解析效果、许可证、模型/依赖体积、离线演示可行性和 LoongArch/银河麒麟风险。
+## 14. 多模态资料分析增强层落地记录
+
+更新日期：2026-05-21。
+
+本次实现新增自研 `multimodal_adapter`，用于把 PDF/图片资料分析结果转为本地可检索知识片段。该实现没有复制 OpenAI、Anthropic 或其他开源项目代码，也没有引入 PaddleOCR、MinerU、Docling、LlamaIndex、LangChain 等运行时依赖。
+
+参考来源与工程边界：
+
+1. OpenAI Responses API 的 PDF/图片输入能力用于后续真实 provider 适配参考。
+2. Anthropic Claude PDF support 与 Vision Messages API 用于后续真实 provider 适配参考。
+3. 当前默认 `mock` provider，确保无网络、无 API Key、官方国产化环境未开放时仍可完成比赛演示。
+4. 官方 `摩托车发动机维修手册.pdf` 作为本地测试和演示资料，不提交到仓库。
+5. 真实多模态调用存在 API Key、网络、费用、页数、文件大小和国产化环境兼容风险，比赛演示应保留 mock fallback。

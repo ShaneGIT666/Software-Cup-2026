@@ -555,3 +555,96 @@ DELETE /api/knowledge/documents/{documentId}
 1. 当前 MVP 自研轻量入库接口和 JSON 存储，避免引入重依赖破坏现有演示闭环。
 2. 后续文档解析优先评估 Docling 与 MinerU，OCR 优先评估 PaddleOCR，RAG 框架优先评估 LlamaIndex 或 LangChain。
 3. 相关开源方案来源记录在 `docs/research/open-source-architecture-research.md`，实现前必须复核许可证、依赖体积和 Windows/国产化环境兼容性。
+## 11. 多模态资料分析
+
+```text
+POST /api/knowledge/documents/{documentId}/analyze
+```
+
+说明：
+1. 对已上传的 PDF 或图片资料执行多模态分析，并将分析结果转为可检索知识片段。
+2. 默认使用 `mock` provider，保证无网络、无 API Key 时仍可演示。
+3. 可选 provider 为 `mock`、`openai`、`anthropic`；不传时读取 `MULTIMODAL_PROVIDER`，仍未配置则使用 `mock`。
+4. OpenAI provider 参考 Responses API 的 PDF/图片输入能力；Anthropic provider 参考 Claude PDF support 与 Vision Messages API。
+5. 真实 provider 调用失败、未配置 Key 或模型返回空内容时，自动 fallback 到 mock，并返回 `fallbackReason`。
+6. 官方样例 `摩托车发动机维修手册.pdf` 作为本地演示输入，不进入 Git 仓库；若页数或大小导致真实 API 成本过高，应优先使用 mock 或抽样页分析。
+
+请求：
+```json
+{
+  "provider": "mock"
+}
+```
+
+响应：
+```json
+{
+  "success": true,
+  "data": {
+    "id": "kdoc-001",
+    "status": "analyzed",
+    "chunkCount": 3,
+    "parser": "multimodal-mock",
+    "analysis": {
+      "summary": "资料多模态分析摘要",
+      "keyComponents": ["发动机", "火花塞"],
+      "faultSymptoms": ["启动困难"],
+      "inspectionSteps": ["检查点火系统"],
+      "safetyNotes": ["检修前确认发动机冷却"],
+      "provider": "mock",
+      "requestedProvider": "mock",
+      "fallback": true,
+      "fallbackReason": "未配置真实多模态模型，已使用 mock provider"
+    },
+    "chunks": []
+  },
+  "message": "资料多模态分析完成"
+}
+```
+
+新增资料状态：
+
+| 状态 | 含义 |
+| --- | --- |
+| `needs_multimodal_analysis` | PDF 或图片需要多模态/视觉分析后才能生成知识片段 |
+| `analyzing` | 分析进行中 |
+| `analyzed` | 多模态分析完成，并已生成可检索知识片段 |
+
+## 12. 轻量知识关系网络
+
+```text
+POST /api/knowledge/graph
+```
+
+说明：
+1. 基于当前查询和 `/api/search` 结果生成轻量知识关系网络，用于展示设备、故障、资料、案例、流程和来源之间的关系。
+2. 该接口是比赛 MVP 的“知识沉淀/知识图谱原型”，不依赖 Neo4j、图数据库或向量数据库。
+3. 空查询沿用 `/api/search` 的校验规则，返回 `400`。
+
+请求：
+```json
+{
+  "deviceModel": "发动机 示例型号 A",
+  "faultText": "启动困难 火花塞",
+  "inputType": "text",
+  "topK": 6
+}
+```
+
+响应：
+```json
+{
+  "success": true,
+  "data": {
+    "queryId": "q-001",
+    "summary": "围绕当前查询生成 10 个知识节点、12 条关系",
+    "nodes": [
+      { "id": "device:发动机 示例型号 A", "label": "发动机 示例型号 A", "type": "device", "weight": 5 }
+    ],
+    "edges": [
+      { "id": "device:...->出现故障->fault:...", "source": "device:...", "target": "fault:...", "relation": "出现故障", "evidence": "用户当前查询" }
+    ]
+  },
+  "message": ""
+}
+```
