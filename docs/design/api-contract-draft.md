@@ -95,13 +95,21 @@ POST /api/search
         "snippet": "检查燃油、火花塞、进气管路和怠速控制部件。",
         "workflowId": "wf-001",
         "chapter": "故障诊断",
-        "page": 15
+        "page": 15,
+        "matchedTerms": ["启动困难", "怠速不稳"],
+        "reason": "命中手册字段：启动困难, 怠速不稳"
       }
     ]
   },
   "message": ""
 }
 ```
+
+说明：
+
+1. `sourceType` 当前支持 `manual`、`case` 和 `document`。
+2. `document` 表示由资料入库接口解析生成的本地知识片段。
+3. `matchedTerms` 和 `reason` 用于展示命中原因，支撑后续 RAG 引用解释。
 
 ## 4. 故障诊断建议
 
@@ -314,3 +322,156 @@ POST /api/uploads
 ```
 
 开发和测试环境可通过 `APP_UPLOAD_DIR` 覆盖上传目录。
+
+## 10. 资料入库
+
+```text
+POST /api/knowledge/documents
+```
+
+说明：
+
+1. 使用 `multipart/form-data`。
+2. MVP 阶段支持 `pdf`、`txt` 和 `md`。
+3. 单文件大小上限为 `20MB`。
+4. 空文件、无扩展名、扩展名不在白名单、扩展名与 MIME 类型明显不匹配时返回 `400`。
+5. 资料入库不同于现场材料上传：入库资料会解析为知识片段，并进入 `/api/search` 检索范围。
+6. 开发和测试环境可通过 `APP_KNOWLEDGE_DIR` 覆盖资料库目录，避免污染真实数据。
+
+请求字段：
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `file` | file | 是 | PDF/TXT/Markdown 资料 |
+| `source_name` | string | 否 | 资料来源名称，例如“摩托车检修手册” |
+
+响应：
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "kdoc-001",
+    "fileName": "motorcycle-manual.md",
+    "fileType": "text/markdown",
+    "suffix": "md",
+    "sourceName": "摩托车检修手册",
+    "status": "indexed",
+    "chunkCount": 3,
+    "parser": "plain-text",
+    "uploadedAt": "2026-05-21T00:00:00Z",
+    "url": "/knowledge/files/kdoc-001.md",
+    "chunks": [
+      {
+        "id": "kdoc-001-chunk-001",
+        "title": "motorcycle-manual",
+        "sourceName": "摩托车检修手册",
+        "page": null,
+        "snippet": "摩托车发动机无法启动时，应检查火花塞、高压包和燃油供给。"
+      }
+    ]
+  },
+  "message": "资料已入库"
+}
+```
+
+资料状态：
+
+| 状态 | 含义 |
+| --- | --- |
+| `indexed` | 已解析并生成知识片段 |
+| `needs_parser` | PDF 解析器未安装或当前环境暂不支持解析 |
+| `needs_ocr` | PDF 可能为扫描件，后续需要 OCR |
+| `empty` | 文本文件无可解析内容 |
+
+列表接口：
+
+```text
+GET /api/knowledge/documents
+```
+
+响应：
+
+```json
+{
+  "success": true,
+  "data": {
+    "items": [],
+    "total": 0
+  },
+  "message": ""
+}
+```
+
+详情接口：
+
+```text
+GET /api/knowledge/documents/{documentId}
+```
+
+响应：
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "kdoc-001",
+    "fileName": "motorcycle-manual.md",
+    "status": "indexed",
+    "chunkCount": 3,
+    "chunkTotal": 3,
+    "chunks": []
+  },
+  "message": ""
+}
+```
+
+片段列表接口：
+
+```text
+GET /api/knowledge/documents/{documentId}/chunks
+```
+
+响应：
+
+```json
+{
+  "success": true,
+  "data": {
+    "items": [],
+    "total": 0
+  },
+  "message": ""
+}
+```
+
+删除接口：
+
+```text
+DELETE /api/knowledge/documents/{documentId}
+```
+
+说明：
+
+1. 删除资料时同步删除该资料对应的知识片段和本地原始文件。
+2. 删除不存在的资料返回 `404`。
+3. 删除后该资料不再进入 `/api/search` 检索结果。
+
+响应：
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "kdoc-001",
+    "deleted": true
+  },
+  "message": "资料已删除"
+}
+```
+
+开源方案引用：
+
+1. 当前 MVP 自研轻量入库接口和 JSON 存储，避免引入重依赖破坏现有演示闭环。
+2. 后续文档解析优先评估 Docling 与 MinerU，OCR 优先评估 PaddleOCR，RAG 框架优先评估 LlamaIndex 或 LangChain。
+3. 相关开源方案来源记录在 `docs/research/open-source-architecture-research.md`，实现前必须复核许可证、依赖体积和 Windows/国产化环境兼容性。

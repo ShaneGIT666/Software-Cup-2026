@@ -6,7 +6,7 @@ from uuid import uuid4
 
 from fastapi import HTTPException
 
-from .data_store import load_cases, load_seed_data, save_cases
+from .data_store import load_cases, load_document_chunks, load_seed_data, save_cases
 from .schemas import CaseCreateRequest, CaseReviewRequest, SearchRequest
 
 
@@ -29,6 +29,11 @@ def score_item(query_tokens: list[str], item: dict[str, Any], fields: list[str])
     return sum(1 for token in query_tokens if token in haystack)
 
 
+def matched_terms(query_tokens: list[str], item: dict[str, Any], fields: list[str]) -> list[str]:
+    haystack = " ".join(str(item.get(field, "")) for field in fields).lower()
+    return [token for token in query_tokens if token in haystack]
+
+
 def find_workflow(workflow_id: str) -> dict[str, Any]:
     data = load_seed_data()
     for workflow in data["workflows"]:
@@ -45,8 +50,10 @@ def search_knowledge(request: SearchRequest) -> dict[str, Any]:
 
     manual_results = []
     for manual in data["manuals"]:
-        score = score_item(query_tokens, manual, ["title", "deviceModel", "content", "tags"])
+        fields = ["title", "deviceModel", "content", "tags"]
+        score = score_item(query_tokens, manual, fields)
         if score:
+            terms = matched_terms(query_tokens, manual, fields)
             manual_results.append(
                 {
                     "id": manual["id"],
@@ -58,6 +65,8 @@ def search_knowledge(request: SearchRequest) -> dict[str, Any]:
                     "workflowId": manual.get("workflowId"),
                     "chapter": manual.get("chapter"),
                     "page": manual.get("page"),
+                    "matchedTerms": terms,
+                    "reason": f"命中手册字段：{', '.join(terms[:4])}" if terms else "命中示例手册内容",
                 }
             )
 
@@ -65,12 +74,10 @@ def search_knowledge(request: SearchRequest) -> dict[str, Any]:
     for repair_case in data["cases"]:
         if repair_case.get("status") != "approved":
             continue
-        score = score_item(
-            query_tokens,
-            repair_case,
-            ["faultTitle", "faultText", "solution", "possibleCauses", "tags"],
-        )
+        fields = ["faultTitle", "faultText", "solution", "possibleCauses", "tags"]
+        score = score_item(query_tokens, repair_case, fields)
         if score:
+            terms = matched_terms(query_tokens, repair_case, fields)
             case_results.append(
                 {
                     "id": repair_case["id"],
@@ -80,11 +87,37 @@ def search_knowledge(request: SearchRequest) -> dict[str, Any]:
                     "confidence": min(0.94, 0.6 + score * 0.1),
                     "snippet": repair_case["solution"],
                     "workflowId": repair_case.get("workflowId"),
+                    "matchedTerms": terms,
+                    "reason": f"命中历史案例：{', '.join(terms[:4])}" if terms else "命中历史维修案例",
+                }
+            )
+
+    document_results = []
+    for chunk in load_document_chunks():
+        fields = ["title", "sourceName", "content", "keywords"]
+        score = score_item(query_tokens, chunk, fields)
+        if score:
+            terms = matched_terms(query_tokens, chunk, fields)
+            document_results.append(
+                {
+                    "id": chunk["id"],
+                    "title": chunk["title"],
+                    "sourceType": "document",
+                    "sourceName": chunk["sourceName"],
+                    "confidence": min(0.93, 0.56 + score * 0.08),
+                    "snippet": chunk["snippet"],
+                    "workflowId": None,
+                    "chapter": None,
+                    "page": chunk.get("page"),
+                    "documentId": chunk.get("documentId"),
+                    "chunkId": chunk["id"],
+                    "matchedTerms": terms,
+                    "reason": f"命中入库资料片段：{', '.join(terms[:4])}" if terms else "命中入库资料片段",
                 }
             )
 
     results = sorted(
-        manual_results + case_results,
+        manual_results + case_results + document_results,
         key=lambda item: item["confidence"],
         reverse=True,
     )[: request.topK]

@@ -15,6 +15,7 @@ def make_client(tmp_path, monkeypatch) -> TestClient:
     source = tmp_path / "source"
     shutil.copytree("data/examples", source)
     monkeypatch.setenv("APP_EXAMPLES_DIR", str(source))
+    monkeypatch.setenv("APP_KNOWLEDGE_DIR", str(tmp_path / "knowledge"))
     return TestClient(app)
 
 
@@ -240,3 +241,172 @@ def test_invalid_review_action_is_rejected_without_status_change(tmp_path, monke
     after_response = client.get("/api/cases?status=pending_review")
     after_items = after_response.json()["data"]["items"]
     assert any(item["id"] == pending_case["id"] for item in after_items)
+
+
+def test_knowledge_document_upload_indexes_text_and_is_searchable(tmp_path, monkeypatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+
+    response = client.post(
+        "/api/knowledge/documents",
+        files={
+            "file": (
+                "motorcycle-manual.md",
+                "摩托车发动机无法启动时，应检查火花塞、高压包和燃油供给。".encode("utf-8"),
+                "text/markdown",
+            )
+        },
+        data={"source_name": "摩托车检修手册"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["success"] is True
+    assert payload["data"]["status"] == "indexed"
+    assert payload["data"]["chunkCount"] == 1
+
+    search_response = client.post(
+        "/api/search",
+        json={
+            "deviceModel": "摩托车发动机",
+            "faultText": "无法启动 火花塞",
+            "inputType": "text",
+            "topK": 5,
+        },
+    )
+    results = search_response.json()["data"]["results"]
+    assert any(item["sourceType"] == "document" and item["sourceName"] == "摩托车检修手册" for item in results)
+
+
+def test_knowledge_documents_list_returns_ingested_items(tmp_path, monkeypatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+
+    client.post(
+        "/api/knowledge/documents",
+        files={"file": ("manual.txt", b"brake inspection and tire pressure", "text/plain")},
+    )
+
+    response = client.get("/api/knowledge/documents")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["success"] is True
+    assert payload["data"]["total"] == 1
+    assert payload["data"]["items"][0]["fileName"] == "manual.txt"
+
+
+def test_knowledge_document_detail_and_chunks(tmp_path, monkeypatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    upload_response = client.post(
+        "/api/knowledge/documents",
+        files={
+            "file": (
+                "manual.md",
+                "第一段：检查制动片厚度。\n第二段：检查轮胎胎压和磨损。".encode("utf-8"),
+                "text/markdown",
+            )
+        },
+    )
+    document_id = upload_response.json()["data"]["id"]
+
+    detail_response = client.get(f"/api/knowledge/documents/{document_id}")
+    chunks_response = client.get(f"/api/knowledge/documents/{document_id}/chunks")
+
+    assert detail_response.status_code == 200
+    detail = detail_response.json()["data"]
+    assert detail["id"] == document_id
+    assert detail["chunkTotal"] == 1
+    assert detail["chunks"][0]["documentId"] == document_id
+
+    assert chunks_response.status_code == 200
+    chunks = chunks_response.json()["data"]
+    assert chunks["total"] == 1
+    assert "制动片" in chunks["items"][0]["content"]
+
+
+def test_delete_knowledge_document_removes_chunks_and_search_result(tmp_path, monkeypatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    upload_response = client.post(
+        "/api/knowledge/documents",
+        files={
+            "file": (
+                "manual.md",
+                "摩托车链条异响时，应检查链条张紧度和润滑状态。".encode("utf-8"),
+                "text/markdown",
+            )
+        },
+        data={"source_name": "链条检修资料"},
+    )
+    document_id = upload_response.json()["data"]["id"]
+
+    delete_response = client.delete(f"/api/knowledge/documents/{document_id}")
+    detail_response = client.get(f"/api/knowledge/documents/{document_id}")
+    chunks_response = client.get(f"/api/knowledge/documents/{document_id}/chunks")
+    search_response = client.post(
+        "/api/search",
+        json={
+            "deviceModel": "摩托车",
+            "faultText": "链条异响 张紧度",
+            "inputType": "text",
+            "topK": 5,
+        },
+    )
+
+    assert delete_response.status_code == 200
+    assert delete_response.json()["data"] == {"id": document_id, "deleted": True}
+    assert detail_response.status_code == 404
+    assert chunks_response.status_code == 404
+    results = search_response.json()["data"]["results"]
+    assert not any(item.get("documentId") == document_id for item in results)
+
+
+def test_delete_missing_knowledge_document_returns_404(tmp_path, monkeypatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+
+    response = client.delete("/api/knowledge/documents/kdoc-missing")
+
+    assert response.status_code == 404
+    payload = response.json()
+    assert payload["success"] is False
+    assert "不存在" in payload["message"]
+
+
+def test_knowledge_document_upload_rejects_empty_file(tmp_path, monkeypatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+
+    response = client.post(
+        "/api/knowledge/documents",
+        files={"file": ("manual.md", b"", "text/markdown")},
+    )
+
+    assert response.status_code == 400
+    payload = response.json()
+    assert payload["success"] is False
+    assert "不能为空" in payload["message"]
+
+
+def test_knowledge_document_upload_rejects_unsupported_extension(tmp_path, monkeypatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+
+    response = client.post(
+        "/api/knowledge/documents",
+        files={"file": ("manual.exe", b"unsafe", "application/octet-stream")},
+    )
+
+    assert response.status_code == 400
+    payload = response.json()
+    assert payload["success"] is False
+    assert "仅支持" in payload["message"]
+
+
+def test_knowledge_document_upload_rejects_oversized_file(tmp_path, monkeypatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+
+    response = client.post(
+        "/api/knowledge/documents",
+        files={"file": ("manual.txt", b"x" * (20 * 1024 * 1024 + 1), "text/plain")},
+    )
+
+    assert response.status_code == 400
+    payload = response.json()
+    assert payload["success"] is False
+    assert "20MB" in payload["message"]

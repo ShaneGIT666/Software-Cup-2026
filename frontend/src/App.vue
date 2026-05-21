@@ -3,6 +3,7 @@ import { computed, ref } from "vue";
 import { ElMessage } from "element-plus";
 import { fetchWorkflow, searchKnowledge, submitCase, uploadFaultFile, type SearchPayload, type SearchResult, type UploadPayload, type WorkflowPayload } from "./api";
 import CasePanel from "./components/CasePanel.vue";
+import KnowledgePanel from "./components/KnowledgePanel.vue";
 import QueryPanel from "./components/QueryPanel.vue";
 import ResultsPanel from "./components/ResultsPanel.vue";
 import ReviewPanel from "./components/ReviewPanel.vue";
@@ -123,6 +124,7 @@ runSearch();
       />
       <ResultsPanel :search-payload="searchPayload" :selected-result="selectedResult" @open-workflow="openWorkflow" />
       <WorkflowPanel :selected-workflow="selectedWorkflow" />
+      <KnowledgePanel />
       <CasePanel
         v-model:cause="caseForm.cause"
         v-model:solution="caseForm.solution"

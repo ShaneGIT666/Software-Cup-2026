@@ -4,19 +4,28 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from .data_store import PROJECT_ROOT, upload_dir
+from .data_store import PROJECT_ROOT, knowledge_dir, upload_dir
+from .knowledge import (
+    delete_knowledge_document,
+    get_knowledge_document,
+    ingest_knowledge_document,
+    list_knowledge_document_chunks,
+    list_knowledge_documents,
+)
 from .schemas import ApiResponse, CaseCreateRequest, CaseReviewRequest, DiagnosisRequest, SearchRequest
 from .services import create_repair_case, find_workflow, list_repair_cases, review_repair_case, search_knowledge
 
 
 UPLOAD_DIR = upload_dir()
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+KNOWLEDGE_DIR = knowledge_dir()
+KNOWLEDGE_DIR.mkdir(parents=True, exist_ok=True)
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 ALLOWED_UPLOAD_TYPES = {
     "jpg": {"image/jpeg"},
@@ -37,6 +46,7 @@ app.add_middleware(
 )
 
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+app.mount("/knowledge", StaticFiles(directory=KNOWLEDGE_DIR), name="knowledge")
 
 
 def error_response(status_code: int, message: str) -> JSONResponse:
@@ -141,3 +151,34 @@ async def upload_file(file: UploadFile = File(...)) -> ApiResponse:
             "url": f"/uploads/{target.name}",
         }
     )
+
+
+@app.post("/api/knowledge/documents", response_model=ApiResponse)
+async def upload_knowledge_document(
+    file: UploadFile = File(...),
+    source_name: str | None = Form(default=None),
+) -> ApiResponse:
+    return ApiResponse(
+        data=await ingest_knowledge_document(file, source_name),
+        message="资料已入库",
+    )
+
+
+@app.get("/api/knowledge/documents", response_model=ApiResponse)
+def get_knowledge_documents() -> ApiResponse:
+    return ApiResponse(data=list_knowledge_documents())
+
+
+@app.get("/api/knowledge/documents/{document_id}", response_model=ApiResponse)
+def get_knowledge_document_detail(document_id: str) -> ApiResponse:
+    return ApiResponse(data=get_knowledge_document(document_id))
+
+
+@app.get("/api/knowledge/documents/{document_id}/chunks", response_model=ApiResponse)
+def get_knowledge_document_chunks(document_id: str) -> ApiResponse:
+    return ApiResponse(data=list_knowledge_document_chunks(document_id))
+
+
+@app.delete("/api/knowledge/documents/{document_id}", response_model=ApiResponse)
+def remove_knowledge_document(document_id: str) -> ApiResponse:
+    return ApiResponse(data=delete_knowledge_document(document_id), message="资料已删除")

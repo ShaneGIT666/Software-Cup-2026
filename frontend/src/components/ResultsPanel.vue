@@ -10,6 +10,15 @@ defineProps<{
 const emit = defineEmits<{
   openWorkflow: [result: SearchResult];
 }>();
+
+function sourceLabel(sourceType: SearchResult["sourceType"]) {
+  const labels = {
+    manual: "手册",
+    case: "案例",
+    document: "资料"
+  };
+  return labels[sourceType];
+}
 </script>
 
 <template>
@@ -30,10 +39,11 @@ const emit = defineEmits<{
         >
           <div>
             <strong>{{ item.title }}</strong>
-            <span class="source-pill">{{ item.sourceType === "manual" ? "手册" : "案例" }}</span>
+            <span class="source-pill">{{ sourceLabel(item.sourceType) }}</span>
           </div>
           <span class="source-line">{{ item.sourceName }} {{ item.chapter ? ` / ${item.chapter}` : "" }}</span>
           <p>{{ item.snippet }}</p>
+          <small v-if="item.reason" class="reason-line">{{ item.reason }}</small>
           <small>置信度 {{ Math.round(item.confidence * 100) }}% {{ item.page ? ` · p.${item.page}` : "" }}</small>
         </button>
       </div>

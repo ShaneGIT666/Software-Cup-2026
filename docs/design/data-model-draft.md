@@ -81,7 +81,48 @@
 | `relatedId` | string | 关联对象 ID |
 | `createdAt` | string | 上传时间 |
 
-## 7. 数据关系
+## 7. 入库资料 KnowledgeDocument
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | string | 入库资料 ID |
+| `fileName` | string | 原始文件名 |
+| `fileType` | string | MIME 类型 |
+| `suffix` | string | 文件扩展名 |
+| `sourceName` | string | 资料来源名称 |
+| `status` | string | `indexed` / `needs_parser` / `needs_ocr` / `empty` |
+| `chunkCount` | number | 已生成知识片段数量 |
+| `parser` | string | 使用的解析器或解析策略 |
+| `uploadedAt` | string | 上传入库时间 |
+| `url` | string | 本地访问路径 |
+
+说明：
+
+1. MVP 阶段入库资料保存到 `data/knowledge/documents.json`。
+2. 真实资料文件保存到 `data/knowledge/files/`，该目录属于运行期数据，不提交 Git。
+3. 测试环境通过 `APP_KNOWLEDGE_DIR` 指向临时目录。
+
+## 8. 入库资料片段 DocumentChunk
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | string | 片段 ID |
+| `documentId` | string | 所属入库资料 ID |
+| `title` | string | 片段标题，默认来自文件名 |
+| `sourceType` | string | 固定为 `document` |
+| `sourceName` | string | 资料来源名称 |
+| `page` | number/null | 页码，文本资料可为空 |
+| `chunkIndex` | number | 片段序号 |
+| `content` | string | 完整片段文本 |
+| `snippet` | string | 检索结果摘要 |
+| `keywords` | string[] | 自动提取的轻量关键词 |
+
+说明：
+
+1. MVP 阶段片段保存到 `data/knowledge/document-chunks.json`。
+2. 当前片段用于关键词检索，后续可作为向量化和 RAG 引用的原始语料。
+
+## 9. 数据关系
 
 ```text
 Device 1 -> N ManualDocument
@@ -89,5 +130,5 @@ Device 1 -> N RepairCase
 Device 1 -> N Workflow
 RepairCase N -> N UploadedFile
 Workflow 1 -> N WorkflowStep
+KnowledgeDocument 1 -> N DocumentChunk
 ```
-

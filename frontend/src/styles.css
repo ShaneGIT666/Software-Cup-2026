@@ -171,7 +171,7 @@ h2 {
   grid-template-columns: minmax(260px, 0.9fr) minmax(320px, 1.25fr) minmax(320px, 1.15fr);
   grid-template-areas:
     "query results workflow"
-    "query case case"
+    "query knowledge case"
     "review review review";
   gap: 16px;
   max-width: 1480px;
@@ -181,6 +181,7 @@ h2 {
 .query-panel,
 .results-panel,
 .workflow-panel,
+.knowledge-panel,
 .case-panel {
   border: 1px solid var(--line);
   border-radius: 18px;
@@ -204,6 +205,10 @@ h2 {
 
 .case-panel {
   grid-area: case;
+}
+
+.knowledge-panel {
+  grid-area: knowledge;
 }
 
 .review-panel {
@@ -297,6 +302,66 @@ h2 {
   word-break: break-all;
 }
 
+.panel-note {
+  margin-bottom: 14px;
+  color: var(--muted-600);
+  line-height: 1.6;
+  font-size: 14px;
+}
+
+.knowledge-upload {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.knowledge-upload-button {
+  min-height: 40px;
+}
+
+.knowledge-status {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 14px;
+  border: 1px solid rgba(249, 115, 22, 0.22);
+  border-radius: 14px;
+  padding: 12px;
+  background: rgba(249, 115, 22, 0.08);
+}
+
+.knowledge-status span,
+.knowledge-card small {
+  color: #64748B;
+  font-size: 12px;
+}
+
+.knowledge-list {
+  display: grid;
+  gap: 10px;
+}
+
+.knowledge-card {
+  border: 1px solid rgba(23, 33, 27, 0.13);
+  border-radius: 16px;
+  padding: 14px;
+  background: var(--surface-solid);
+}
+
+.knowledge-card div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.knowledge-card p {
+  margin: 8px 0 6px;
+  color: #405047;
+  word-break: break-all;
+}
+
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -354,8 +419,15 @@ h2 {
 }
 
 .result-item small {
+  display: block;
   color: #6f796f;
   font-size: 12px;
+}
+
+.reason-line {
+  margin-bottom: 4px;
+  color: #9a4a0d !important;
+  font-weight: 700;
 }
 
 .source-pill {
@@ -494,6 +566,7 @@ h2 {
       "query"
       "results"
       "workflow"
+      "knowledge"
       "case"
       "review";
   }
@@ -519,5 +592,9 @@ h2 {
 
   .result-item div {
     display: block;
+  }
+
+  .knowledge-upload {
+    grid-template-columns: 1fr;
   }
 }

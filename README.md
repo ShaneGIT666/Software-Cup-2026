@@ -51,6 +51,7 @@
 ├── frontend/                 # Web 前端页面、组件、接口调用
 ├── data/
 │   ├── examples/             # 演示样例和种子数据
+│   ├── knowledge/            # 运行期资料入库和知识片段（不提交 Git）
 │   ├── manuals/              # 检修手册和知识资料
 │   └── uploads/              # 开发期上传文件
 ├── deploy/                   # 部署配置和发布材料
@@ -138,15 +139,16 @@ powershell -ExecutionPolicy Bypass -File .\scripts\stop-dev.ps1
 2. FastAPI 后端 API 骨架。
 3. 本地 JSON 样例数据，包括设备、手册、案例和流程。
 4. 检索、流程查看、上传、案例提交、案例审核、审核后再检索的 MVP 闭环。
-5. 前端组件拆分：检索输入、结果列表、作业流程、案例提交、案例审核。
-6. Anaconda 本地环境脚本、前端启动脚本、后端启动脚本和后端测试脚本。
-7. 后端接口测试通过，前端生产构建通过。
-8. Coding Agent 动态交接入口：`docs/project-management/agent-startup-context.md`。
+5. 资料入库 MVP：支持 PDF/TXT/Markdown 上传，生成本地知识片段并进入检索结果。
+6. 前端组件拆分：检索输入、结果列表、作业流程、案例提交、案例审核、资料入库。
+7. Anaconda 本地环境脚本、前端启动脚本、后端启动脚本和后端测试脚本。
+8. 后端接口测试通过，前端生产构建通过。
+9. Coding Agent 动态交接入口：`docs/project-management/agent-startup-context.md`。
 
 下一步建议：
 
-1. 扩展后端边界测试，覆盖非法审核 action、空查询、非法/空上传。
-2. 设计检索排序和来源引用规则，让结果能解释命中原因、来源章节和页码。
+1. 设计检索排序和来源引用规则，让 mock 手册、案例和入库资料都能解释命中原因、来源章节和页码。
+2. 对 Docling、MinerU、PaddleOCR 做小样本验证，记录许可证、依赖体积和国产化兼容风险。
 3. 编写 3 到 5 分钟端到端演示检查清单，包含固定输入和失败兜底。
 4. 同步更新 `development-plan.md` 和 `task-board.md` 的完成状态。
 5. 设计 OpenAI-compatible 模型适配层和 mock 降级策略，先设计接口，不急于接真实模型。

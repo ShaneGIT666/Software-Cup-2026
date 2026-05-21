@@ -7,13 +7,17 @@ export interface ApiResponse<T> {
 export interface SearchResult {
   id: string;
   title: string;
-  sourceType: "manual" | "case";
+  sourceType: "manual" | "case" | "document";
   sourceName: string;
   confidence: number;
   snippet: string;
   workflowId?: string;
   chapter?: string;
   page?: number;
+  documentId?: string;
+  chunkId?: string;
+  matchedTerms?: string[];
+  reason?: string;
 }
 
 export interface SearchPayload {
@@ -134,4 +138,47 @@ export function reviewCase(caseId: string, action: "approve" | "reject", reviewN
     method: "PATCH",
     body: JSON.stringify({ action, reviewNote: reviewNote ?? "" })
   });
+}
+
+export interface KnowledgeChunkPreview {
+  id: string;
+  title: string;
+  sourceName: string;
+  page?: number | null;
+  snippet: string;
+}
+
+export interface KnowledgeDocument {
+  id: string;
+  fileName: string;
+  fileType: string;
+  suffix: string;
+  sourceName: string;
+  status: "indexed" | "needs_parser" | "needs_ocr" | "empty" | string;
+  chunkCount: number;
+  parser: string;
+  uploadedAt: string;
+  url: string;
+  chunks?: KnowledgeChunkPreview[];
+}
+
+export interface KnowledgeDocumentListPayload {
+  items: KnowledgeDocument[];
+  total: number;
+}
+
+export function uploadKnowledgeDocument(file: File, sourceName?: string) {
+  const formData = new FormData();
+  formData.append("file", file);
+  if (sourceName?.trim()) {
+    formData.append("source_name", sourceName.trim());
+  }
+  return request<KnowledgeDocument>("/api/knowledge/documents", {
+    method: "POST",
+    body: formData
+  });
+}
+
+export function fetchKnowledgeDocuments() {
+  return request<KnowledgeDocumentListPayload>("/api/knowledge/documents");
 }

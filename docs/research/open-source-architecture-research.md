@@ -462,3 +462,22 @@ PDF/Markdown/JSON -> 文档解析 -> 切分 -> 元数据标注 -> 向量化 -> C
 25. [openEuler 容器文档](https://docs.openeuler.org/en/docs/24.03_LTS/docs/Container/container.html)
 26. [openEuler 文档中心](https://docs.openeuler.org/)
 
+## 13. 本次资料入库 MVP 的开源参考落地策略
+
+更新日期：2026-05-21。
+
+本次实现只落地“轻量资料入库 MVP”，不直接引入 Docling、MinerU、PaddleOCR、LlamaIndex 或 LangChain 作为运行时依赖。原因是当前项目首先要保证 Windows 本地环境、现有检索闭环和比赛演示稳定，避免大型解析/OCR/RAG 框架在第一步引入依赖安装、模型下载、性能和国产化兼容风险。
+
+当前落地：
+
+1. 自研 `POST /api/knowledge/documents` 入库接口，支持 PDF/TXT/Markdown。
+2. 自研轻量 chunk 切分与 JSON 存储，运行期数据位于 `data/knowledge/`，测试通过 `APP_KNOWLEDGE_DIR` 隔离。
+3. 入库 chunk 作为 `sourceType=document` 接入现有关键词检索，返回来源、页码、片段和命中原因。
+4. PDF 解析器采取可选策略：未安装解析器时返回 `needs_parser`，扫描件返回或预留 `needs_ocr`，不阻断系统运行。
+
+后续替换路线：
+
+1. 文档解析优先评估 [Docling](https://github.com/docling-project/docling) 与 [MinerU](https://github.com/opendatalab/MinerU)，重点验证 PDF 到 Markdown/JSON 的结构保真、中文维修手册表现和 Windows/国产化部署成本。
+2. OCR 优先评估 [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR)，重点验证中文扫描手册、故障图片和 PP-Structure 文档版面分析能力。
+3. RAG ingestion 与索引编排后续评估 [LlamaIndex Ingestion Pipeline](https://docs.llamaindex.ai/en/stable/module_guides/loading/ingestion_pipeline/) 和 [LangChain RAG](https://docs.langchain.com/oss/python/langchain/rag)，但业务代码必须保留可替换边界，避免绑定单一框架。
+4. 真正引入上述依赖前必须补充小样本验证记录：安装命令、解析效果、许可证、模型/依赖体积、离线演示可行性和 LoongArch/银河麒麟风险。

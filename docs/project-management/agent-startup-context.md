@@ -13,6 +13,7 @@
 -> 检索手册片段和历史案例
 -> 查看标准作业流程
 -> 上传现场材料
+-> 上传检修手册等资料并生成本地知识片段
 -> 提交维修经验案例
 -> 审核案例
 -> 审核通过后再次检索命中新案例
@@ -22,15 +23,15 @@
 
 ## 2. 当前仓库状态
 
-最近确认时间：2026-05-20。
+最近确认时间：2026-05-21。
 
 当前分支：`main`。
 
 最近确认状态：
 
-1. 本迭代提交后，本地分支预计领先 `origin/main` 11 个提交。
-2. 当前代码已完成后端可信边界迭代、前端工业控制台风格优化和 Windows 批处理统一启动入口。
-3. 后端测试通过：`12 passed`。
+1. 本地 `main` 已推送并与 `origin/main` 对齐；当前资料入库迭代完成后仍需按团队流程提交。
+2. 当前代码已完成后端可信边界迭代、前端工业控制台风格优化、Windows 批处理统一启动入口和资料入库 MVP。
+3. 后端测试通过：`17 passed`。
 4. 前端构建通过：`vue-tsc -b && vite build`。
 5. 当前 Vite 版本固定为 `7.3.3`。
 
@@ -58,6 +59,7 @@
 2. Pydantic
 3. 本地 JSON 数据
 4. Anaconda Python + 项目本地 `backend/.venv`
+5. 资料入库 MVP 使用本地 JSON 和可选 PDF 解析器，不强依赖大型 RAG/OCR 框架
 
 数据目录：
 
@@ -65,6 +67,8 @@
 2. `data/examples/manuals.json`
 3. `data/examples/repair-cases.json`
 4. `data/examples/workflows.json`
+5. `data/knowledge/documents.json`
+6. `data/knowledge/document-chunks.json`
 
 ## 4. 首次接手必读顺序
 
@@ -84,7 +88,8 @@
 4. `backend/app/schemas.py`
 5. `backend/app/services.py`
 6. `backend/app/data_store.py`
-7. `tests/test_backend_api.py`
+7. `backend/app/knowledge.py`
+8. `tests/test_backend_api.py`
 
 涉及前端时继续读：
 
@@ -115,6 +120,11 @@
 6. `GET /api/cases?status=...`
 7. `PATCH /api/cases/{case_id}/review`
 8. `POST /api/uploads`
+9. `POST /api/knowledge/documents`
+10. `GET /api/knowledge/documents`
+11. `GET /api/knowledge/documents/{document_id}`
+12. `GET /api/knowledge/documents/{document_id}/chunks`
+13. `DELETE /api/knowledge/documents/{document_id}`
 
 前端：
 
@@ -124,13 +134,14 @@
 4. 案例提交区。
 5. 案例审核区。
 6. 图片/PDF 上传入口。
-7. 基础空状态、加载状态、焦点可访问性和 reduced-motion 支持。
-8. 工业控制台风格界面：深色顶部、状态芯片、来源标签、流程元信息和更清晰的卡片层级。
-9. Windows 统一入口：`start-dev.bat` / `stop-dev.bat` 可直接拉起或停止前后端开发服务。
+7. 资料入库面板：上传 PDF/TXT/Markdown，显示解析状态、chunk 数量和解析器策略。
+8. 基础空状态、加载状态、焦点可访问性和 reduced-motion 支持。
+9. 工业控制台风格界面：深色顶部、状态芯片、来源标签、流程元信息和更清晰的卡片层级。
+10. Windows 统一入口：`start-dev.bat` / `stop-dev.bat` 可直接拉起或停止前后端开发服务。
 
 验证：
 
-1. 后端接口测试覆盖健康检查、检索、空查询、流程查询、上传目录配置、上传成功、空文件、非法扩展名、MIME 不匹配、超大文件、案例提交审核再检索闭环和非法审核 action。
+1. 后端接口测试覆盖健康检查、检索、空查询、流程查询、上传目录配置、上传成功、空文件、非法扩展名、MIME 不匹配、超大文件、案例提交审核再检索闭环、非法审核 action、资料入库成功、资料列表、资料详情、chunk 列表、删除资料、资料入库后检索命中和资料入库异常边界。
 2. 前端生产构建通过。
 
 ## 6. 当前主要风险
@@ -141,22 +152,23 @@
 2. 新建案例默认绑定 `wf-001`，多故障类型扩展时需要改为可推断或可选择流程。
 3. 演示材料仍需要从“大纲”升级为“逐步检查清单 + 兜底输入 + 截图点”。
 4. 上传接口已具备 MVP 级类型/大小/空文件/MIME 校验，但仍不是生产级安全方案，不包含鉴权、病毒扫描或对象存储治理。
+5. 资料入库当前是轻量 MVP：TXT/Markdown 可直接解析，PDF 依赖后续可选解析器；扫描 PDF/OCR、向量库和真实 RAG 尚未接入。
 
 中优先级风险：
 
 1. 生产构建存在 chunk size 警告，当前不阻塞 MVP，但后续可优化。
 2. 浏览器插件曾出现 localhost/127.0.0.1 被拦截的情况，必要时用构建和接口测试作为替代验证。
-3. 项目本地分支领先远端，若多人协作需尽快明确 push/分支策略。
+3. 引入 Docling、MinerU、PaddleOCR、LlamaIndex/LangChain 前必须先做小样本验证，避免依赖体积、模型下载和国产化兼容风险拖垮演示。
 
 ## 7. 当前推荐下一步
 
 优先级从高到低：
 
-1. `PLAN-02-01`：设计检索排序和来源引用规则，让结果能解释命中原因、来源章节和页码。
+1. `PLAN-02-01`：继续完善检索排序和来源引用规则，让 mock 手册、案例、入库资料都能解释命中原因、来源章节和页码。
 2. `PLAN-01-07`：编写 3 到 5 分钟端到端演示检查清单，包含固定输入和失败兜底。
 3. `PLAN-02-02 / PLAN-02-03`：设计 OpenAI-compatible 模型适配层和 mock 降级策略，先设计接口，不急于接真实模型。
-4. 继续补充 mock 数据，让至少 3 条演示路径都有手册、案例、流程和验收标准。
-5. 结合真实演示录屏继续微调 UI 细节，避免大规模主题重写。
+4. `PLAN-02-05`：基于 Docling、MinerU、PaddleOCR 做文档解析/OCR 小样本验证，记录许可证、依赖体积和环境风险。
+5. 继续补充 mock 数据和可入库资料样例，让至少 3 条演示路径都有手册、案例、流程和验收标准。
 
 普通 Agent 可执行：
 
@@ -228,7 +240,7 @@ start-dev.bat
 6. 不为了通过测试而删除测试或降低断言。
 7. 不改变当前轻量 B/S 架构，除非获得明确批准。
 8. 不提前扩展完整权限系统、知识图谱、多租户、自动报告生成或生产级多模态诊断。
-9. 测试不得污染 `data/examples/repair-cases.json`，必须使用 `APP_EXAMPLES_DIR` 隔离。
+9. 测试不得污染 `data/examples/repair-cases.json` 或 `data/knowledge/`，必须使用 `APP_EXAMPLES_DIR` 和 `APP_KNOWLEDGE_DIR` 隔离。
 10. 完成任务后更新本文档中对应状态、风险或下一步。
 
 ## 10. 每次任务完成后的动态更新要求
