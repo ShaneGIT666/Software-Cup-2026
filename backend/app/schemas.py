@@ -28,7 +28,7 @@ class RagAnswerRequest(BaseModel):
     deviceModel: str = ""
     faultText: str = ""
     topK: int = Field(default=5, ge=1, le=10)
-    provider: Literal["mock", "openai", "anthropic"] = "mock"
+    provider: Literal["mock", "openai", "anthropic"] | None = None
 
 
 class CaseCreateRequest(BaseModel):

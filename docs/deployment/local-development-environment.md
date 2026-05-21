@@ -39,9 +39,17 @@ DATABASE_URL=sqlite:///./data/app.db
 LLM_PROVIDER=mock
 LLM_API_KEY=
 LLM_BASE_URL=
+OPENAI_API_KEY=
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_MODEL=gpt-4.1-mini
+ANTHROPIC_API_KEY=
+ANTHROPIC_BASE_URL=https://api.anthropic.com/v1
+ANTHROPIC_MODEL=claude-3-5-haiku-latest
+LLM_TIMEOUT_SECONDS=20
 UPLOAD_DIR=./data/uploads
 APP_EXAMPLES_DIR=./data/examples
 APP_UPLOAD_DIR=./data/uploads
+APP_KNOWLEDGE_DIR=./data/knowledge
 ```
 
 原则：
@@ -50,6 +58,7 @@ APP_UPLOAD_DIR=./data/uploads
 2. 提交 `.env.example` 作为模板。
 3. 模型密钥只放本地环境变量或部署环境中。
 4. 默认提供 `mock` 模式，保证无密钥也能演示。
+5. `LLM_PROVIDER=openai` 或 `LLM_PROVIDER=anthropic` 只在对应密钥存在时启用，调用失败会自动降级到 mock。
 
 ## 4. 本地运行目标
 

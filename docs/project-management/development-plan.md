@@ -57,7 +57,7 @@
 | PLAN-02-07 | 入库资料接入现有检索结果 | 重点任务 | B/A | 搜索可命中 `document` 来源，并展示来源、片段和命中原因 |
 | PLAN-02-08 | 新增 Mock RAG 辅助回答接口 | 重点任务 | B/A | 无模型密钥时可基于检索结果返回带 citations 的 fallback 回答 |
 
-阶段 2 当前执行进展：`PLAN-02-04` 已完成图片/PDF 上传入口和后端上传测试；`PLAN-02-06`、`PLAN-02-07` 已完成 MVP 版本，采用轻量本地 JSON 存储，不直接引入重型 RAG/OCR 依赖；`PLAN-02-08` 已完成 mock provider 版本，真实 OpenAI/Anthropic 调用尚未接入；`PLAN-02-01` 仍需继续细化排序规则，`PLAN-02-02`、`PLAN-02-03` 已有接口边界但待真实 provider 实现，`PLAN-02-05` 待后续专项设计。
+阶段 2 当前执行进展：`PLAN-02-04` 已完成图片/PDF 上传入口和后端上传测试；`PLAN-02-06`、`PLAN-02-07` 已完成 MVP 版本，采用轻量本地 JSON 存储，不直接引入重型 RAG/OCR 依赖；`PLAN-02-08` 已完成 mock provider 和可选 OpenAI/Anthropic provider 版本，未配置密钥或调用失败会自动降级；`PLAN-02-01` 仍需继续细化排序规则，`PLAN-02-05` 待后续专项设计。
 
 ## 5. 阶段 3：测试、部署与答辩交付
 

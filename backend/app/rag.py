@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .llm_adapter import mock_rag_answer
+from .llm_adapter import generate_rag_answer
 from .schemas import RagAnswerRequest, SearchRequest
 from .services import search_knowledge
 
@@ -16,7 +16,7 @@ def answer_with_rag(request: RagAnswerRequest) -> dict[str, Any]:
             topK=request.topK,
         )
     )
-    rag_payload = mock_rag_answer(
+    rag_payload = generate_rag_answer(
         device_model=request.deviceModel.strip(),
         fault_text=request.faultText.strip(),
         contexts=search_payload["results"],

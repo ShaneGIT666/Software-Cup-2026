@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import json
 import shutil
+from typing import Any
 
 from fastapi.testclient import TestClient
 
+import backend.app.llm_adapter as llm_adapter
 from backend.app.main import app
 
 
@@ -104,6 +106,91 @@ def test_rag_answer_openai_provider_falls_back_to_mock(tmp_path, monkeypatch) ->
     assert payload["provider"] == "mock"
     assert payload["requestedProvider"] == "openai"
     assert payload["fallback"] is True
+
+
+def test_rag_answer_uses_openai_provider_when_configured(tmp_path, monkeypatch) -> None:
+    def fake_post_json(url: str, headers: dict[str, str], payload: dict[str, Any], timeout: float) -> dict[str, Any]:
+        assert url == "https://example-openai.test/v1/responses"
+        assert headers["Authorization"] == "Bearer test-openai-key"
+        assert payload["model"] == "test-openai-model"
+        assert "启动困难" in payload["input"]
+        assert timeout == 7
+        return {"output_text": "这是 OpenAI provider 返回的检修建议。"}
+
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://example-openai.test/v1")
+    monkeypatch.setenv("OPENAI_MODEL", "test-openai-model")
+    monkeypatch.setenv("LLM_TIMEOUT_SECONDS", "7")
+    monkeypatch.setattr(llm_adapter, "_post_json", fake_post_json)
+    client = make_client(tmp_path, monkeypatch)
+
+    response = client.post(
+        "/api/rag/answer",
+        json={
+            "deviceModel": "发动机-示例型号 A",
+            "faultText": "启动困难",
+            "topK": 2,
+            "provider": "openai",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    assert payload["provider"] == "openai"
+    assert payload["fallback"] is False
+    assert payload["answer"] == "这是 OpenAI provider 返回的检修建议。"
+
+
+def test_rag_answer_uses_anthropic_provider_when_configured(tmp_path, monkeypatch) -> None:
+    def fake_post_json(url: str, headers: dict[str, str], payload: dict[str, Any], timeout: float) -> dict[str, Any]:
+        assert url == "https://example-anthropic.test/v1/messages"
+        assert headers["x-api-key"] == "test-anthropic-key"
+        assert payload["model"] == "test-anthropic-model"
+        assert payload["messages"][0]["role"] == "user"
+        return {"content": [{"type": "text", "text": "这是 Anthropic provider 返回的检修建议。"}]}
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-anthropic-key")
+    monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://example-anthropic.test/v1")
+    monkeypatch.setenv("ANTHROPIC_MODEL", "test-anthropic-model")
+    monkeypatch.setattr(llm_adapter, "_post_json", fake_post_json)
+    client = make_client(tmp_path, monkeypatch)
+
+    response = client.post(
+        "/api/rag/answer",
+        json={
+            "deviceModel": "发动机-示例型号 A",
+            "faultText": "启动困难",
+            "topK": 2,
+            "provider": "anthropic",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    assert payload["provider"] == "anthropic"
+    assert payload["fallback"] is False
+    assert payload["answer"] == "这是 Anthropic provider 返回的检修建议。"
+
+
+def test_rag_answer_uses_environment_provider_when_request_omits_provider(tmp_path, monkeypatch) -> None:
+    def fake_post_json(url: str, headers: dict[str, str], payload: dict[str, Any], timeout: float) -> dict[str, Any]:
+        return {"output_text": "环境变量 provider 生效。"}
+
+    monkeypatch.setenv("LLM_PROVIDER", "openai")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+    monkeypatch.setattr(llm_adapter, "_post_json", fake_post_json)
+    client = make_client(tmp_path, monkeypatch)
+
+    response = client.post(
+        "/api/rag/answer",
+        json={"deviceModel": "发动机-示例型号 A", "faultText": "启动困难", "topK": 2},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    assert payload["provider"] == "openai"
+    assert payload["fallback"] is False
+    assert payload["answer"] == "环境变量 provider 生效。"
 
 
 def test_rag_answer_rejects_empty_query(tmp_path, monkeypatch) -> None:

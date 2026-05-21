@@ -135,10 +135,11 @@ POST /api/rag/answer
 
 说明：
 
-1. 当前迭代只启用 `mock` provider，用于稳定演示“检索上下文 -> 带引用回答”闭环。
-2. `provider` 请求字段允许 `mock`、`openai`、`anthropic`，但 `openai` 和 `anthropic` 当前会降级到 mock provider。
-3. 未配置任何模型密钥时接口仍可用，返回 `fallback: true` 和 `fallbackReason`。
-4. 真实 OpenAI/Anthropic 调用留待后续迭代实现，不在本接口第一版中承诺。
+1. `provider` 请求字段允许 `mock`、`openai`、`anthropic`，不传时读取 `LLM_PROVIDER`，仍未配置则使用 `mock`。
+2. `openai` provider 使用 OpenAI Responses API 形态，读取 `OPENAI_API_KEY`、`OPENAI_BASE_URL`、`OPENAI_MODEL`。
+3. `anthropic` provider 使用 Anthropic Messages API 形态，读取 `ANTHROPIC_API_KEY`、`ANTHROPIC_BASE_URL`、`ANTHROPIC_MODEL`。
+4. 未配置密钥、调用失败、模型返回空内容时自动降级到 mock provider，返回 `fallback: true` 和 `fallbackReason`。
+5. 真实 provider 调用仅作为可选增强，不影响无 Key 演示路径。
 
 请求：
 

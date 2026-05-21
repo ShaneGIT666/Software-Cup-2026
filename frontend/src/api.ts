@@ -206,17 +206,17 @@ export interface RagAnswerPayload {
   provider: string;
   requestedProvider: string;
   fallback: boolean;
-  fallbackReason: string;
+  fallbackReason?: string;
 }
 
-export function requestRagAnswer(deviceModel: string, faultText: string, provider = "mock") {
+export function requestRagAnswer(deviceModel: string, faultText: string, provider?: string) {
   return request<RagAnswerPayload>("/api/rag/answer", {
     method: "POST",
     body: JSON.stringify({
       deviceModel,
       faultText,
       topK: 5,
-      provider
+      ...(provider ? { provider } : {})
     })
   });
 }

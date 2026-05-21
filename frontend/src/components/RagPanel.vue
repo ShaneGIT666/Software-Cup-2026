@@ -61,7 +61,7 @@ function sourceLabel(sourceType: string) {
           <p>{{ citation.snippet }}</p>
         </div>
       </div>
-      <small class="fallback-note">{{ ragAnswer.fallbackReason }}</small>
+      <small v-if="ragAnswer.fallbackReason" class="fallback-note">{{ ragAnswer.fallbackReason }}</small>
     </article>
     <div v-else class="empty-hint">
       <span>先完成检索或入库资料，再生成带引用的辅助建议。</span>
