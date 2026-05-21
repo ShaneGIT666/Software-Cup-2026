@@ -97,11 +97,18 @@ MVP 完成前，优先保证“能打开、能搜索、能看步骤、能提交�
 
 一键启动前后端开发服务：
 
+```bat
+start-dev.bat
+```
+
+或使用 PowerShell 脚本版本：
+
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\start-dev.ps1
 ```
 
-启动脚本会占用当前 PowerShell 窗口，请保持窗口打开。需要停止时按 `Ctrl+C`。
+如果使用 `start-dev.bat`，会自动打开前后端两个独立 PowerShell 窗口。
+如果使用 `scripts/start-dev.ps1`，当前 PowerShell 窗口会被占用，请保持窗口打开，停止时按 `Ctrl+C`。
 
 启动后访问：
 
@@ -110,6 +117,12 @@ http://localhost:5173
 ```
 
 停止后台服务：
+
+```bat
+stop-dev.bat
+```
+
+或使用 PowerShell：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\stop-dev.ps1

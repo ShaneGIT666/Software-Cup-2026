@@ -28,19 +28,19 @@
 
 最近确认状态：
 
-1. 本迭代提交后，本地分支预计领先 `origin/main` 10 个提交。
-2. 当前代码已完成后端可信边界迭代和前端工业控制台风格优化。
+1. 本迭代提交后，本地分支预计领先 `origin/main` 11 个提交。
+2. 当前代码已完成后端可信边界迭代、前端工业控制台风格优化和 Windows 批处理统一启动入口。
 3. 后端测试通过：`12 passed`。
 4. 前端构建通过：`vue-tsc -b && vite build`。
 5. 当前 Vite 版本固定为 `7.3.3`。
 
 最近关键提交：
 
-1. `style: refine industrial cockpit interface`
-2. `74403f3 fix: keep dev startup session alive`
-3. `d762665 fix: harden api validation and upload boundaries`
-4. `0d5ebac docs: add coding agent startup context`
-5. `db21815 feat: add case review panel and handoff guidance`
+1. `chore: add windows batch dev entrypoints`
+2. `style: refine industrial cockpit interface`
+3. `74403f3 fix: keep dev startup session alive`
+4. `d762665 fix: harden api validation and upload boundaries`
+5. `0d5ebac docs: add coding agent startup context`
 
 ## 3. 当前技术栈
 
@@ -126,6 +126,7 @@
 6. 图片/PDF 上传入口。
 7. 基础空状态、加载状态、焦点可访问性和 reduced-motion 支持。
 8. 工业控制台风格界面：深色顶部、状态芯片、来源标签、流程元信息和更清晰的卡片层级。
+9. Windows 统一入口：`start-dev.bat` / `stop-dev.bat` 可直接拉起或停止前后端开发服务。
 
 验证：
 
@@ -207,6 +208,12 @@ npm.cmd install
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\setup-anaconda.ps1
+```
+
+Windows 一键启动：
+
+```bat
+start-dev.bat
 ```
 
 ## 9. 工作规则
