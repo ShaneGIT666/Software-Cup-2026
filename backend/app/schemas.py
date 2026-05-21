@@ -24,6 +24,13 @@ class DiagnosisRequest(BaseModel):
     evidenceIds: list[str] = Field(default_factory=list)
 
 
+class RagAnswerRequest(BaseModel):
+    deviceModel: str = ""
+    faultText: str = ""
+    topK: int = Field(default=5, ge=1, le=10)
+    provider: Literal["mock", "openai", "anthropic"] = "mock"
+
+
 class CaseCreateRequest(BaseModel):
     deviceModel: str
     faultText: str

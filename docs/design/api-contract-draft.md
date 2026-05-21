@@ -127,6 +127,63 @@ POST /api/diagnosis
 }
 ```
 
+## 4.1 RAG 辅助回答
+
+```text
+POST /api/rag/answer
+```
+
+说明：
+
+1. 当前迭代只启用 `mock` provider，用于稳定演示“检索上下文 -> 带引用回答”闭环。
+2. `provider` 请求字段允许 `mock`、`openai`、`anthropic`，但 `openai` 和 `anthropic` 当前会降级到 mock provider。
+3. 未配置任何模型密钥时接口仍可用，返回 `fallback: true` 和 `fallbackReason`。
+4. 真实 OpenAI/Anthropic 调用留待后续迭代实现，不在本接口第一版中承诺。
+
+请求：
+
+```json
+{
+  "deviceModel": "发动机-示例型号 A",
+  "faultText": "启动困难，怠速不稳",
+  "topK": 5,
+  "provider": "mock"
+}
+```
+
+响应：
+
+```json
+{
+  "success": true,
+  "data": {
+    "queryId": "q-001",
+    "summary": "可能与燃油供给、点火系统或进气系统异常有关。",
+    "answer": "基于已检索到的 3 条资料，发动机-示例型号 A 的“启动困难，怠速不稳”优先按来源资料进行排查...",
+    "recommendedActions": [
+      "优先查看引用来源中的手册页码或资料片段，确认安全前置条件。"
+    ],
+    "citations": [
+      {
+        "id": "doc-001",
+        "title": "发动机启动困难检查流程",
+        "sourceType": "manual",
+        "sourceName": "示例检修手册",
+        "snippet": "检查燃油、火花塞、进气管路和怠速控制部件。",
+        "confidence": 0.86,
+        "page": 15,
+        "reason": "命中手册字段：启动困难"
+      }
+    ],
+    "provider": "mock",
+    "requestedProvider": "mock",
+    "fallback": true,
+    "fallbackReason": "当前迭代仅启用 mock provider，真实 OpenAI/Anthropic 调用留待后续接入。"
+  },
+  "message": "当前为 Mock RAG 回答"
+}
+```
+
 响应：
 
 ```json

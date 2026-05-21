@@ -64,6 +64,62 @@ def test_search_rejects_empty_query(tmp_path, monkeypatch) -> None:
     assert "不能同时为空" in payload["message"]
 
 
+def test_rag_answer_returns_mock_response_with_citations(tmp_path, monkeypatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+
+    response = client.post(
+        "/api/rag/answer",
+        json={
+            "deviceModel": "发动机-示例型号 A",
+            "faultText": "启动困难 怠速不稳",
+            "topK": 3,
+            "provider": "mock",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["success"] is True
+    assert payload["data"]["provider"] == "mock"
+    assert payload["data"]["fallback"] is True
+    assert payload["data"]["citations"]
+    assert "基于已检索到" in payload["data"]["answer"]
+
+
+def test_rag_answer_openai_provider_falls_back_to_mock(tmp_path, monkeypatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+
+    response = client.post(
+        "/api/rag/answer",
+        json={
+            "deviceModel": "发动机-示例型号 A",
+            "faultText": "启动困难",
+            "topK": 2,
+            "provider": "openai",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    assert payload["provider"] == "mock"
+    assert payload["requestedProvider"] == "openai"
+    assert payload["fallback"] is True
+
+
+def test_rag_answer_rejects_empty_query(tmp_path, monkeypatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+
+    response = client.post(
+        "/api/rag/answer",
+        json={"deviceModel": " ", "faultText": "", "topK": 3, "provider": "mock"},
+    )
+
+    assert response.status_code == 400
+    payload = response.json()
+    assert payload["success"] is False
+    assert "不能同时为空" in payload["message"]
+
+
 def test_workflow_lookup(tmp_path, monkeypatch) -> None:
     client = make_client(tmp_path, monkeypatch)
     response = client.get("/api/workflows/wf-001")
@@ -275,6 +331,35 @@ def test_knowledge_document_upload_indexes_text_and_is_searchable(tmp_path, monk
     )
     results = search_response.json()["data"]["results"]
     assert any(item["sourceType"] == "document" and item["sourceName"] == "摩托车检修手册" for item in results)
+
+
+def test_rag_answer_uses_ingested_document_citation(tmp_path, monkeypatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    client.post(
+        "/api/knowledge/documents",
+        files={
+            "file": (
+                "motorcycle-manual.md",
+                "摩托车发动机无法启动时，应检查火花塞、高压包和燃油供给。".encode("utf-8"),
+                "text/markdown",
+            )
+        },
+        data={"source_name": "摩托车检修手册"},
+    )
+
+    response = client.post(
+        "/api/rag/answer",
+        json={
+            "deviceModel": "摩托车发动机",
+            "faultText": "无法启动 火花塞",
+            "topK": 5,
+            "provider": "mock",
+        },
+    )
+
+    assert response.status_code == 200
+    citations = response.json()["data"]["citations"]
+    assert any(item["sourceType"] == "document" and item["sourceName"] == "摩托车检修手册" for item in citations)
 
 
 def test_knowledge_documents_list_returns_ingested_items(tmp_path, monkeypatch) -> None:

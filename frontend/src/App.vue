@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { ElMessage } from "element-plus";
-import { fetchWorkflow, searchKnowledge, submitCase, uploadFaultFile, type SearchPayload, type SearchResult, type UploadPayload, type WorkflowPayload } from "./api";
+import { fetchWorkflow, requestRagAnswer, searchKnowledge, submitCase, uploadFaultFile, type RagAnswerPayload, type SearchPayload, type SearchResult, type UploadPayload, type WorkflowPayload } from "./api";
 import CasePanel from "./components/CasePanel.vue";
 import KnowledgePanel from "./components/KnowledgePanel.vue";
 import QueryPanel from "./components/QueryPanel.vue";
+import RagPanel from "./components/RagPanel.vue";
 import ResultsPanel from "./components/ResultsPanel.vue";
 import ReviewPanel from "./components/ReviewPanel.vue";
 import WorkflowPanel from "./components/WorkflowPanel.vue";
@@ -12,12 +13,14 @@ import WorkflowPanel from "./components/WorkflowPanel.vue";
 const deviceModel = ref("发动机-示例型号 A");
 const faultText = ref("启动困难，怠速不稳，排气异常");
 const loading = ref(false);
+const ragLoading = ref(false);
 const submitting = ref(false);
 const uploading = ref(false);
 const searchPayload = ref<SearchPayload | null>(null);
 const selectedWorkflow = ref<WorkflowPayload | null>(null);
 const selectedResult = ref<SearchResult | null>(null);
 const uploadResult = ref<UploadPayload | null>(null);
+const ragAnswer = ref<RagAnswerPayload | null>(null);
 const reviewPanel = ref<InstanceType<typeof ReviewPanel> | null>(null);
 
 const caseForm = ref({
@@ -33,6 +36,7 @@ async function runSearch() {
   loading.value = true;
   selectedWorkflow.value = null;
   selectedResult.value = null;
+  ragAnswer.value = null;
   try {
     searchPayload.value = await searchKnowledge(deviceModel.value, faultText.value);
     const firstWorkflowId = searchPayload.value.results.find((item) => item.workflowId)?.workflowId;
@@ -43,6 +47,18 @@ async function runSearch() {
     ElMessage.error(error instanceof Error ? error.message : "检索失败");
   } finally {
     loading.value = false;
+  }
+}
+
+async function generateRagAnswer() {
+  ragLoading.value = true;
+  try {
+    ragAnswer.value = await requestRagAnswer(deviceModel.value, faultText.value);
+    ElMessage.success("辅助建议已生成");
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : "辅助建议生成失败");
+  } finally {
+    ragLoading.value = false;
   }
 }
 
@@ -101,6 +117,7 @@ runSearch();
           <span><strong>{{ resultCount }}</strong> 条当前结果</span>
           <span><strong>{{ selectedWorkflow?.steps.length ?? 0 }}</strong> 个作业步骤</span>
           <span><strong>{{ uploadResult ? "1" : "0" }}</strong> 份现场材料</span>
+          <span><strong>{{ ragAnswer?.citations.length ?? 0 }}</strong> 条回答引用</span>
         </div>
       </div>
       <div class="status-strip">
@@ -125,6 +142,7 @@ runSearch();
       <ResultsPanel :search-payload="searchPayload" :selected-result="selectedResult" @open-workflow="openWorkflow" />
       <WorkflowPanel :selected-workflow="selectedWorkflow" />
       <KnowledgePanel />
+      <RagPanel :rag-answer="ragAnswer" :loading="ragLoading" @answer="generateRagAnswer" />
       <CasePanel
         v-model:cause="caseForm.cause"
         v-model:solution="caseForm.solution"

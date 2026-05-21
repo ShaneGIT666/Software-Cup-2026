@@ -148,7 +148,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\stop-dev.ps1
 下一步建议：
 
 1. 设计检索排序和来源引用规则，让 mock 手册、案例和入库资料都能解释命中原因、来源章节和页码。
-2. 对 Docling、MinerU、PaddleOCR 做小样本验证，记录许可证、依赖体积和国产化兼容风险。
-3. 编写 3 到 5 分钟端到端演示检查清单，包含固定输入和失败兜底。
+2. 在现有 Mock RAG Adapter 边界上接入真实 OpenAI/Anthropic provider，并保留无 Key 降级策略。
+3. 对 Docling、MinerU、PaddleOCR 做小样本验证，记录许可证、依赖体积和国产化兼容风险。
 4. 同步更新 `development-plan.md` 和 `task-board.md` 的完成状态。
-5. 设计 OpenAI-compatible 模型适配层和 mock 降级策略，先设计接口，不急于接真实模型。
+5. 继续完善 `docs/product/demo-checklist.md`，补充截图点和预录视频脚本。

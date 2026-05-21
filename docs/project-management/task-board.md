@@ -40,6 +40,7 @@
 | DEMO-01 | 演示脚本第一版 | C | Todo | 演示步骤 |
 | BE-03 | 后端可信边界测试 | B/C | Done | 12 个接口测试，覆盖非法审核、空查询、上传类型/大小/空文件/MIME 边界 |
 | BE-04 | 资料入库 MVP | B/A | Done | `POST /api/knowledge/documents`、资料列表、chunk 检索、前端资料入库面板 |
+| BE-05 | Mock RAG 辅助回答 | B/A | Done | `POST /api/rag/answer`，无 Key 返回带 citations 的 fallback 回答 |
 
 ## 4. 阻塞项记录
 

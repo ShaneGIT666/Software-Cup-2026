@@ -18,7 +18,8 @@ from .knowledge import (
     list_knowledge_document_chunks,
     list_knowledge_documents,
 )
-from .schemas import ApiResponse, CaseCreateRequest, CaseReviewRequest, DiagnosisRequest, SearchRequest
+from .rag import answer_with_rag
+from .schemas import ApiResponse, CaseCreateRequest, CaseReviewRequest, DiagnosisRequest, RagAnswerRequest, SearchRequest
 from .services import create_repair_case, find_workflow, list_repair_cases, review_repair_case, search_knowledge
 
 
@@ -97,6 +98,11 @@ def diagnosis(request: DiagnosisRequest) -> ApiResponse:
         },
         message="当前为模拟诊断结果",
     )
+
+
+@app.post("/api/rag/answer", response_model=ApiResponse)
+def rag_answer(request: RagAnswerRequest) -> ApiResponse:
+    return ApiResponse(data=answer_with_rag(request), message="当前为 Mock RAG 回答")
 
 
 @app.get("/api/workflows/{workflow_id}", response_model=ApiResponse)

@@ -182,3 +182,41 @@ export function uploadKnowledgeDocument(file: File, sourceName?: string) {
 export function fetchKnowledgeDocuments() {
   return request<KnowledgeDocumentListPayload>("/api/knowledge/documents");
 }
+
+export interface RagCitation {
+  id: string;
+  title: string;
+  sourceType: "manual" | "case" | "document";
+  sourceName: string;
+  snippet: string;
+  confidence: number;
+  page?: number | null;
+  chapter?: string | null;
+  documentId?: string;
+  chunkId?: string;
+  reason?: string;
+}
+
+export interface RagAnswerPayload {
+  queryId: string;
+  summary: string;
+  answer: string;
+  recommendedActions: string[];
+  citations: RagCitation[];
+  provider: string;
+  requestedProvider: string;
+  fallback: boolean;
+  fallbackReason: string;
+}
+
+export function requestRagAnswer(deviceModel: string, faultText: string, provider = "mock") {
+  return request<RagAnswerPayload>("/api/rag/answer", {
+    method: "POST",
+    body: JSON.stringify({
+      deviceModel,
+      faultText,
+      topK: 5,
+      provider
+    })
+  });
+}

@@ -29,9 +29,9 @@
 
 最近确认状态：
 
-1. 本地 `main` 已推送并与 `origin/main` 对齐；当前资料入库迭代完成后仍需按团队流程提交。
-2. 当前代码已完成后端可信边界迭代、前端工业控制台风格优化、Windows 批处理统一启动入口和资料入库 MVP。
-3. 后端测试通过：`17 passed`。
+1. 本迭代提交后，本地 `main` 预计领先 `origin/main` 2 个提交。
+2. 当前代码已完成后端可信边界迭代、前端工业控制台风格优化、Windows 批处理统一启动入口、资料入库 MVP 和 Mock RAG 辅助回答。
+3. 后端测试通过：`24 passed`。
 4. 前端构建通过：`vue-tsc -b && vite build`。
 5. 当前 Vite 版本固定为 `7.3.3`。
 
@@ -39,9 +39,9 @@
 
 1. `chore: add windows batch dev entrypoints`
 2. `style: refine industrial cockpit interface`
-3. `74403f3 fix: keep dev startup session alive`
-4. `d762665 fix: harden api validation and upload boundaries`
-5. `0d5ebac docs: add coding agent startup context`
+3. `feat: add knowledge document ingestion and management APIs`
+4. `feat: add mock rag answer workflow`
+5. `d762665 fix: harden api validation and upload boundaries`
 
 ## 3. 当前技术栈
 
@@ -125,6 +125,7 @@
 11. `GET /api/knowledge/documents/{document_id}`
 12. `GET /api/knowledge/documents/{document_id}/chunks`
 13. `DELETE /api/knowledge/documents/{document_id}`
+14. `POST /api/rag/answer`
 
 前端：
 
@@ -135,20 +136,21 @@
 5. 案例审核区。
 6. 图片/PDF 上传入口。
 7. 资料入库面板：上传 PDF/TXT/Markdown，显示解析状态、chunk 数量和解析器策略。
-8. 基础空状态、加载状态、焦点可访问性和 reduced-motion 支持。
-9. 工业控制台风格界面：深色顶部、状态芯片、来源标签、流程元信息和更清晰的卡片层级。
-10. Windows 统一入口：`start-dev.bat` / `stop-dev.bat` 可直接拉起或停止前后端开发服务。
+8. RAG 辅助建议面板：基于当前检索上下文生成 Mock 回答，展示引用来源和 fallback 状态。
+9. 基础空状态、加载状态、焦点可访问性和 reduced-motion 支持。
+10. 工业控制台风格界面：深色顶部、状态芯片、来源标签、流程元信息和更清晰的卡片层级。
+11. Windows 统一入口：`start-dev.bat` / `stop-dev.bat` 可直接拉起或停止前后端开发服务。
 
 验证：
 
-1. 后端接口测试覆盖健康检查、检索、空查询、流程查询、上传目录配置、上传成功、空文件、非法扩展名、MIME 不匹配、超大文件、案例提交审核再检索闭环、非法审核 action、资料入库成功、资料列表、资料详情、chunk 列表、删除资料、资料入库后检索命中和资料入库异常边界。
+1. 后端接口测试覆盖健康检查、检索、空查询、流程查询、上传目录配置、上传成功、空文件、非法扩展名、MIME 不匹配、超大文件、案例提交审核再检索闭环、非法审核 action、资料入库成功、资料列表、资料详情、chunk 列表、删除资料、资料入库后检索命中、Mock RAG 回答、provider 降级和资料 citation 边界。
 2. 前端生产构建通过。
 
 ## 6. 当前主要风险
 
 高优先级风险：
 
-1. 检索仍是关键词匹配，摘要是固定文案，真实 RAG/LLM 能力尚未接入。
+1. 检索仍是关键词匹配；RAG 回答当前为 mock provider，真实 OpenAI/Anthropic 调用尚未接入。
 2. 新建案例默认绑定 `wf-001`，多故障类型扩展时需要改为可推断或可选择流程。
 3. 演示材料仍需要从“大纲”升级为“逐步检查清单 + 兜底输入 + 截图点”。
 4. 上传接口已具备 MVP 级类型/大小/空文件/MIME 校验，但仍不是生产级安全方案，不包含鉴权、病毒扫描或对象存储治理。
@@ -166,7 +168,7 @@
 
 1. `PLAN-02-01`：继续完善检索排序和来源引用规则，让 mock 手册、案例、入库资料都能解释命中原因、来源章节和页码。
 2. `PLAN-01-07`：编写 3 到 5 分钟端到端演示检查清单，包含固定输入和失败兜底。
-3. `PLAN-02-02 / PLAN-02-03`：设计 OpenAI-compatible 模型适配层和 mock 降级策略，先设计接口，不急于接真实模型。
+3. `PLAN-02-02 / PLAN-02-03`：在现有 mock adapter 边界上实现真实 OpenAI/Anthropic provider，并保留无 Key 降级策略。
 4. `PLAN-02-05`：基于 Docling、MinerU、PaddleOCR 做文档解析/OCR 小样本验证，记录许可证、依赖体积和环境风险。
 5. 继续补充 mock 数据和可入库资料样例，让至少 3 条演示路径都有手册、案例、流程和验收标准。
 
