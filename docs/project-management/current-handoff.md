@@ -33,6 +33,20 @@ E:/Download/Downloads/摩托车发动机维修手册.pdf
 5. `POST /api/knowledge/graph` 基于当前查询和检索结果生成轻量知识关系网络。
 6. `backend/app/knowledge_graph.py` 将设备、故障、资料、案例、流程、来源和 provider 组织为节点与关系。
 
+2026-05-26 补充：
+
+1. 新增 `GET /api/providers/status`，用于确认 RAG 与多模态 provider 的当前运行状态。
+2. 新增 `REMOTE_API_MODE=auto|off` 弱网兜底开关；`off` 时强制使用本地 mock，不访问外网。
+3. 前端顶部状态条会显示“云端增强 / 本地 mock 兜底 / 离线兜底模式”。
+4. `openai` provider 新增 `OPENAI_API_STYLE=chat_completions`，用于接入 OpenAI-compatible 文本模型网关；默认仍为 `responses`。
+
+2026-05-26 前端视觉大改补充：
+
+1. 前端 Web GUI 调整为“比赛级工业检修指挥台”风格：深色态势首屏 + 浅色任务卡片 + 演示流程胶囊。
+2. 全量修复主要前端组件可见中文乱码，覆盖首页、检索、作业流程、资料入库、RAG、关系网络、案例提交和审核。
+3. 样式系统统一为语义化 CSS tokens，并强化 44px 触控目标、focus-visible、reduced-motion、loading card 和移动端单列布局。
+4. 本轮不改变 API、数据模型、路由或后端逻辑；只增强比赛演示可理解性和视觉可信度。
+
 前端新增或扩展：
 1. `KnowledgePanel.vue` 支持图片资料上传、待多模态分析状态、多模态分析按钮和分析摘要展示。
 2. `KnowledgeGraphPanel.vue` 展示当前查询的轻量知识关系网络。

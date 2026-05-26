@@ -151,10 +151,11 @@ POST /api/rag/answer
 说明：
 
 1. `provider` 请求字段允许 `mock`、`openai`、`anthropic`，不传时读取 `LLM_PROVIDER`，仍未配置则使用 `mock`。
-2. `openai` provider 使用 OpenAI Responses API 形态，读取 `OPENAI_API_KEY`、`OPENAI_BASE_URL`、`OPENAI_MODEL`。
+2. `openai` provider 默认使用 OpenAI Responses API 形态，读取 `OPENAI_API_KEY`、`OPENAI_BASE_URL`、`OPENAI_MODEL`。
 3. `anthropic` provider 使用 Anthropic Messages API 形态，读取 `ANTHROPIC_API_KEY`、`ANTHROPIC_BASE_URL`、`ANTHROPIC_MODEL`。
 4. 未配置密钥、调用失败、模型返回空内容时自动降级到 mock provider，返回 `fallback: true` 和 `fallbackReason`。
 5. 真实 provider 调用仅作为可选增强，不影响无 Key 演示路径。
+6. 若第三方服务兼容 OpenAI Chat Completions，可设置 `OPENAI_API_STYLE=chat_completions`，此时请求路径为 `{OPENAI_BASE_URL}/chat/completions`。
 
 请求：
 
@@ -611,6 +612,76 @@ POST /api/knowledge/documents/{documentId}/analyze
 | `analyzed` | 多模态分析完成，并已生成可检索知识片段 |
 
 ## 12. 轻量知识关系网络
+
+## 13. Provider 状态与弱网兜底
+
+```text
+GET /api/providers/status
+```
+
+说明：
+
+1. 用于前端和演示人员确认当前 RAG 与多模态能力处于“云端增强”还是“本地兜底”。
+2. `REMOTE_API_MODE=auto` 时，系统优先尝试真实 `openai/anthropic` provider，失败后自动降级到 `mock`。
+3. `REMOTE_API_MODE=off` 时，系统不访问外网，RAG 与多模态分析均强制使用本地 mock 结果，适合比赛现场网络不佳时演示。
+4. `keyConfigured` 仅表示环境变量中存在 Key，不代表真实网络或额度已验收。
+
+响应示例：
+
+```json
+{
+  "success": true,
+  "data": {
+    "remoteApiMode": "auto",
+    "offlineFallback": false,
+    "llm": {
+      "provider": "mock",
+      "remoteCapable": false,
+      "keyConfigured": false,
+      "effectiveProvider": "mock",
+      "lastFallbackReason": ""
+    },
+    "multimodal": {
+      "provider": "mock",
+      "remoteCapable": false,
+      "keyConfigured": false,
+      "effectiveProvider": "mock",
+      "lastFallbackReason": ""
+    }
+  },
+  "message": ""
+}
+```
+
+相关环境变量：
+
+```env
+REMOTE_API_MODE=auto
+PROVIDER_RETRY_COUNT=1
+PROVIDER_BACKOFF_SECONDS=0.5
+LLM_TIMEOUT_SECONDS=20
+MULTIMODAL_TIMEOUT_SECONDS=30
+OPENAI_API_STYLE=responses
+```
+
+OpenAI-compatible RAG 接入示例：
+
+```env
+LLM_PROVIDER=openai
+OPENAI_API_KEY=your-compatible-provider-key
+OPENAI_BASE_URL=https://api.example.com/v1
+OPENAI_MODEL=provider-model-name
+OPENAI_API_STYLE=chat_completions
+REMOTE_API_MODE=auto
+```
+
+说明：DeepSeek、Qwen/DashScope 兼容模式、SiliconFlow、火山方舟等服务若提供 OpenAI Chat Completions 兼容接口，可按上述方式接入 RAG 文本回答。多模态 PDF/图片输入在不同厂商之间差异较大，当前仍优先使用 OpenAI Responses 或 Anthropic Messages 的已封装路径，未实测前不要承诺所有兼容网关都支持多模态入库分析。
+
+错误和 fallback 约定：
+
+1. 真实 provider 缺少 Key、网络超时、HTTP 错误、响应为空或解析失败时，业务接口保持成功响应并返回 `fallback: true`。
+2. `fallbackReason` 必须说明实际降级原因，前端可直接展示给演示者。
+3. 本策略不替代生产级 SLA、熔断中心或监控系统，仅作为比赛 MVP 的弱网兜底边界。
 
 ```text
 POST /api/knowledge/graph

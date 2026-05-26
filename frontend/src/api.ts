@@ -62,6 +62,21 @@ export interface WorkflowPayload {
   acceptanceCriteria: string[];
 }
 
+export interface ProviderChannelStatus {
+  provider: string;
+  remoteCapable: boolean;
+  keyConfigured: boolean;
+  effectiveProvider: string;
+  lastFallbackReason: string;
+}
+
+export interface ProviderStatusPayload {
+  remoteApiMode: "auto" | "off" | string;
+  offlineFallback: boolean;
+  llm: ProviderChannelStatus;
+  multimodal: ProviderChannelStatus;
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const isFormData = options?.body instanceof FormData;
   const response = await fetch(path, {
@@ -94,6 +109,10 @@ export function searchKnowledge(deviceModel: string, faultText: string) {
 
 export function fetchWorkflow(workflowId: string) {
   return request<WorkflowPayload>(`/api/workflows/${workflowId}`);
+}
+
+export function fetchProviderStatus() {
+  return request<ProviderStatusPayload>("/api/providers/status");
 }
 
 export function submitCase(payload: {

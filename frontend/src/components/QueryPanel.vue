@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Upload, Search } from "@lucide/vue";
+import { Search, Upload } from "@lucide/vue";
 import type { UploadPayload } from "../api";
 
 defineProps<{
@@ -30,20 +30,27 @@ function handleFileChange(event: Event) {
 </script>
 
 <template>
-  <aside class="query-panel">
+  <aside class="query-panel panel-accent">
     <div class="section-title">
       <Search :size="18" />
-      <span>检索输入</span>
+      <span>故障输入</span>
     </div>
+    <p class="panel-note">输入设备型号与现场现象，系统会检索手册、案例和已入库资料，并给出可解释证据。</p>
+
     <el-form label-position="top">
       <el-form-item label="设备型号">
-        <el-input :model-value="deviceModel" @update:model-value="emit('update:deviceModel', String($event))" />
+        <el-input
+          :model-value="deviceModel"
+          placeholder="例如：发动机-示例型号 A"
+          @update:model-value="emit('update:deviceModel', String($event))"
+        />
       </el-form-item>
       <el-form-item label="故障现象">
         <el-input
           :model-value="faultText"
           type="textarea"
           :rows="5"
+          placeholder="例如：启动困难，怠速不稳，排气异常"
           @update:model-value="emit('update:faultText', String($event))"
         />
       </el-form-item>
@@ -54,7 +61,7 @@ function handleFileChange(event: Event) {
         </el-button>
         <label class="upload-button" :class="{ disabled: uploading }">
           <Upload :size="16" />
-          <span>{{ uploading ? "上传中" : "上传材料" }}</span>
+          <span>{{ uploading ? "上传中" : "上传现场材料" }}</span>
           <input type="file" accept="image/*,.pdf" :disabled="uploading" @change="handleFileChange" />
         </label>
       </div>
@@ -68,11 +75,11 @@ function handleFileChange(event: Event) {
     <div class="metric-grid">
       <div>
         <strong>{{ resultCount }}</strong>
-        <span>条结果</span>
+        <span>证据结果</span>
       </div>
       <div>
         <strong>{{ stepCount }}</strong>
-        <span>个步骤</span>
+        <span>流程步骤</span>
       </div>
     </div>
   </aside>

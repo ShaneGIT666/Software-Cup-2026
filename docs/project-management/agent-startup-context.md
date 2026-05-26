@@ -306,3 +306,39 @@ start-dev.bat
 3. 让演示脚本更稳定。
 4. 让文档状态与代码状态一致。
 5. 让 UI 更像工业检修辅助系统，而不是普通 CRUD 面板。
+
+## 13. 2026-05-26 更新：弱网 API 兜底
+
+本轮新增统一 provider 兜底策略：
+
+1. `.env.example` 新增 `REMOTE_API_MODE=auto|off`、`PROVIDER_RETRY_COUNT`、`PROVIDER_BACKOFF_SECONDS` 和 `LLM_TIMEOUT_SECONDS`。
+2. `GET /api/providers/status` 可查看 RAG 与多模态 provider 的当前配置、Key 是否存在、实际生效 provider 和最近 fallback 原因。
+3. `REMOTE_API_MODE=off` 时，系统强制使用本地 mock provider，不访问外网，适合比赛现场网络差或无 Key 的兜底演示。
+4. `REMOTE_API_MODE=auto` 时，真实 OpenAI/Anthropic provider 调用失败会自动降级到 mock，接口仍返回 `fallback=true` 和 `fallbackReason`。
+5. 前端顶部状态条会显示“云端增强 / 本地 mock 兜底 / 离线兜底模式”，RAG 与多模态结果继续展示降级说明。
+
+后续 Agent 注意：
+
+1. 不要把 `keyConfigured=true` 理解为真实 API 已验收，它只表示环境变量存在。
+2. 真实 API 验收必须单独记录模型、请求大小、超时、失败率和费用风险。
+3. 弱网兜底是比赛 MVP 的可靠性策略，不是生产级熔断、监控或 SLA 系统。
+
+## 14. 2026-05-26 更新：OpenAI-compatible 文本模型接入
+
+本轮增强 `openai` provider 的 RAG 文本回答兼容性：
+
+1. 默认 `OPENAI_API_STYLE=responses`，继续使用 OpenAI 官方 Responses API 路径。
+2. 设置 `OPENAI_API_STYLE=chat_completions` 时，RAG 文本回答会请求 `{OPENAI_BASE_URL}/chat/completions`。
+3. DeepSeek、Qwen/DashScope 兼容模式、SiliconFlow、火山方舟等 OpenAI-compatible 服务可通过 `OPENAI_BASE_URL`、`OPENAI_MODEL` 和 `OPENAI_API_STYLE=chat_completions` 尝试接入。
+4. 该增强当前只覆盖 RAG 文本回答；多模态 PDF/图片输入在不同厂商之间差异较大，仍以 OpenAI Responses 或 Anthropic Messages 封装为主。
+5. 未使用真实 Key 联网验收前，只能宣称“接口格式已兼容”，不能宣称“某厂商模型已通过端到端验收”。
+
+## 15. 2026-05-26 更新：前端视觉大改
+
+本轮前端从普通信息面板升级为“比赛级工业检修指挥台”：
+
+1. `frontend/src/App.vue` 首屏改为系统态势总览，展示证据命中、作业步骤、资料节点和 RAG 引用数量。
+2. 主工作区按演示路径组织：故障输入、证据检索、标准作业、资料入库、RAG 建议、知识关系、经验沉淀、审核入库。
+3. `frontend/src/styles.css` 重建语义化视觉 token，采用深色指挥中心 + 浅色任务卡片风格，保留工业绿色和安全橙。
+4. 前端主要可见文案已修复为清晰中文，避免比赛现场出现乱码。
+5. 本轮未新增 UI 框架、未新增路由、未改变 API 调用方式。

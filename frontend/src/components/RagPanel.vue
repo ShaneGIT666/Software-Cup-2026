@@ -22,24 +22,27 @@ function sourceLabel(sourceType: string) {
 </script>
 
 <template>
-  <section class="rag-panel">
+  <section class="rag-panel panel-highlight">
     <div class="section-title">
       <Bot :size="18" />
       <span>RAG 辅助建议</span>
     </div>
-    <p class="panel-note">基于当前检索结果生成带引用的 Mock 回答。无模型密钥也可演示，后续可替换为 OpenAI/Anthropic Provider。</p>
+    <p class="panel-note">
+      基于当前检索证据生成带引用的检修建议。网络或 Key 不可用时，会使用本地兜底结果，保证演示不断链。
+    </p>
 
     <div class="action-row">
       <el-button type="primary" :loading="loading" @click="emit('answer')">
         <Bot :size="16" />
         生成辅助建议
       </el-button>
-      <el-tag v-if="ragAnswer?.fallback" type="warning">Mock 降级</el-tag>
+      <el-tag v-if="ragAnswer?.fallback" type="warning">本地兜底</el-tag>
+      <el-tag v-if="ragAnswer && !ragAnswer.fallback" type="success">云端增强</el-tag>
       <el-tag v-if="ragAnswer" type="info">{{ ragAnswer.provider }} / requested {{ ragAnswer.requestedProvider }}</el-tag>
     </div>
 
-    <div v-if="loading" class="loading-hint">
-      <span>正在组织检索上下文...</span>
+    <div v-if="loading" class="loading-hint processing-card">
+      <span>正在组织检索上下文、引用来源和检修建议...</span>
     </div>
     <article v-else-if="ragAnswer" class="rag-answer">
       <p>{{ ragAnswer.answer }}</p>
@@ -68,7 +71,7 @@ function sourceLabel(sourceType: string) {
       <small v-if="ragAnswer.fallbackReason" class="fallback-note">{{ ragAnswer.fallbackReason }}</small>
     </article>
     <div v-else class="empty-hint">
-      <span>先完成检索或入库资料，再生成带引用的辅助建议。</span>
+      <span>先完成检索或资料入库，再生成带引用的辅助建议。</span>
     </div>
   </section>
 </template>

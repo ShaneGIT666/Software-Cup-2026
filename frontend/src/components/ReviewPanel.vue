@@ -15,7 +15,7 @@ async function loadCases() {
     cases.value = (await fetchCases("pending_review")).items;
     loaded.value = true;
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : "加载待审核案例失败");
+    ElMessage.error(error instanceof Error ? error.message : "待审核案例加载失败");
   } finally {
     loading.value = false;
   }
@@ -26,7 +26,7 @@ async function handleReview(caseItem: CaseItem, action: "approve" | "reject") {
   try {
     await ElMessageBox.confirm(
       `确认${label}案例「${caseItem.faultTitle}」？`,
-      `审核${label}`,
+      `案例审核：${label}`,
       { confirmButtonText: label, cancelButtonText: "取消", type: action === "approve" ? "success" : "warning" }
     );
   } catch {
@@ -52,20 +52,21 @@ defineExpose({ loadCases });
   <section class="review-panel">
     <div class="section-title">
       <Eye :size="18" />
-      <span>案例审核</span>
+      <span>审核入库</span>
       <el-button size="small" :loading="loading" @click="loadCases">刷新</el-button>
     </div>
+    <p class="panel-note">审核一线经验，控制知识入库质量。通过后的案例会进入后续检索和 RAG 引用链路。</p>
 
     <div v-if="!loaded && !loading" class="empty-hint">
-      <span>点击「刷新」加载待审核案例</span>
+      <span>点击“刷新”加载待审核案例。</span>
     </div>
 
-    <div v-if="loading" class="loading-hint">
-      <span>加载待审核案例中...</span>
+    <div v-if="loading" class="loading-hint processing-card">
+      <span>正在加载待审核案例...</span>
     </div>
 
     <div v-if="loaded && !loading && cases.length === 0" class="empty-hint">
-      <span>暂无待审核案例</span>
+      <span>暂无待审核案例。</span>
     </div>
 
     <div v-if="loaded && !loading && cases.length > 0" class="review-list">

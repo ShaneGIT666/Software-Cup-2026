@@ -20,6 +20,7 @@ from .knowledge import (
     list_knowledge_documents,
 )
 from .knowledge_graph import build_knowledge_graph
+from .provider_policy import provider_status
 from .rag import answer_with_rag
 from .schemas import (
     ApiResponse,
@@ -90,6 +91,11 @@ async def request_validation_exception_handler(_: Any, exc: RequestValidationErr
 @app.get("/api/health", response_model=ApiResponse)
 def health() -> ApiResponse:
     return ApiResponse(data={"status": "ok", "version": app.version})
+
+
+@app.get("/api/providers/status", response_model=ApiResponse)
+def get_provider_status() -> ApiResponse:
+    return ApiResponse(data=provider_status())
 
 
 @app.post("/api/search", response_model=ApiResponse)

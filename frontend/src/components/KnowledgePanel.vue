@@ -17,7 +17,7 @@ function statusText(status: string) {
     analyzed: "多模态已分析",
     analyzing: "分析中",
     needs_multimodal_analysis: "待多模态分析",
-    needs_parser: "待安装解析器",
+    needs_parser: "待解析器",
     needs_ocr: "待 OCR",
     empty: "无可解析文本"
   };
@@ -88,19 +88,26 @@ defineExpose({ loadDocuments });
 </script>
 
 <template>
-  <section class="knowledge-panel">
+  <section class="knowledge-panel panel-highlight">
     <div class="section-title">
       <Database :size="18" />
-      <span>资料知识库</span>
+      <span>资料入库</span>
     </div>
-    <p class="panel-note">上传 PDF、TXT、Markdown 或图片资料。系统优先解析本地文本，扫描 PDF 和图片可通过多模态分析生成可检索知识片段。</p>
+    <p class="panel-note">
+      上传 PDF、TXT、Markdown 或图片资料。系统优先解析本地文本，扫描 PDF 和图片可通过多模态分析生成可检索知识片段。
+    </p>
 
     <div class="knowledge-upload">
-      <el-input v-model="sourceName" placeholder="资料来源名称，例如：摩托车检修手册" />
+      <el-input v-model="sourceName" placeholder="资料来源名称，例如：摩托车维修手册" />
       <label class="upload-button knowledge-upload-button" :class="{ disabled: uploading }">
         <UploadCloud :size="16" />
         <span>{{ uploading ? "入库中" : "上传资料" }}</span>
-        <input type="file" accept=".pdf,.txt,.md,.jpg,.jpeg,.png,.webp,text/plain,text/markdown,application/pdf,image/jpeg,image/png,image/webp" :disabled="uploading" @change="handleFileChange" />
+        <input
+          type="file"
+          accept=".pdf,.txt,.md,.jpg,.jpeg,.png,.webp,text/plain,text/markdown,application/pdf,image/jpeg,image/png,image/webp"
+          :disabled="uploading"
+          @change="handleFileChange"
+        />
       </label>
     </div>
 
@@ -108,9 +115,10 @@ defineExpose({ loadDocuments });
       <strong>{{ lastUploaded.fileName }}</strong>
       <span>{{ statusText(lastUploaded.status) }} · {{ lastUploaded.chunkCount }} 个片段 · {{ lastUploaded.parser }}</span>
       <p v-if="lastUploaded.analysis?.summary">{{ lastUploaded.analysis.summary }}</p>
+      <small v-if="lastUploaded.analysis?.fallbackReason" class="fallback-note">{{ lastUploaded.analysis.fallbackReason }}</small>
     </div>
 
-    <div v-if="loading" class="loading-hint">
+    <div v-if="loading" class="loading-hint processing-card">
       <span>正在读取资料库...</span>
     </div>
     <div v-else-if="documents.length" class="knowledge-list">
@@ -122,6 +130,7 @@ defineExpose({ loadDocuments });
         <p>{{ document.fileName }}</p>
         <small>{{ document.chunkCount }} 个片段 · {{ document.parser }} · {{ document.uploadedAt }}</small>
         <p v-if="document.analysis?.summary" class="knowledge-analysis-summary">{{ document.analysis.summary }}</p>
+        <small v-if="document.analysis?.fallbackReason" class="fallback-note">{{ document.analysis.fallbackReason }}</small>
         <div v-if="document.analysis?.keyComponents?.length" class="knowledge-tags">
           <el-tag v-for="item in document.analysis.keyComponents" :key="item" size="small" effect="plain">{{ item }}</el-tag>
         </div>
@@ -140,7 +149,7 @@ defineExpose({ loadDocuments });
       </article>
     </div>
     <div v-else class="empty-hint">
-      <span>尚未入库资料。建议先上传一份摩托车检修手册 PDF 或 Markdown 摘要。</span>
+      <span>尚未入库资料。建议先上传一份检修手册 PDF 或 Markdown 摘要。</span>
     </div>
   </section>
 </template>

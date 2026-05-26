@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import os
+import time
 from typing import Any
 
 import httpx
 
+from .provider_policy import configured_llm_provider, record_fallback, remote_api_disabled
+
 
 def configured_provider(requested_provider: str | None) -> str:
-    return (requested_provider or os.getenv("LLM_PROVIDER") or "mock").lower()
+    return configured_llm_provider(requested_provider)
 
 
 def citation_from_result(result: dict[str, Any]) -> dict[str, Any]:
@@ -91,9 +94,19 @@ def build_context_prompt(device_model: str, fault_text: str, contexts: list[dict
 
 
 def _post_json(url: str, headers: dict[str, str], payload: dict[str, Any], timeout: float) -> dict[str, Any]:
-    response = httpx.post(url, headers=headers, json=payload, timeout=timeout)
-    response.raise_for_status()
-    return response.json()
+    retry_count = max(0, int(os.getenv("PROVIDER_RETRY_COUNT", "1")))
+    backoff_seconds = max(0.0, float(os.getenv("PROVIDER_BACKOFF_SECONDS", "0.5")))
+    last_error: Exception | None = None
+    for attempt in range(retry_count + 1):
+        try:
+            response = httpx.post(url, headers=headers, json=payload, timeout=timeout)
+            response.raise_for_status()
+            return response.json()
+        except Exception as exc:  # pragma: no cover - network details vary by provider
+            last_error = exc
+            if attempt < retry_count and backoff_seconds:
+                time.sleep(backoff_seconds)
+    raise RuntimeError(str(last_error) if last_error else "provider request failed")
 
 
 def parse_openai_response(payload: dict[str, Any]) -> str:
@@ -108,6 +121,20 @@ def parse_openai_response(payload: dict[str, Any]) -> str:
             if isinstance(text, str):
                 parts.append(text)
     return "\n".join(parts).strip()
+
+
+def parse_openai_chat_response(payload: dict[str, Any]) -> str:
+    choices = payload.get("choices", [])
+    if not choices:
+        return ""
+    message = choices[0].get("message", {})
+    content = message.get("content", "")
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        parts = [item.get("text", "") for item in content if isinstance(item, dict)]
+        return "\n".join(part for part in parts if part).strip()
+    return ""
 
 
 def parse_anthropic_response(payload: dict[str, Any]) -> str:
@@ -136,13 +163,23 @@ def real_rag_answer(
             raise RuntimeError("OPENAI_API_KEY 未配置")
         base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
         model = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
-        payload = _post_json(
-            f"{base_url}/responses",
-            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-            payload={"model": model, "input": prompt},
-            timeout=timeout,
-        )
-        answer = parse_openai_response(payload)
+        api_style = os.getenv("OPENAI_API_STYLE", "responses").strip().lower()
+        if api_style == "chat_completions":
+            payload = _post_json(
+                f"{base_url}/chat/completions",
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                payload={"model": model, "messages": [{"role": "user", "content": prompt}]},
+                timeout=timeout,
+            )
+            answer = parse_openai_chat_response(payload)
+        else:
+            payload = _post_json(
+                f"{base_url}/responses",
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                payload={"model": model, "input": prompt},
+                timeout=timeout,
+            )
+            answer = parse_openai_response(payload)
     elif provider == "anthropic":
         api_key = os.getenv("ANTHROPIC_API_KEY", "")
         if not api_key:
@@ -186,14 +223,20 @@ def generate_rag_answer(
     provider = configured_provider(requested_provider)
     if provider == "mock":
         return mock_rag_answer(device_model, fault_text, contexts, provider)
+    if remote_api_disabled():
+        reason = "REMOTE_API_MODE=off，已强制使用本地 mock provider，避免比赛现场网络不稳定影响演示。"
+        record_fallback("llm", reason)
+        return mock_rag_answer(device_model, fault_text, contexts, provider, fallback_reason=reason)
 
     try:
         return real_rag_answer(device_model, fault_text, contexts, provider)
     except Exception as exc:
+        reason = f"{provider} provider 调用失败，已降级到 mock：{exc}"
+        record_fallback("llm", reason)
         return mock_rag_answer(
             device_model,
             fault_text,
             contexts,
             provider,
-            fallback_reason=f"{provider} provider 调用失败，已降级到 mock：{exc}",
+            fallback_reason=reason,
         )

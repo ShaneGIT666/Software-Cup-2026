@@ -7,6 +7,7 @@ from typing import Any
 from fastapi.testclient import TestClient
 
 import backend.app.llm_adapter as llm_adapter
+import backend.app.multimodal_adapter as multimodal_adapter
 from backend.app.main import app
 
 
@@ -28,6 +29,24 @@ def test_health(tmp_path, monkeypatch) -> None:
     payload = response.json()
     assert payload["success"] is True
     assert payload["data"]["status"] == "ok"
+
+
+def test_provider_status_reports_offline_fallback(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("REMOTE_API_MODE", "off")
+    monkeypatch.setenv("LLM_PROVIDER", "openai")
+    monkeypatch.setenv("MULTIMODAL_PROVIDER", "anthropic")
+    client = make_client(tmp_path, monkeypatch)
+
+    response = client.get("/api/providers/status")
+
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    assert payload["remoteApiMode"] == "off"
+    assert payload["offlineFallback"] is True
+    assert payload["llm"]["provider"] == "openai"
+    assert payload["llm"]["effectiveProvider"] == "mock"
+    assert payload["multimodal"]["provider"] == "anthropic"
+    assert payload["multimodal"]["effectiveProvider"] == "mock"
 
 
 def test_search_returns_seed_results(tmp_path, monkeypatch) -> None:
@@ -114,6 +133,33 @@ def test_rag_answer_openai_provider_falls_back_to_mock(tmp_path, monkeypatch) ->
     assert payload["fallback"] is True
 
 
+def test_rag_answer_remote_api_mode_off_skips_real_provider(tmp_path, monkeypatch) -> None:
+    def fail_if_called(*_: Any, **__: Any) -> dict[str, Any]:
+        raise AssertionError("real provider should not be called while REMOTE_API_MODE=off")
+
+    monkeypatch.setenv("REMOTE_API_MODE", "off")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+    monkeypatch.setattr(llm_adapter, "real_rag_answer", fail_if_called)
+    client = make_client(tmp_path, monkeypatch)
+
+    response = client.post(
+        "/api/rag/answer",
+        json={
+            "deviceModel": "发动机-示例型号 A",
+            "faultText": "启动困难",
+            "topK": 2,
+            "provider": "openai",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    assert payload["provider"] == "mock"
+    assert payload["requestedProvider"] == "openai"
+    assert payload["fallback"] is True
+    assert "REMOTE_API_MODE=off" in payload["fallbackReason"]
+
+
 def test_rag_answer_uses_openai_provider_when_configured(tmp_path, monkeypatch) -> None:
     def fake_post_json(url: str, headers: dict[str, str], payload: dict[str, Any], timeout: float) -> dict[str, Any]:
         assert url == "https://example-openai.test/v1/responses"
@@ -145,6 +191,64 @@ def test_rag_answer_uses_openai_provider_when_configured(tmp_path, monkeypatch) 
     assert payload["provider"] == "openai"
     assert payload["fallback"] is False
     assert payload["answer"] == "这是 OpenAI provider 返回的检修建议。"
+
+
+def test_rag_answer_uses_openai_compatible_chat_completions(tmp_path, monkeypatch) -> None:
+    def fake_post_json(url: str, headers: dict[str, str], payload: dict[str, Any], timeout: float) -> dict[str, Any]:
+        assert url == "https://compatible-provider.test/v1/chat/completions"
+        assert headers["Authorization"] == "Bearer compatible-key"
+        assert payload["model"] == "compatible-model"
+        assert payload["messages"][0]["role"] == "user"
+        assert "启动困难" in payload["messages"][0]["content"]
+        return {"choices": [{"message": {"content": "这是兼容 OpenAI Chat Completions 的模型返回。"}}]}
+
+    monkeypatch.setenv("OPENAI_API_KEY", "compatible-key")
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://compatible-provider.test/v1")
+    monkeypatch.setenv("OPENAI_MODEL", "compatible-model")
+    monkeypatch.setenv("OPENAI_API_STYLE", "chat_completions")
+    monkeypatch.setattr(llm_adapter, "_post_json", fake_post_json)
+    client = make_client(tmp_path, monkeypatch)
+
+    response = client.post(
+        "/api/rag/answer",
+        json={
+            "deviceModel": "发动机-示例型号 A",
+            "faultText": "启动困难",
+            "topK": 2,
+            "provider": "openai",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    assert payload["provider"] == "openai"
+    assert payload["fallback"] is False
+    assert payload["answer"] == "这是兼容 OpenAI Chat Completions 的模型返回。"
+
+
+def test_rag_answer_network_error_falls_back_to_mock(tmp_path, monkeypatch) -> None:
+    def fail_post_json(*_: Any, **__: Any) -> dict[str, Any]:
+        raise RuntimeError("simulated timeout")
+
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+    monkeypatch.setattr(llm_adapter, "_post_json", fail_post_json)
+    client = make_client(tmp_path, monkeypatch)
+
+    response = client.post(
+        "/api/rag/answer",
+        json={
+            "deviceModel": "发动机-示例型号 A",
+            "faultText": "启动困难",
+            "topK": 2,
+            "provider": "openai",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    assert payload["provider"] == "mock"
+    assert payload["requestedProvider"] == "openai"
+    assert payload["fallback"] is True
 
 
 def test_rag_answer_uses_anthropic_provider_when_configured(tmp_path, monkeypatch) -> None:
@@ -620,6 +724,52 @@ def test_image_knowledge_document_can_be_multimodal_analyzed_and_searched(tmp_pa
 
 
 def test_multimodal_analysis_falls_back_when_real_provider_is_unconfigured(tmp_path, monkeypatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    upload_response = client.post(
+        "/api/knowledge/documents",
+        files={"file": ("manual-scan.png", b"fake png bytes", "image/png")},
+    )
+    document_id = upload_response.json()["data"]["id"]
+
+    response = client.post(f"/api/knowledge/documents/{document_id}/analyze", json={"provider": "openai"})
+
+    assert response.status_code == 200
+    analysis = response.json()["data"]["analysis"]
+    assert analysis["provider"] == "mock"
+    assert analysis["requestedProvider"] == "openai"
+    assert analysis["fallback"] is True
+
+
+def test_multimodal_analysis_remote_api_mode_off_skips_real_provider(tmp_path, monkeypatch) -> None:
+    def fail_if_called(*_: Any, **__: Any) -> dict[str, Any]:
+        raise AssertionError("real multimodal provider should not be called while REMOTE_API_MODE=off")
+
+    monkeypatch.setenv("REMOTE_API_MODE", "off")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+    monkeypatch.setattr(multimodal_adapter, "real_multimodal_analysis", fail_if_called)
+    client = make_client(tmp_path, monkeypatch)
+    upload_response = client.post(
+        "/api/knowledge/documents",
+        files={"file": ("manual-scan.png", b"fake png bytes", "image/png")},
+    )
+    document_id = upload_response.json()["data"]["id"]
+
+    response = client.post(f"/api/knowledge/documents/{document_id}/analyze", json={"provider": "openai"})
+
+    assert response.status_code == 200
+    analysis = response.json()["data"]["analysis"]
+    assert analysis["provider"] == "mock"
+    assert analysis["requestedProvider"] == "openai"
+    assert analysis["fallback"] is True
+    assert "REMOTE_API_MODE=off" in analysis["fallbackReason"]
+
+
+def test_multimodal_analysis_network_error_falls_back_to_mock(tmp_path, monkeypatch) -> None:
+    def fail_post_json(*_: Any, **__: Any) -> dict[str, Any]:
+        raise RuntimeError("simulated multimodal timeout")
+
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+    monkeypatch.setattr(multimodal_adapter, "_post_json", fail_post_json)
     client = make_client(tmp_path, monkeypatch)
     upload_response = client.post(
         "/api/knowledge/documents",

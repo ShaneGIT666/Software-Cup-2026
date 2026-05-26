@@ -6,10 +6,15 @@ from pathlib import Path
 from typing import Any
 
 from .llm_adapter import _post_json
+from .provider_policy import (
+    configured_multimodal_provider as configured_multimodal_provider_from_policy,
+    record_fallback,
+    remote_api_disabled,
+)
 
 
 def configured_multimodal_provider(requested_provider: str | None) -> str:
-    return (requested_provider or os.getenv("MULTIMODAL_PROVIDER") or "mock").lower()
+    return configured_multimodal_provider_from_policy(requested_provider)
 
 
 def mime_type_for_suffix(suffix: str) -> str:
@@ -204,14 +209,20 @@ def analyze_multimodal_document(
     provider = configured_multimodal_provider(requested_provider)
     if provider == "mock":
         return mock_multimodal_analysis(file_path.name, source_name, suffix, provider)
+    if remote_api_disabled():
+        reason = "REMOTE_API_MODE=off，已强制使用本地 mock 多模态分析，避免比赛现场网络不稳定影响演示。"
+        record_fallback("multimodal", reason)
+        return mock_multimodal_analysis(file_path.name, source_name, suffix, provider, fallback_reason=reason)
 
     try:
         return real_multimodal_analysis(file_path, source_name, suffix, provider)
     except Exception as exc:
+        reason = f"{provider} 多模态 provider 调用失败，已降级到 mock：{exc}"
+        record_fallback("multimodal", reason)
         return mock_multimodal_analysis(
             file_path.name,
             source_name,
             suffix,
             provider,
-            fallback_reason=f"{provider} 多模态 provider 调用失败，已降级到 mock：{exc}",
+            fallback_reason=reason,
         )
