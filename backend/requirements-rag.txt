@@ -1,0 +1,6 @@
+-r requirements.txt
+
+# Optional semantic retrieval enhancement.
+# Keep this outside the default requirements because LoongArch/Kylin may need
+# a conservative backend dependency set for competition deployment.
+chromadb>=0.5.0,<2.0.0

@@ -719,3 +719,104 @@ POST /api/knowledge/graph
   "message": ""
 }
 ```
+## 附录：Chroma 向量检索增强
+
+当前 Chroma 作为可选 RAG 检索增强，不改变 `/api/search` 和 `/api/rag/answer` 的请求结构。
+
+启用方式：
+
+```text
+RAG_VECTOR_STORE=chroma
+APP_CHROMA_DIR=./data/knowledge/chroma
+RAG_VECTOR_DIMENSION=384
+```
+
+依赖安装：
+
+```bash
+pip install -r backend/requirements-rag.txt
+```
+
+行为约定：
+
+1. 资料入库或多模态分析生成 `document` chunks 后，后端会尝试同步到 Chroma collection。
+2. `/api/search` 会先执行现有关键词检索，再合并 Chroma 向量召回结果；是否是真实语义 embedding 由 `scoreBreakdown.embeddingProvider` 标记。
+3. Chroma 召回结果仍使用 `sourceType=document`，并保留 `documentId`、`chunkId`、`snippet` 和 `scoreBreakdown`。
+4. `scoreBreakdown.vectorDistance` 表示 Chroma 返回的向量距离，距离越小越相似。
+5. `/api/rag/answer` 会复用 `/api/search` 的混合检索结果，因此 Chroma 召回的资料片段会进入真实 OpenAI/Anthropic LLM prompt，并作为 citations 返回。
+6. 真实 LLM 调用可通过 `LLM_MAX_TOKENS`、`LLM_TEMPERATURE` 和 `RAG_CONTEXT_MAX_CHARS` 控制输出成本、随机性和上下文长度。
+7. 如果未安装 Chroma、`RAG_VECTOR_STORE=off`、索引不可用或查询失败，接口自动退回关键词检索，不影响比赛演示。
+8. LoongArch/银河麒麟环境优先保证默认关键词检索链路可用，Chroma 只作为增强能力单独验收。
+
+## 2026-05-27 补充：embedding 与多模态验收
+
+### Chroma embedding 字段
+
+Chroma 检索结果的 `scoreBreakdown` 新增：
+
+```json
+{
+  "vectorDistance": 0.12,
+  "embeddingProvider": "hash"
+}
+```
+
+说明：
+
+1. `embeddingProvider=hash` 表示离线兜底 embedding，只用于比赛现场和无 Key 场景的可运行占位，不应宣称为生产级语义 embedding。
+2. `embeddingProvider=openai` 表示使用 OpenAI-compatible `/embeddings` 接口生成向量。
+3. 真实 embedding 可通过 `RAG_EMBEDDING_PROVIDER=openai`、`OPENAI_EMBEDDING_MODEL`、`OPENAI_API_KEY` 启用。
+4. 真实 embedding 调用失败、Key 缺失或 `REMOTE_API_MODE=off` 时，自动回退 `hash`，不影响关键词检索和 RAG 兜底链路。
+
+### 多模态 provider 验收接口
+
+```http
+POST /api/providers/multimodal/validate
+Content-Type: application/json
+```
+
+请求体：
+
+```json
+{
+  "provider": "openai",
+  "documentId": "kdoc-xxxx"
+}
+```
+
+响应体：
+
+```json
+{
+  "success": true,
+  "data": {
+    "remoteOk": false,
+    "provider": "openai",
+    "model": "gpt-4.1-mini",
+    "fallback": true,
+    "fallbackReason": "OPENAI_API_KEY 未配置。",
+    "summaryPreview": "",
+    "latencyMs": 3
+  },
+  "message": ""
+}
+```
+
+约束：
+
+1. 请求体不允许传 API Key，只读取服务端环境变量。
+2. `documentId` 可选；不传时后端使用极小样本图片验证，避免消耗大文件 token。
+3. `REMOTE_API_MODE=off`、Key 缺失、网络失败或模型空响应时，返回 `remoteOk=false` 和明确原因。
+4. 该接口用于赛前验收，不作为普通用户高频功能入口。
+
+真实 LLM 验收接口：
+
+```text
+POST /api/providers/llm/validate
+```
+
+说明：
+
+1. 该接口只读取服务端环境变量中的 Key，不允许请求体传入 Key。
+2. 响应包含 `remoteOk`、`provider`、`model`、`apiStyle`、`latencyMs`、`fallback`、`fallbackReason`、`answerPreview` 和 `contextCount`。
+3. `REMOTE_API_MODE=off` 时不会访问真实 API，会返回 `remoteOk=false` 和离线原因。

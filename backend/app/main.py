@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -7,7 +8,7 @@ from uuid import uuid4
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .data_store import PROJECT_ROOT, knowledge_dir, upload_dir
@@ -21,13 +22,16 @@ from .knowledge import (
 )
 from .knowledge_graph import build_knowledge_graph
 from .provider_policy import provider_status
-from .rag import answer_with_rag
+from .rag import answer_with_rag, validate_llm_provider
+from .multimodal_adapter import validate_multimodal_provider
 from .schemas import (
     ApiResponse,
     CaseCreateRequest,
     CaseReviewRequest,
     DiagnosisRequest,
+    LlmValidateRequest,
     MultimodalAnalyzeRequest,
+    MultimodalValidateRequest,
     RagAnswerRequest,
     SearchRequest,
 )
@@ -62,9 +66,10 @@ app.mount("/knowledge", StaticFiles(directory=KNOWLEDGE_DIR), name="knowledge")
 
 
 def error_response(status_code: int, message: str) -> JSONResponse:
+    payload = ApiResponse(success=False, data=None, message=message)
     return JSONResponse(
         status_code=status_code,
-        content=ApiResponse(success=False, data=None, message=message).model_dump(),
+        content=payload.model_dump() if hasattr(payload, "model_dump") else payload.dict(),
     )
 
 
@@ -75,6 +80,28 @@ def validation_message(errors: list[dict[str, Any]]) -> str:
     location = ".".join(str(item) for item in first_error.get("loc", []) if item != "body")
     message = first_error.get("msg", "请求参数校验失败")
     return f"{location}: {message}" if location else message
+
+
+def serve_frontend_enabled() -> bool:
+    return os.getenv("SERVE_FRONTEND", "auto").strip().lower() != "off"
+
+
+def frontend_dist_dir() -> Path:
+    configured = os.getenv("FRONTEND_DIST_DIR")
+    if not configured:
+        return PROJECT_ROOT / "frontend" / "dist"
+
+    configured_path = Path(configured)
+    if configured_path.is_absolute():
+        return configured_path
+
+    root_candidate = PROJECT_ROOT / configured_path
+    backend_candidate = PROJECT_ROOT / "backend" / configured_path
+    return backend_candidate if backend_candidate.exists() else root_candidate
+
+
+def spa_index_path() -> Path:
+    return frontend_dist_dir() / "index.html"
 
 
 @app.exception_handler(HTTPException)
@@ -96,6 +123,16 @@ def health() -> ApiResponse:
 @app.get("/api/providers/status", response_model=ApiResponse)
 def get_provider_status() -> ApiResponse:
     return ApiResponse(data=provider_status())
+
+
+@app.post("/api/providers/llm/validate", response_model=ApiResponse)
+def validate_llm(request: LlmValidateRequest) -> ApiResponse:
+    return ApiResponse(data=validate_llm_provider(request))
+
+
+@app.post("/api/providers/multimodal/validate", response_model=ApiResponse)
+def validate_multimodal(request: MultimodalValidateRequest) -> ApiResponse:
+    return ApiResponse(data=validate_multimodal_provider(request))
 
 
 @app.post("/api/search", response_model=ApiResponse)
@@ -210,6 +247,24 @@ def get_knowledge_document_chunks(document_id: str) -> ApiResponse:
 def analyze_document(document_id: str, request: MultimodalAnalyzeRequest | None = None) -> ApiResponse:
     provider = request.provider if request else None
     return ApiResponse(data=analyze_knowledge_document(document_id, provider), message="资料多模态分析完成")
+
+
+@app.get("/assets/{asset_path:path}", include_in_schema=False)
+def frontend_asset(asset_path: str) -> FileResponse:
+    asset = frontend_dist_dir() / "assets" / asset_path
+    if not serve_frontend_enabled() or not asset.exists() or not asset.is_file():
+        raise HTTPException(status_code=404, detail="frontend asset not found")
+    return FileResponse(asset)
+
+
+@app.get("/{full_path:path}", include_in_schema=False)
+def frontend_spa(full_path: str) -> HTMLResponse:
+    if full_path.startswith(("api", "uploads", "knowledge")):
+        raise HTTPException(status_code=404, detail="resource not found")
+    index = spa_index_path()
+    if not serve_frontend_enabled() or not index.exists():
+        raise HTTPException(status_code=404, detail="frontend dist not found")
+    return HTMLResponse(index.read_text(encoding="utf-8"))
 
 
 @app.delete("/api/knowledge/documents/{document_id}", response_model=ApiResponse)

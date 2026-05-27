@@ -39,6 +39,10 @@ function sourceLabel(sourceType: string) {
       <el-tag v-if="ragAnswer?.fallback" type="warning">本地兜底</el-tag>
       <el-tag v-if="ragAnswer && !ragAnswer.fallback" type="success">云端增强</el-tag>
       <el-tag v-if="ragAnswer" type="info">{{ ragAnswer.provider }} / requested {{ ragAnswer.requestedProvider }}</el-tag>
+      <el-tag v-if="ragAnswer?.model" type="info">{{ ragAnswer.model }} · {{ ragAnswer.apiStyle }}</el-tag>
+      <el-tag v-if="ragAnswer?.contextCount !== undefined" type="info">
+        {{ ragAnswer.contextCount }} 条上下文 / {{ ragAnswer.contextChars ?? 0 }} 字符
+      </el-tag>
     </div>
 
     <div v-if="loading" class="loading-hint processing-card">

@@ -1,128 +1,121 @@
 # 当前开发交接说明
 
-更新时间：2026-05-21  
-适用对象：后续 Coding Agent、协作者、人工复审人员
+更新时间：2026-05-27
+适用对象：后续 Coding Agent、协作者、人工复审人员。
+优先级：任何后续开发前先读本文，再读 `docs/requirements/official-problem-baseline.md`。
 
 ## 1. 当前状态
 
-项目仍以完成中国软件杯 A1 赛题为目标，当前主线是“可演示、可解释、可抗追问”的 MVP。官方 LoongArch + 银河麒麟环境暂未开放，因此国产化实测暂缓，但硬约束不能删除。
+项目目标仍是完成中国软件杯 A1 赛题“基于多模态大模型技术的设备检修知识检索与作业系统”。当前主线不是生产级重构，而是比赛作品收口：可部署、可演示、可解释、可兜底、可抗追问。
 
-当前分支：`main`
+已确认事实：
 
-本轮新增能力：
-1. 多模态资料分析增强层。
-2. 轻量知识关系网络。
-3. 前端资料入库与知识关系展示面板。
-4. 后端测试和 API/演示/开源引用文档同步。
-
-官方样例资料：
-
-```text
-E:/Download/Downloads/摩托车发动机维修手册.pdf
-```
-
-该 PDF 仅作为本地演示/测试输入，不得提交进 Git。
+1. Windows 本地主线后端测试最新结果为 `74 passed in 12.75s`，资料入库、RAG、上传安全、多模态 mock、Chroma 可选召回和官方 PDF 流程均有覆盖。
+2. 前端 `npm.cmd run build` 已通过；存在 Vite chunk size warning，不阻塞比赛演示。
+3. Qwen / DashScope OpenAI-compatible 文本 RAG 已完成一次真实 API 小样本验收，返回 `fallback=false`，citations 保留。
+4. LoongArch / 银河麒麟 V11 虚拟机已完成后端最小依赖验证，后端测试子集 `39 passed`，`/api/health` 与 `/api/providers/status` 正常。
+5. 目标 VM 无 npm/git，因此前端采用 Windows 本地构建 `frontend/dist`，再由 FastAPI 静态托管的方案补齐。
+6. 官方样例 PDF `E:/Download/Downloads/摩托车发动机维修手册.pdf` 只作为本地测试/演示输入，不得提交进 Git。
 
 ## 2. 已实现能力
 
-后端新增或扩展：
-1. `POST /api/knowledge/documents` 支持 `pdf/txt/md/jpg/jpeg/png/webp`。
-2. `POST /api/knowledge/documents/{document_id}/analyze` 对 PDF/图片资料执行多模态分析。
-3. `backend/app/multimodal_adapter.py` 支持 `mock/openai/anthropic` provider。
-4. 多模态分析结果会生成本地 `document` chunks，可进入搜索和 RAG citations。
-5. `POST /api/knowledge/graph` 基于当前查询和检索结果生成轻量知识关系网络。
-6. `backend/app/knowledge_graph.py` 将设备、故障、资料、案例、流程、来源和 provider 组织为节点与关系。
+后端：
 
-2026-05-26 补充：
+1. `POST /api/search`：关键词加权检索，返回 `matchedTerms`、`reason`、`scoreBreakdown`。
+2. `POST /api/rag/answer`：基于检索结果生成 RAG 回答，支持 mock/openai/anthropic、citations、上下文裁剪、token 控制和 fallback。
+3. `POST /api/providers/llm/validate`：真实文本 LLM 小样本验收，只读取服务端环境变量，不接收前端 Key。
+4. `GET /api/providers/status`：返回 LLM、多模态、embedding 和离线兜底状态。
+5. `POST /api/knowledge/documents`：资料入库，支持 `pdf/txt/md/jpg/jpeg/png/webp`。
+6. `POST /api/knowledge/documents/{document_id}/analyze`：对 PDF/图片资料做多模态分析并生成可检索 chunks。
+7. `POST /api/providers/multimodal/validate`：真实多模态小样本验收入口，失败不影响主链路。
+8. `POST /api/knowledge/graph`：轻量知识关系网络原型。
+9. Chroma 可选向量索引：`RAG_VECTOR_STORE=chroma` 时启用；默认关闭。
+10. FastAPI 可选托管前端：`SERVE_FRONTEND=auto` 且 `frontend/dist/index.html` 存在时，`/` 返回 SPA 页面。
 
-1. 新增 `GET /api/providers/status`，用于确认 RAG 与多模态 provider 的当前运行状态。
-2. 新增 `REMOTE_API_MODE=auto|off` 弱网兜底开关；`off` 时强制使用本地 mock，不访问外网。
-3. 前端顶部状态条会显示“云端增强 / 本地 mock 兜底 / 离线兜底模式”。
-4. `openai` provider 新增 `OPENAI_API_STYLE=chat_completions`，用于接入 OpenAI-compatible 文本模型网关；默认仍为 `responses`。
+前端：
 
-2026-05-26 前端视觉大改补充：
+1. 工业检修指挥台风格 Web GUI。
+2. 检索、结果证据、作业流程、资料入库、多模态分析、RAG 建议、知识关系网络、案例提交/审核的演示闭环。
+3. Provider 状态提示与 fallback 文案。
+4. Playwright 冒烟测试文件已新增，覆盖首页、检索、结果和 RAG 提示；依赖需联网安装后运行。
 
-1. 前端 Web GUI 调整为“比赛级工业检修指挥台”风格：深色态势首屏 + 浅色任务卡片 + 演示流程胶囊。
-2. 全量修复主要前端组件可见中文乱码，覆盖首页、检索、作业流程、资料入库、RAG、关系网络、案例提交和审核。
-3. 样式系统统一为语义化 CSS tokens，并强化 44px 触控目标、focus-visible、reduced-motion、loading card 和移动端单列布局。
-4. 本轮不改变 API、数据模型、路由或后端逻辑；只增强比赛演示可理解性和视觉可信度。
+脚本：
 
-前端新增或扩展：
-1. `KnowledgePanel.vue` 支持图片资料上传、待多模态分析状态、多模态分析按钮和分析摘要展示。
-2. `KnowledgeGraphPanel.vue` 展示当前查询的轻量知识关系网络。
-3. `App.vue` 在检索后自动刷新知识关系网络，也支持手动刷新。
+1. `start-dev.bat`：本地开发一键启动。
+2. `scripts/run-backend-tests.ps1`：后端测试。
+3. `scripts/run-local-verification.ps1`：本地总体验证。
+4. `scripts/configure-api.ps1` / `configure-api.bat`：API 配置，含 Qwen、DeepSeek、SiliconFlow 预设。
+5. `scripts/build-frontend.ps1`：构建 `frontend/dist`。
+6. `scripts/package-demo.ps1`：准备可上传到 LoongArch 的演示包。
+7. `scripts/run-frontend-smoke.ps1`：运行前端 Playwright 冒烟测试。
 
-配置更新：
-1. `.env.example` 新增 `MULTIMODAL_PROVIDER`、`MULTIMODAL_TIMEOUT_SECONDS`。
-2. `.env.example` 补充 OpenAI/Anthropic provider 相关变量示例。
+## 3. 关键配置
 
-## 3. 验证结果
+本地兜底：
 
-后端测试：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\run-backend-tests.ps1
+```env
+REMOTE_API_MODE=off
+LLM_PROVIDER=mock
+MULTIMODAL_PROVIDER=mock
+RAG_VECTOR_STORE=off
 ```
 
-结果：
+Qwen / DashScope 文本 RAG：
 
-```text
-33 passed
+```env
+REMOTE_API_MODE=auto
+LLM_PROVIDER=openai
+OPENAI_API_STYLE=chat_completions
+OPENAI_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+OPENAI_MODEL=qwen-plus
+OPENAI_API_KEY=your-key
 ```
 
-前端构建：
+Chroma 可选增强：
 
-```powershell
-cd frontend
-npm.cmd run build
+```env
+RAG_VECTOR_STORE=chroma
+RAG_EMBEDDING_PROVIDER=hash
 ```
 
-结果：通过。
+真实 embedding 可选增强：
 
-已知非阻塞 warning：
-1. Rollup 对 `@vueuse/core` 中部分 pure annotation 的提示。
-2. Vite chunk size warning。
+```env
+RAG_VECTOR_STORE=chroma
+RAG_EMBEDDING_PROVIDER=openai
+OPENAI_EMBEDDING_MODEL=text-embedding-v3
+OPENAI_EMBEDDING_API_STYLE=openai_compatible
+```
+
+LoongArch 前端托管：
+
+```env
+SERVE_FRONTEND=auto
+FRONTEND_DIST_DIR=../frontend/dist
+```
 
 ## 4. 风险边界
 
 必须准确表述：
-1. 当前多模态真实 API 适配是工程接口层，尚未用真实 OpenAI/Anthropic Key 做端到端联网验收。
-2. 当前知识关系网络是轻量知识图谱原型，不是生产级图数据库。
-3. 当前 RAG 仍以本地关键词检索 + citations + provider fallback 为主，不是完整向量 RAG。
-4. 官方 LoongArch + 银河麒麟环境未开放，尚无真实国产化部署证明。
-5. 不要提交官方 PDF、`data/uploads/`、`data/knowledge/`、`.env`、`node_modules/`、`dist/`、`.venv/`。
 
-不要在答辩或文档中夸大为：
-1. 已完成生产级 OCR。
-2. 已完成完整知识图谱。
-3. 已完成跨模态语义检索。
-4. 已完成国产化环境验证。
-5. 已完成真实云模型稳定联调。
+1. Chroma 已接入为可选向量索引增强，但 hash embedding 是 fallback/占位，不是生产级语义 embedding。
+2. 真实文本 RAG 已用 Qwen 小样本验收；真实多模态 API 目前只有验收接口，是否可用取决于 provider、模型、网络和 payload 支持。
+3. 多模态 mock 能保证比赛演示不断链，但不能宣称等同生产级 OCR/视觉诊断。
+4. 轻量知识关系网络是知识沉淀展示原型，不是完整图数据库或 GraphRAG。
+5. LoongArch 后端已验证；前端完整浏览器访问需按 FastAPI 静态托管方案在 VM 上复验。
+6. 不提交 `.env`、官方 PDF、`data/uploads/`、`data/knowledge/`、`frontend/dist/`、`node_modules/`、`.venv/`。
 
-## 5. 推荐演示路径
+## 5. 推荐下一步
 
-1. 启动 `start-dev.bat`。
-2. 打开 `http://localhost:5173`。
-3. 先用 TXT/Markdown 资料演示稳定入库、检索、RAG 引用闭环。
-4. 上传官方 PDF 或现场故障图片，展示 `待多模态分析` 状态。
-5. 点击“多模态分析”，默认走 `mock` provider，生成摘要、关键部件、故障现象和知识片段。
-6. 再次搜索“发动机 / 火花塞 / 启动困难”等关键词。
-7. 展示搜索结果、RAG citations、标准作业流程和知识关系网络。
-8. 提交维修案例，审核通过，再次检索命中新案例。
+1. 运行完整后端测试和前端构建，更新 `docs/testing/software-test-report.md` 的最新数量。
+2. 在 LoongArch VM 上传最新 release 包，验证 `/`、`/api/health`、`/api/providers/status`。
+3. 网络可用时安装 `@playwright/test`，运行 `npm run test:e2e`，把演示路径纳入自动化冒烟。
+4. 如要展示真实多模态，只用一张小图片做 `POST /api/providers/multimodal/validate`，不要一次上传整本 PDF 消耗 token。
+5. 进入最终材料阶段后制作 PPT、7 分钟视频脚本和演示录屏。
 
-## 6. 下一步建议
+## 6. 接手规则
 
-优先级从高到低：
-1. 准备正式软件功能测试报告。
-2. 编写 7 分钟以内演示视频脚本和 PPT 大纲。
-3. 用官方 PDF 做一次本地演示录屏，记录 fallback 路径。
-4. 如需展示真实模型能力，单独做 OpenAI/Anthropic 小样本联网验收。
-5. 官方环境开放后，第一时间执行 LoongArch + 银河麒麟部署验证并补充证据截图。
-
-## 7. 后续 Agent 接手规则
-
-1. 先读本文，再读 `docs/requirements/official-problem-baseline.md`。
-2. 开始前执行 `git status --short --branch`。
-3. 不使用 `git reset --hard` 或 `git checkout --` 回滚用户/协作者改动。
-4. 不引入 PaddleOCR、MinerU、Docling、LlamaIndex、Chroma、Qdrant、Neo4j 等重依赖，除非先完成小样本验证和风险评审。
-5. 任何 API、数据状态、演示路径或风险边界变化，都必须同步更新本文。
+1. 开始前执行 `git status --short --branch`。
+2. 不使用 `git reset --hard` 或 `git checkout --` 回滚协作者改动。
+3. 任何 API、数据状态、演示路径、风险边界变化，都必须同步更新本文。
+4. 新增重依赖前先说明 LoongArch 风险，并保留 mock/offline 兜底。

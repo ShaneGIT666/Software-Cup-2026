@@ -34,6 +34,8 @@ export interface SearchScoreBreakdown {
   sourceWeight: number;
   phraseBonus: number;
   fieldMatches: SearchFieldMatch[];
+  vectorDistance?: number;
+  embeddingProvider?: "hash" | "openai" | string;
 }
 
 export interface SearchPayload {
@@ -68,6 +70,8 @@ export interface ProviderChannelStatus {
   keyConfigured: boolean;
   effectiveProvider: string;
   lastFallbackReason: string;
+  model?: string;
+  apiStyle?: string;
 }
 
 export interface ProviderStatusPayload {
@@ -75,6 +79,7 @@ export interface ProviderStatusPayload {
   offlineFallback: boolean;
   llm: ProviderChannelStatus;
   multimodal: ProviderChannelStatus;
+  embedding?: ProviderChannelStatus;
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
@@ -262,6 +267,10 @@ export interface RagAnswerPayload {
   requestedProvider: string;
   fallback: boolean;
   fallbackReason?: string;
+  contextCount?: number;
+  contextChars?: number;
+  model?: string;
+  apiStyle?: string;
 }
 
 export function requestRagAnswer(deviceModel: string, faultText: string, provider?: string) {

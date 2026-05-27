@@ -31,8 +31,20 @@ class RagAnswerRequest(BaseModel):
     provider: Literal["mock", "openai", "anthropic"] | None = None
 
 
+class LlmValidateRequest(BaseModel):
+    deviceModel: str = "发动机-示例型号 A"
+    faultText: str = "启动困难"
+    topK: int = Field(default=2, ge=1, le=5)
+    provider: Literal["openai", "anthropic"] | None = None
+
+
 class MultimodalAnalyzeRequest(BaseModel):
     provider: Literal["mock", "openai", "anthropic"] | None = None
+
+
+class MultimodalValidateRequest(BaseModel):
+    documentId: str | None = None
+    provider: Literal["openai", "anthropic"] | None = None
 
 
 class CaseCreateRequest(BaseModel):

@@ -2,12 +2,18 @@ from __future__ import annotations
 
 import base64
 import os
+import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
+from fastapi import HTTPException
+
+from .data_store import knowledge_dir, load_documents
 from .llm_adapter import _post_json
 from .provider_policy import (
     configured_multimodal_provider as configured_multimodal_provider_from_policy,
+    key_configured,
     record_fallback,
     remote_api_disabled,
 )
@@ -226,3 +232,107 @@ def analyze_multimodal_document(
             provider,
             fallback_reason=reason,
         )
+
+
+def validation_sample_file() -> tuple[Path, str, str]:
+    png_bytes = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
+    )
+    sample = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
+    sample.write(png_bytes)
+    sample.close()
+    return Path(sample.name), "multimodal-validation-sample.png", "png"
+
+
+def document_file_for_validation(document_id: str) -> tuple[Path, str, str]:
+    document = next((item for item in load_documents() if item.get("id") == document_id), None)
+    if document is None:
+        raise HTTPException(status_code=404, detail="入库资料不存在")
+    suffix = str(document.get("suffix", "")).lower()
+    file_path = knowledge_dir() / "files" / f"{document_id}.{suffix}"
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="入库资料原始文件不存在")
+    return file_path, str(document.get("sourceName") or document.get("fileName") or document_id), suffix
+
+
+def validate_multimodal_provider(request: Any) -> dict[str, Any]:
+    provider = configured_multimodal_provider(getattr(request, "provider", None))
+    model = os.getenv("OPENAI_MODEL", "gpt-4.1-mini") if provider == "openai" else os.getenv(
+        "ANTHROPIC_MODEL", "claude-3-5-haiku-latest"
+    )
+    start = time.perf_counter()
+    temp_file: Path | None = None
+
+    try:
+        document_id = getattr(request, "documentId", None)
+        if document_id:
+            file_path, source_name, suffix = document_file_for_validation(document_id)
+        else:
+            file_path, source_name, suffix = validation_sample_file()
+            temp_file = file_path
+
+        if provider == "mock":
+            analysis = mock_multimodal_analysis(file_path.name, source_name, suffix, provider)
+            return {
+                "remoteOk": False,
+                "provider": "mock",
+                "model": "mock",
+                "fallback": True,
+                "fallbackReason": "MULTIMODAL_PROVIDER=mock，当前仅执行本地演示级多模态兜底。",
+                "summaryPreview": analysis.get("summary", "")[:200],
+                "latencyMs": round((time.perf_counter() - start) * 1000),
+            }
+
+        if remote_api_disabled():
+            reason = "REMOTE_API_MODE=off，已跳过真实多模态 API 验收。"
+            record_fallback("multimodal", reason)
+            return {
+                "remoteOk": False,
+                "provider": provider,
+                "model": model,
+                "fallback": True,
+                "fallbackReason": reason,
+                "summaryPreview": "",
+                "latencyMs": round((time.perf_counter() - start) * 1000),
+            }
+
+        if not key_configured(provider):
+            reason = f"{provider} API key 未配置。"
+            record_fallback("multimodal", reason)
+            return {
+                "remoteOk": False,
+                "provider": provider,
+                "model": model,
+                "fallback": True,
+                "fallbackReason": reason,
+                "summaryPreview": "",
+                "latencyMs": round((time.perf_counter() - start) * 1000),
+            }
+
+        analysis = real_multimodal_analysis(file_path, source_name, suffix, provider)
+        return {
+            "remoteOk": True,
+            "provider": provider,
+            "model": model,
+            "fallback": False,
+            "fallbackReason": "",
+            "summaryPreview": str(analysis.get("summary", ""))[:200],
+            "latencyMs": round((time.perf_counter() - start) * 1000),
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        reason = f"{provider} 多模态验收失败：{exc}"
+        record_fallback("multimodal", reason)
+        return {
+            "remoteOk": False,
+            "provider": provider,
+            "model": model,
+            "fallback": True,
+            "fallbackReason": reason,
+            "summaryPreview": "",
+            "latencyMs": round((time.perf_counter() - start) * 1000),
+        }
+    finally:
+        if temp_file and temp_file.exists():
+            temp_file.unlink()

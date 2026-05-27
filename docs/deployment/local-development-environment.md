@@ -125,3 +125,89 @@ http://127.0.0.1:8000/api/health
 5. 可以运行后端开发服务。
 6. 可以访问接口调试工具。
 7. 可以打开项目文档。
+## API 配置脚本
+
+Windows 本地可以使用脚本辅助生成 `.env`：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\configure-api.ps1
+```
+
+也可以双击或运行：
+
+```bat
+configure-api.bat
+```
+
+常用参数示例：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\configure-api.ps1 `
+  -Provider compatible `
+  -CompatiblePreset deepseek `
+  -EnableChroma
+```
+
+Qwen / DashScope 示例：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\configure-api.ps1 `
+  -Provider compatible `
+  -CompatiblePreset qwen `
+  -EnableChroma
+```
+
+自定义 OpenAI-compatible 网关示例：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\configure-api.ps1 `
+  -Provider compatible `
+  -CompatiblePreset custom `
+  -BaseUrl "https://api.deepseek.com/v1" `
+  -Model "deepseek-chat" `
+  -EnableChroma
+```
+
+说明：
+
+1. 脚本会写入本地 `.env`，该文件已被 Git 忽略，不应提交。
+2. `compatible` 模式会配置 `LLM_PROVIDER=openai` 和 `OPENAI_API_STYLE=chat_completions`，适合 DeepSeek、Qwen/DashScope、SiliconFlow 或 OpenAI-compatible 网关。
+3. `-CompatiblePreset deepseek` 默认使用 `https://api.deepseek.com/v1` 和 `deepseek-chat`。
+4. `-CompatiblePreset qwen` 默认使用 `https://dashscope.aliyuncs.com/compatible-mode/v1` 和 `qwen-plus`。
+5. 如果需要比赛现场离线兜底，选择 `mock` 或设置 `REMOTE_API_MODE=off`。
+6. `scripts/start-backend.ps1` 会在启动后端时自动加载 `.env`。
+7. 如需验证真实 API，先启动后端，再执行脚本时追加 `-Validate`。
+
+已验收记录：
+
+1. 2026-05-27 已使用 Qwen / DashScope compatible mode + `qwen-plus` 完成文本 RAG 小样本验收。
+2. 验收结果为 `provider=openai`、`model=qwen-plus`、`fallback=false`，说明真实 API 链路可用。
+3. 密钥不得写入文档或提交到 Git，只能保存在本地 `.env` 或部署环境变量中。
+
+## 2026-05-27 补充：前端构建与 LoongArch 演示包
+
+目标 LoongArch / 银河麒麟 V11 VM 当前无 npm/git，因此前端推荐在 Windows 本地构建后上传：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\build-frontend.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\package-demo.ps1
+```
+
+后端启动时保持：
+
+```env
+SERVE_FRONTEND=auto
+FRONTEND_DIST_DIR=../frontend/dist
+```
+
+此时 FastAPI 会在 `frontend/dist/index.html` 存在时托管 SPA 首页，`/api/*`、`/uploads/*`、`/knowledge/*` 仍保持原有优先级。
+
+前端冒烟测试已添加：
+
+```powershell
+cd frontend
+npm install -D @playwright/test
+npm run test:e2e
+```
+
+当前环境无法联网安装 Playwright，因此该项需要在网络可用后补验。

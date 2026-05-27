@@ -13,6 +13,55 @@ def configured_provider(requested_provider: str | None) -> str:
     return configured_llm_provider(requested_provider)
 
 
+def context_max_chars() -> int:
+    return max(400, int(os.getenv("RAG_CONTEXT_MAX_CHARS", "4000")))
+
+
+def llm_max_tokens() -> int:
+    return max(128, int(os.getenv("LLM_MAX_TOKENS", "800")))
+
+
+def llm_temperature() -> float:
+    return max(0.0, min(2.0, float(os.getenv("LLM_TEMPERATURE", "0.2"))))
+
+
+def provider_model(provider: str) -> str:
+    if provider == "openai":
+        return os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
+    if provider == "anthropic":
+        return os.getenv("ANTHROPIC_MODEL", "claude-3-5-haiku-latest")
+    return "mock"
+
+
+def provider_api_style(provider: str) -> str:
+    if provider == "openai":
+        return os.getenv("OPENAI_API_STYLE", "chat_completions").strip().lower()
+    if provider == "anthropic":
+        return "messages"
+    return "mock"
+
+
+def truncate_text(text: str, limit: int) -> str:
+    if len(text) <= limit:
+        return text
+    return f"{text[: max(0, limit - 12)].rstrip()}... [truncated]"
+
+
+def compress_contexts(contexts: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
+    budget = context_max_chars()
+    used = 0
+    compressed: list[dict[str, Any]] = []
+    for item in contexts:
+        snippet = str(item.get("snippet", ""))
+        remaining = budget - used
+        if remaining <= 0:
+            break
+        clipped = truncate_text(snippet, min(len(snippet), remaining))
+        used += len(clipped)
+        compressed.append({**item, "snippet": clipped})
+    return compressed, used
+
+
 def citation_from_result(result: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": result["id"],
@@ -38,14 +87,14 @@ def mock_rag_answer(
     fallback_reason: str | None = None,
 ) -> dict[str, Any]:
     provider = configured_provider(requested_provider)
-    active_provider = "mock"
-    citations = [citation_from_result(item) for item in contexts]
+    compressed_contexts, context_chars = compress_contexts(contexts)
+    citations = [citation_from_result(item) for item in compressed_contexts]
     source_names = list(dict.fromkeys(item["sourceName"] for item in citations))[:3]
 
-    if contexts:
+    if compressed_contexts:
         answer = (
-            f"基于已检索到的 {len(contexts)} 条资料，{device_model or '该设备'} 的“{fault_text}”"
-            "优先按来源资料进行排查：先核对高置信度手册/入库资料，再结合历史案例确认常见原因。"
+            f"基于已检索到的 {len(compressed_contexts)} 条资料，{device_model or '该设备'} 的“{fault_text}”"
+            "优先按引用资料进行排查：先核对高置信度手册/入库资料，再结合历史案例确认常见原因。"
             f"当前可参考来源包括：{'、'.join(source_names)}。"
         )
         recommended_actions = [
@@ -64,10 +113,14 @@ def mock_rag_answer(
         "answer": answer,
         "recommendedActions": recommended_actions,
         "citations": citations,
-        "provider": active_provider,
+        "provider": "mock",
         "requestedProvider": provider,
         "fallback": True,
         "fallbackReason": fallback_reason or "未配置真实模型或真实模型调用不可用，已使用 mock provider 保证演示不断线。",
+        "contextCount": len(compressed_contexts),
+        "contextChars": context_chars,
+        "model": "mock",
+        "apiStyle": "mock",
     }
 
 
@@ -85,8 +138,8 @@ def build_context_prompt(device_model: str, fault_text: str, contexts: list[dict
     context_text = "\n\n".join(context_lines) if context_lines else "暂无检索上下文。"
     return (
         "你是设备检修知识检索与作业辅助系统。请严格基于给定检索上下文回答，不要编造未出现的资料。"
-        "回答使用中文，包含：可能原因、建议排查动作、安全提醒。"
-        "如果上下文不足，请明确说明需要补充资料。\n\n"
+        "必须使用 [1]、[2] 这样的编号标注引用来源；如果证据不足，明确说明需要补充资料。"
+        "回答使用中文，包含：可能原因、建议排查动作、安全提醒。\n\n"
         f"设备型号：{device_model or '未提供'}\n"
         f"故障现象：{fault_text or '未提供'}\n\n"
         f"检索上下文：\n{context_text}"
@@ -148,9 +201,12 @@ def real_rag_answer(
     contexts: list[dict[str, Any]],
     provider: str,
 ) -> dict[str, Any]:
-    prompt = build_context_prompt(device_model, fault_text, contexts)
+    compressed_contexts, context_chars = compress_contexts(contexts)
+    prompt = build_context_prompt(device_model, fault_text, compressed_contexts)
     timeout = float(os.getenv("LLM_TIMEOUT_SECONDS", "20"))
-    citations = [citation_from_result(item) for item in contexts]
+    citations = [citation_from_result(item) for item in compressed_contexts]
+    model = provider_model(provider)
+    api_style = provider_api_style(provider)
     recommended_actions = [
         "核对引用来源中的手册页码或资料片段。",
         "按标准作业流程执行检查，并记录现场证据。",
@@ -162,13 +218,16 @@ def real_rag_answer(
         if not api_key:
             raise RuntimeError("OPENAI_API_KEY 未配置")
         base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
-        model = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
-        api_style = os.getenv("OPENAI_API_STYLE", "responses").strip().lower()
         if api_style == "chat_completions":
             payload = _post_json(
                 f"{base_url}/chat/completions",
                 headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-                payload={"model": model, "messages": [{"role": "user", "content": prompt}]},
+                payload={
+                    "model": model,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": llm_max_tokens(),
+                    "temperature": llm_temperature(),
+                },
                 timeout=timeout,
             )
             answer = parse_openai_chat_response(payload)
@@ -176,7 +235,12 @@ def real_rag_answer(
             payload = _post_json(
                 f"{base_url}/responses",
                 headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-                payload={"model": model, "input": prompt},
+                payload={
+                    "model": model,
+                    "input": prompt,
+                    "max_output_tokens": llm_max_tokens(),
+                    "temperature": llm_temperature(),
+                },
                 timeout=timeout,
             )
             answer = parse_openai_response(payload)
@@ -185,7 +249,6 @@ def real_rag_answer(
         if not api_key:
             raise RuntimeError("ANTHROPIC_API_KEY 未配置")
         base_url = os.getenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com/v1").rstrip("/")
-        model = os.getenv("ANTHROPIC_MODEL", "claude-3-5-haiku-latest")
         payload = _post_json(
             f"{base_url}/messages",
             headers={
@@ -193,7 +256,12 @@ def real_rag_answer(
                 "anthropic-version": os.getenv("ANTHROPIC_VERSION", "2023-06-01"),
                 "Content-Type": "application/json",
             },
-            payload={"model": model, "max_tokens": 800, "messages": [{"role": "user", "content": prompt}]},
+            payload={
+                "model": model,
+                "max_tokens": llm_max_tokens(),
+                "temperature": llm_temperature(),
+                "messages": [{"role": "user", "content": prompt}],
+            },
             timeout=timeout,
         )
         answer = parse_anthropic_response(payload)
@@ -211,6 +279,10 @@ def real_rag_answer(
         "requestedProvider": provider,
         "fallback": False,
         "fallbackReason": "",
+        "contextCount": len(compressed_contexts),
+        "contextChars": context_chars,
+        "model": model,
+        "apiStyle": api_style,
     }
 
 

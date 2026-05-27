@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from fastapi import HTTPException
 
+from . import vector_store
 from .data_store import load_cases, load_document_chunks, load_seed_data, save_cases
 from .schemas import CaseCreateRequest, CaseReviewRequest, SearchRequest
 
@@ -85,6 +86,27 @@ def score_breakdown(scoring: dict[str, Any], source_type: str) -> dict[str, Any]
         "sourceWeight": scoring["sourceWeight"],
         "phraseBonus": scoring["phraseBonus"],
         "fieldMatches": scoring["fieldMatches"],
+    }
+
+
+def vector_score_breakdown(distance: float, embedding_provider: str) -> dict[str, Any]:
+    similarity = max(0.0, min(1.0, 1.0 - distance))
+    score = max(1, round(similarity * 20))
+    return {
+        "score": score,
+        "sourceType": "document",
+        "sourceWeight": 2,
+        "phraseBonus": 0,
+        "fieldMatches": [
+            {
+                "field": "chromaVector",
+                "terms": [embedding_provider],
+                "weight": 1,
+                "score": score,
+            }
+        ],
+        "vectorDistance": round(distance, 6),
+        "embeddingProvider": embedding_provider,
     }
 
 
@@ -204,8 +226,36 @@ def search_knowledge(request: SearchRequest) -> dict[str, Any]:
                 }
             )
 
+    known_document_ids = {item["id"] for item in document_results}
+    vector_results = []
+    vector_query = " ".join([request.deviceModel, request.faultText]).strip()
+    for vector_match in vector_store.search_similar_chunks(vector_query, request.topK):
+        if vector_match["id"] in known_document_ids:
+            continue
+        embedding_provider = vector_match.get("embeddingProvider", "hash")
+        breakdown = vector_score_breakdown(vector_match.get("distance", 1.0), embedding_provider)
+        recall_label = "真实 embedding 向量召回" if embedding_provider == "openai" else "hash fallback 向量召回"
+        vector_results.append(
+            {
+                "id": vector_match["id"],
+                "title": vector_match["title"],
+                "sourceType": "document",
+                "sourceName": vector_match["sourceName"],
+                "confidence": confidence_from_score(breakdown["score"], 0.9),
+                "snippet": vector_match["snippet"],
+                "workflowId": None,
+                "chapter": None,
+                "page": vector_match.get("page"),
+                "documentId": vector_match.get("documentId"),
+                "chunkId": vector_match.get("chunkId"),
+                "matchedTerms": [embedding_provider],
+                "reason": f"Chroma {recall_label}，距离 {breakdown['vectorDistance']}",
+                "scoreBreakdown": breakdown,
+            }
+        )
+
     results = sorted(
-        manual_results + case_results + document_results,
+        manual_results + case_results + document_results + vector_results,
         key=lambda item: (item["scoreBreakdown"]["score"], item["confidence"]),
         reverse=True,
     )[: request.topK]

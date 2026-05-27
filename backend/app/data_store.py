@@ -26,6 +26,11 @@ def knowledge_dir() -> Path:
     return Path(configured) if configured else KNOWLEDGE_DIR
 
 
+def chroma_dir() -> Path:
+    configured = os.getenv("APP_CHROMA_DIR")
+    return Path(configured) if configured else knowledge_dir() / "chroma"
+
+
 def _read_json(name: str) -> list[dict[str, Any]]:
     path = examples_dir() / name
     with path.open("r", encoding="utf-8") as file:

@@ -16,6 +16,8 @@ from .data_store import (
     save_documents,
 )
 from .multimodal_adapter import analyze_multimodal_document
+from .vector_store import delete_document as delete_vector_document
+from .vector_store import sync_chunks
 
 
 MAX_KNOWLEDGE_DOCUMENT_BYTES = 20 * 1024 * 1024
@@ -197,6 +199,7 @@ async def ingest_knowledge_document(file: UploadFile, source_name: str | None = 
     existing_chunks = load_document_chunks()
     existing_chunks.extend(chunks)
     save_document_chunks(existing_chunks)
+    sync_chunks(chunks)
 
     return {**document, "chunks": chunks[:3]}
 
@@ -259,6 +262,7 @@ def analyze_knowledge_document(document_id: str, provider: str | None = None) ->
     existing_chunks = [chunk for chunk in load_document_chunks() if chunk.get("documentId") != document_id]
     existing_chunks.extend(chunks)
     save_document_chunks(existing_chunks)
+    sync_chunks(chunks)
 
     document["status"] = "analyzed" if chunks else "needs_multimodal_analysis"
     document["chunkCount"] = len(chunks)
@@ -310,6 +314,7 @@ def delete_knowledge_document(document_id: str) -> dict[str, Any]:
     remaining_chunks = [chunk for chunk in load_document_chunks() if chunk.get("documentId") != document_id]
     save_documents(remaining_documents)
     save_document_chunks(remaining_chunks)
+    delete_vector_document(document_id)
 
     suffix = document.get("suffix", "")
     if suffix:
