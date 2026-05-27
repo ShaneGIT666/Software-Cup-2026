@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from io import BytesIO
+import logging
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -34,6 +35,7 @@ MULTIMODAL_SUFFIXES = {"pdf", "jpg", "jpeg", "png", "webp"}
 IMAGE_SUFFIXES = {"jpg", "jpeg", "png", "webp"}
 CHUNK_SIZE = 700
 CHUNK_OVERLAP = 120
+logger = logging.getLogger(__name__)
 
 
 def utc_now() -> str:
@@ -43,14 +45,23 @@ def utc_now() -> str:
 def validate_knowledge_file(file: UploadFile, content: bytes) -> str:
     suffix = Path(file.filename or "").suffix.lower().lstrip(".")
     if not suffix or suffix not in ALLOWED_KNOWLEDGE_TYPES:
+        logger.warning("Rejected knowledge upload with unsupported extension: %s", file.filename)
         raise HTTPException(status_code=400, detail="资料入库仅支持 pdf、txt、md、jpg、jpeg、png 和 webp 文件")
     if not content:
+        logger.warning("Rejected empty knowledge upload: %s", file.filename)
         raise HTTPException(status_code=400, detail="资料文件不能为空")
     if len(content) > MAX_KNOWLEDGE_DOCUMENT_BYTES:
+        logger.warning("Rejected oversized knowledge upload: %s bytes=%s", file.filename, len(content))
         raise HTTPException(status_code=400, detail="资料文件不能超过 20MB")
 
     content_type = (file.content_type or "").split(";", 1)[0].lower()
     if content_type and content_type not in ALLOWED_KNOWLEDGE_TYPES[suffix]:
+        logger.warning(
+            "Rejected knowledge upload with MIME mismatch: filename=%s suffix=%s content_type=%s",
+            file.filename,
+            suffix,
+            content_type,
+        )
         raise HTTPException(status_code=400, detail="资料文件扩展名与 MIME 类型不匹配")
     return suffix
 

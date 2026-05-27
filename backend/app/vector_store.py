@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import math
 import os
 import re
@@ -14,6 +15,9 @@ from .provider_policy import (
     record_fallback,
     remote_api_disabled,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 COLLECTION_NAME_PREFIX = "repair_knowledge_chunks"
@@ -104,7 +108,9 @@ def embed_texts(texts: list[str]) -> tuple[list[list[float]], str]:
         try:
             return openai_embed_texts(texts), "openai"
         except Exception as exc:
-            record_fallback("embedding", f"openai embedding fallback to hash: {exc}")
+            reason = f"openai embedding fallback to hash: {exc}"
+            record_fallback("embedding", reason)
+            logger.warning(reason)
     return [hash_embed_text(text) for text in texts], "hash"
 
 
@@ -114,16 +120,24 @@ def chroma_collection(provider: str) -> Any | None:
     try:
         import chromadb  # type: ignore[import-not-found]
     except Exception as exc:
-        record_fallback("embedding", f"Chroma is unavailable: {exc}")
+        reason = f"Chroma is unavailable: {exc}"
+        record_fallback("embedding", reason)
+        logger.warning(reason)
         return None
 
-    path = chroma_dir()
-    path.mkdir(parents=True, exist_ok=True)
-    client = chromadb.PersistentClient(path=str(path))
-    return client.get_or_create_collection(
-        name=collection_name(provider),
-        metadata={"hnsw:space": "cosine"},
-    )
+    try:
+        path = chroma_dir()
+        path.mkdir(parents=True, exist_ok=True)
+        client = chromadb.PersistentClient(path=str(path))
+        return client.get_or_create_collection(
+            name=collection_name(provider),
+            metadata={"hnsw:space": "cosine"},
+        )
+    except Exception as exc:
+        reason = f"Chroma collection unavailable for {provider}: {exc}"
+        record_fallback("embedding", reason)
+        logger.warning(reason)
+        return None
 
 
 def metadata_for_chunk(chunk: dict[str, Any], embedding_provider: str) -> dict[str, Any]:
@@ -169,16 +183,24 @@ def delete_document(document_id: str) -> None:
         try:
             collection.delete(where={"documentId": document_id})
         except Exception as exc:
-            record_fallback("embedding", f"Chroma delete skipped for {provider}: {exc}")
+            reason = f"Chroma delete skipped for {provider}: {exc}"
+            record_fallback("embedding", reason)
+            logger.warning(reason)
 
 
 def search_similar_chunks(query: str, top_k: int) -> list[dict[str, Any]]:
     if not query.strip():
         return []
 
-    query_embeddings, provider = embed_texts([query])
-    collection = chroma_collection(provider)
-    if collection is None:
+    try:
+        query_embeddings, provider = embed_texts([query])
+        collection = chroma_collection(provider)
+        if collection is None:
+            return []
+    except Exception as exc:
+        reason = f"Chroma query setup failed: {exc}"
+        record_fallback("embedding", reason)
+        logger.warning(reason)
         return []
 
     try:
@@ -188,7 +210,9 @@ def search_similar_chunks(query: str, top_k: int) -> list[dict[str, Any]]:
             include=["documents", "metadatas", "distances"],
         )
     except Exception as exc:
-        record_fallback("embedding", f"Chroma query failed for {provider}: {exc}")
+        reason = f"Chroma query failed for {provider}: {exc}"
+        record_fallback("embedding", reason)
+        logger.warning(reason)
         return []
 
     ids = result.get("ids", [[]])[0]

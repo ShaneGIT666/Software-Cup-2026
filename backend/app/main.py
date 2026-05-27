@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import logging
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -22,7 +23,7 @@ from .knowledge import (
 )
 from .knowledge_graph import build_knowledge_graph
 from .provider_policy import provider_status
-from .rag import answer_with_rag, validate_llm_provider
+from .rag import answer_with_rag, diagnose_with_rag, validate_llm_provider
 from .multimodal_adapter import validate_multimodal_provider
 from .schemas import (
     ApiResponse,
@@ -50,6 +51,7 @@ ALLOWED_UPLOAD_TYPES = {
     "webp": {"image/webp"},
     "pdf": {"application/pdf"},
 }
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="设备检修知识检索与作业辅助系统", version="0.1.0")
 
@@ -142,15 +144,7 @@ def search(request: SearchRequest) -> ApiResponse:
 
 @app.post("/api/diagnosis", response_model=ApiResponse)
 def diagnosis(request: DiagnosisRequest) -> ApiResponse:
-    return ApiResponse(
-        data={
-            "possibleCauses": ["燃油供给不足", "火花塞积碳", "进气系统漏气"],
-            "recommendedActions": ["检查燃油滤清器", "检查火花塞间隙和积碳", "检查进气管路密封"],
-            "safetyNotes": ["作业前确认设备停止运行", "佩戴防护手套和护目镜", "保持维修区域通风"],
-            "fallback": True,
-        },
-        message="当前为模拟诊断结果",
-    )
+    return ApiResponse(data=diagnose_with_rag(request), message="诊断建议已生成")
 
 
 @app.post("/api/rag/answer", response_model=ApiResponse)
@@ -190,16 +184,25 @@ def review_case(case_id: str, request: CaseReviewRequest) -> ApiResponse:
 async def upload_file(file: UploadFile = File(...)) -> ApiResponse:
     suffix = Path(file.filename or "").suffix.lower().lstrip(".")
     if not suffix or suffix not in ALLOWED_UPLOAD_TYPES:
+        logger.warning("Rejected upload with unsupported extension: %s", file.filename)
         raise HTTPException(status_code=400, detail="仅支持 jpg、jpeg、png、webp 和 pdf 文件")
 
     content_type = (file.content_type or "").split(";", 1)[0].lower()
     if content_type not in ALLOWED_UPLOAD_TYPES[suffix]:
+        logger.warning(
+            "Rejected upload with MIME mismatch: filename=%s suffix=%s content_type=%s",
+            file.filename,
+            suffix,
+            content_type,
+        )
         raise HTTPException(status_code=400, detail="文件扩展名与 MIME 类型不匹配")
 
     content = await file.read()
     if not content:
+        logger.warning("Rejected empty upload: %s", file.filename)
         raise HTTPException(status_code=400, detail="上传文件不能为空")
     if len(content) > MAX_UPLOAD_BYTES:
+        logger.warning("Rejected oversized upload: %s bytes=%s", file.filename, len(content))
         raise HTTPException(status_code=400, detail="上传文件不能超过 10MB")
 
     file_id = f"file-{uuid4().hex[:8]}"

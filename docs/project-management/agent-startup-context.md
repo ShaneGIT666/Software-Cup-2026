@@ -12,7 +12,7 @@
 
 1. LoongArch / 银河麒麟 V11 后端最小依赖验证已完成；后端测试子集 `39 passed`，`/api/health` 和 `/api/providers/status` 正常。
 2. 目标 VM 无 npm/git，因此前端采用 Windows 本地构建 `frontend/dist`，再由 FastAPI 静态托管的方案。
-3. Windows 本地主线后端测试最新结果为 `74 passed in 12.75s`。
+3. Windows 本地主线后端测试最新结果为 `78 passed in 18.67s`。
 4. 前端生产构建已通过；存在 Vite chunk size warning，不阻塞。
 5. Qwen / DashScope OpenAI-compatible 文本 RAG 已完成真实 API 小样本验收，返回 `fallback=false` 且保留 citations。
 6. Chroma 是可选向量索引增强；hash embedding 是断网和无 Key 场景的 fallback/占位，不是生产级语义 embedding。
@@ -40,11 +40,12 @@
 4. 多模态 provider：`backend/app/multimodal_adapter.py`
 5. 资料入库：`backend/app/knowledge.py`
 6. Chroma 可选索引：`backend/app/vector_store.py`
-7. 前端入口：`frontend/src/App.vue`
-8. 前端 API 类型：`frontend/src/api.ts`
-9. 当前交接：`docs/project-management/current-handoff.md`
-10. 测试报告：`docs/testing/software-test-report.md`
-11. LoongArch 验证：`docs/deployment/loongarch-kylin-verification.md`
+7. JSON 原子写：`backend/app/data_store.py`
+8. 前端入口：`frontend/src/App.vue`
+9. 前端 API 类型：`frontend/src/api.ts`
+10. 当前交接：`docs/project-management/current-handoff.md`
+11. 测试报告：`docs/testing/software-test-report.md`
+12. LoongArch 验证：`docs/deployment/loongarch-kylin-verification.md`
 
 ## 5. 常用命令
 

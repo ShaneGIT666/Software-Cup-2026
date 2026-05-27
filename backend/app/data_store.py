@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from uuid import uuid4
 from pathlib import Path
 from typing import Any
 
@@ -42,10 +43,7 @@ def _read_json(name: str) -> list[dict[str, Any]]:
 
 def _write_json(name: str, data: list[dict[str, Any]]) -> None:
     path = examples_dir() / name
-    path.write_text(
-        json.dumps(data, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
+    _atomic_write_json(path, data)
 
 
 def _read_knowledge_json(name: str) -> list[dict[str, Any]]:
@@ -62,10 +60,17 @@ def _read_knowledge_json(name: str) -> list[dict[str, Any]]:
 def _write_knowledge_json(name: str, data: list[dict[str, Any]]) -> None:
     path = knowledge_dir() / name
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
+    _atomic_write_json(path, data)
+
+
+def _atomic_write_json(path: Path, data: list[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = path.with_name(f"{path.name}.{uuid4().hex}.tmp")
+    temp_path.write_text(
         json.dumps(data, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
+    os.replace(temp_path, path)
 
 
 def load_seed_data() -> dict[str, list[dict[str, Any]]]:

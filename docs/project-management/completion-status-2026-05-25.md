@@ -58,7 +58,7 @@ npm.cmd run build
 最近记录：
 
 ```text
-后端测试：74 passed in 12.75s
+后端测试：78 passed in 18.67s
 前端构建：通过，存在 Vite chunk size warning，不阻塞
 Qwen 文本 RAG：真实 API 小样本验收通过，fallback=false，citations 保留
 ```

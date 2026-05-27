@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import logging
 import os
 import tempfile
 import time
@@ -17,6 +18,9 @@ from .provider_policy import (
     record_fallback,
     remote_api_disabled,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 def configured_multimodal_provider(requested_provider: str | None) -> str:
@@ -218,6 +222,7 @@ def analyze_multimodal_document(
     if remote_api_disabled():
         reason = "REMOTE_API_MODE=off，已强制使用本地 mock 多模态分析，避免比赛现场网络不稳定影响演示。"
         record_fallback("multimodal", reason)
+        logger.info("Multimodal fallback: %s", reason)
         return mock_multimodal_analysis(file_path.name, source_name, suffix, provider, fallback_reason=reason)
 
     try:
@@ -225,6 +230,7 @@ def analyze_multimodal_document(
     except Exception as exc:
         reason = f"{provider} 多模态 provider 调用失败，已降级到 mock：{exc}"
         record_fallback("multimodal", reason)
+        logger.warning("Multimodal fallback: %s", reason)
         return mock_multimodal_analysis(
             file_path.name,
             source_name,
@@ -286,6 +292,7 @@ def validate_multimodal_provider(request: Any) -> dict[str, Any]:
         if remote_api_disabled():
             reason = "REMOTE_API_MODE=off，已跳过真实多模态 API 验收。"
             record_fallback("multimodal", reason)
+            logger.info("Multimodal validation skipped: %s", reason)
             return {
                 "remoteOk": False,
                 "provider": provider,
@@ -299,6 +306,7 @@ def validate_multimodal_provider(request: Any) -> dict[str, Any]:
         if not key_configured(provider):
             reason = f"{provider} API key 未配置。"
             record_fallback("multimodal", reason)
+            logger.info("Multimodal validation fallback: %s", reason)
             return {
                 "remoteOk": False,
                 "provider": provider,
@@ -324,6 +332,7 @@ def validate_multimodal_provider(request: Any) -> dict[str, Any]:
     except Exception as exc:
         reason = f"{provider} 多模态验收失败：{exc}"
         record_fallback("multimodal", reason)
+        logger.warning("Multimodal validation fallback: %s", reason)
         return {
             "remoteOk": False,
             "provider": provider,

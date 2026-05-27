@@ -10,6 +10,7 @@ import backend.app.llm_adapter as llm_adapter
 import backend.app.knowledge as knowledge
 import backend.app.multimodal_adapter as multimodal_adapter
 import backend.app.vector_store as vector_store
+import backend.app.data_store as data_store
 from backend.app.main import app
 
 
@@ -115,6 +116,28 @@ def test_rag_answer_returns_mock_response_with_citations(tmp_path, monkeypatch) 
     assert payload["data"]["citations"]
     assert payload["data"]["citations"][0]["scoreBreakdown"]["score"] > 0
     assert "基于已检索到" in payload["data"]["answer"]
+
+
+def test_diagnosis_reuses_search_and_rag_citations(tmp_path, monkeypatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+
+    response = client.post(
+        "/api/diagnosis",
+        json={
+            "deviceModel": "发动机-示例型号 A",
+            "faultText": "启动困难 怠速不稳",
+            "evidenceIds": [],
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    assert payload["possibleCauses"]
+    assert payload["recommendedActions"]
+    assert payload["safetyNotes"]
+    assert payload["citations"]
+    assert payload["provider"] == "mock"
+    assert "queryId" in payload
 
 
 def test_rag_answer_openai_provider_falls_back_to_mock(tmp_path, monkeypatch) -> None:
@@ -1214,3 +1237,48 @@ def test_multimodal_validate_real_provider_mock_success(tmp_path, monkeypatch) -
     assert data["remoteOk"] is True
     assert data["fallback"] is False
     assert "验收通过" in data["summaryPreview"]
+
+
+def test_json_writes_use_atomic_replace(tmp_path, monkeypatch) -> None:
+    examples = tmp_path / "examples"
+    examples.mkdir()
+    monkeypatch.setenv("APP_EXAMPLES_DIR", str(examples))
+    calls: list[tuple[str, str]] = []
+
+    def fake_replace(src: Any, dst: Any) -> None:
+        calls.append((str(src), str(dst)))
+
+    monkeypatch.setattr(data_store.os, "replace", fake_replace)
+
+    data_store.save_cases([{"id": "case-atomic"}])
+
+    assert calls
+    temp_path, target_path = calls[0]
+    assert temp_path.endswith(".tmp")
+    assert target_path.endswith("repair-cases.json")
+    assert "case-atomic" in (examples / "repair-cases.json").with_name(temp_path.split("\\")[-1]).read_text(
+        encoding="utf-8"
+    )
+
+
+def test_chroma_collection_creation_failure_degrades_gracefully(tmp_path, monkeypatch) -> None:
+    class BrokenClient:
+        def __init__(self, *_: Any, **__: Any) -> None:
+            raise RuntimeError("simulated chroma init failure")
+
+    monkeypatch.setenv("RAG_VECTOR_STORE", "chroma")
+    monkeypatch.setenv("APP_CHROMA_DIR", str(tmp_path / "chroma"))
+    monkeypatch.setitem(__import__("sys").modules, "chromadb", type("FakeChroma", (), {"PersistentClient": BrokenClient}))
+
+    assert vector_store.search_similar_chunks("发动机 启动困难", 3) == []
+
+
+def test_chroma_query_failure_degrades_gracefully(monkeypatch) -> None:
+    class BrokenCollection:
+        def query(self, **_: Any) -> dict[str, Any]:
+            raise RuntimeError("simulated query failure")
+
+    monkeypatch.setenv("RAG_VECTOR_STORE", "chroma")
+    monkeypatch.setattr(vector_store, "chroma_collection", lambda provider: BrokenCollection())
+
+    assert vector_store.search_similar_chunks("发动机 启动困难", 3) == []

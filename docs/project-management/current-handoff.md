@@ -10,7 +10,7 @@
 
 已确认事实：
 
-1. Windows 本地主线后端测试最新结果为 `74 passed in 12.75s`，资料入库、RAG、上传安全、多模态 mock、Chroma 可选召回和官方 PDF 流程均有覆盖。
+1. Windows 本地主线后端测试最新结果为 `78 passed in 18.67s`，资料入库、RAG、上传安全、多模态 mock、Chroma 可选召回和官方 PDF 流程均有覆盖。
 2. 前端 `npm.cmd run build` 已通过；存在 Vite chunk size warning，不阻塞比赛演示。
 3. Qwen / DashScope OpenAI-compatible 文本 RAG 已完成一次真实 API 小样本验收，返回 `fallback=false`，citations 保留。
 4. LoongArch / 银河麒麟 V11 虚拟机已完成后端最小依赖验证，后端测试子集 `39 passed`，`/api/health` 与 `/api/providers/status` 正常。
@@ -22,15 +22,17 @@
 后端：
 
 1. `POST /api/search`：关键词加权检索，返回 `matchedTerms`、`reason`、`scoreBreakdown`。
-2. `POST /api/rag/answer`：基于检索结果生成 RAG 回答，支持 mock/openai/anthropic、citations、上下文裁剪、token 控制和 fallback。
+2. `POST /api/diagnosis`：复用检索/RAG 管道生成结构化诊断，返回可能原因、排查动作、安全提醒和 citations，不再是固定硬编码结果。
+3. `POST /api/rag/answer`：基于检索结果生成 RAG 回答，支持 mock/openai/anthropic、citations、上下文裁剪、token 控制和 fallback。
 3. `POST /api/providers/llm/validate`：真实文本 LLM 小样本验收，只读取服务端环境变量，不接收前端 Key。
 4. `GET /api/providers/status`：返回 LLM、多模态、embedding 和离线兜底状态。
 5. `POST /api/knowledge/documents`：资料入库，支持 `pdf/txt/md/jpg/jpeg/png/webp`。
 6. `POST /api/knowledge/documents/{document_id}/analyze`：对 PDF/图片资料做多模态分析并生成可检索 chunks。
 7. `POST /api/providers/multimodal/validate`：真实多模态小样本验收入口，失败不影响主链路。
 8. `POST /api/knowledge/graph`：轻量知识关系网络原型。
-9. Chroma 可选向量索引：`RAG_VECTOR_STORE=chroma` 时启用；默认关闭。
-10. FastAPI 可选托管前端：`SERVE_FRONTEND=auto` 且 `frontend/dist/index.html` 存在时，`/` 返回 SPA 页面。
+10. Chroma 可选向量索引：`RAG_VECTOR_STORE=chroma` 时启用；默认关闭，初始化或查询失败会降级为空召回。
+11. FastAPI 可选托管前端：`SERVE_FRONTEND=auto` 且 `frontend/dist/index.html` 存在时，`/` 返回 SPA 页面。
+12. JSON 持久化已使用临时文件 + `os.replace()` 原子替换，降低异常中断导致文件损坏的风险。
 
 前端：
 

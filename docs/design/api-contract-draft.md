@@ -215,24 +215,29 @@ POST /api/rag/answer
   "success": true,
   "data": {
     "possibleCauses": [
-      "燃油供给不足",
-      "火花塞积碳",
-      "进气系统漏气"
+      "命中手册字段：启动困难；来源位置：故障诊断 / p.15"
     ],
     "recommendedActions": [
-      "检查燃油滤清器",
-      "检查火花塞间隙和积碳",
-      "检查进气管路密封"
+      "优先查看引用来源中的手册页码或资料片段，确认安全前置条件。"
     ],
     "safetyNotes": [
-      "作业前断开电源或确认设备处于安全状态",
-      "佩戴防护手套和护目镜"
+      "检修前确认设备停机、断电或处于安全隔离状态。",
+      "佩戴防护手套、护目镜等必要防护装备。"
     ],
-    "fallback": true
+    "citations": [],
+    "answer": "基于已检索到的资料生成诊断建议。",
+    "provider": "mock",
+    "model": "mock",
+    "fallback": true,
+    "fallbackReason": "",
+    "queryId": "q-001",
+    "summary": "已按字段权重、来源类型和短语命中排序。"
   },
-  "message": "当前为模拟诊断结果"
+  "message": "诊断建议已生成"
 }
 ```
+
+说明：`/api/diagnosis` 已复用现有检索和 RAG 管道，不再返回固定硬编码诊断。`evidenceIds` 可用于限定引用证据；未传或未命中时使用当前检索结果。
 
 ## 5. 作业流程
 

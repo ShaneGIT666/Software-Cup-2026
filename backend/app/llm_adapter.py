@@ -2,11 +2,15 @@ from __future__ import annotations
 
 import os
 import time
+import logging
 from typing import Any
 
 import httpx
 
 from .provider_policy import configured_llm_provider, record_fallback, remote_api_disabled
+
+
+logger = logging.getLogger(__name__)
 
 
 def configured_provider(requested_provider: str | None) -> str:
@@ -157,6 +161,7 @@ def _post_json(url: str, headers: dict[str, str], payload: dict[str, Any], timeo
             return response.json()
         except Exception as exc:  # pragma: no cover - network details vary by provider
             last_error = exc
+            logger.warning("Provider request failed on attempt %s/%s: %s", attempt + 1, retry_count + 1, exc)
             if attempt < retry_count and backoff_seconds:
                 time.sleep(backoff_seconds)
     raise RuntimeError(str(last_error) if last_error else "provider request failed")
@@ -298,6 +303,7 @@ def generate_rag_answer(
     if remote_api_disabled():
         reason = "REMOTE_API_MODE=off，已强制使用本地 mock provider，避免比赛现场网络不稳定影响演示。"
         record_fallback("llm", reason)
+        logger.info("LLM fallback: %s", reason)
         return mock_rag_answer(device_model, fault_text, contexts, provider, fallback_reason=reason)
 
     try:
@@ -305,6 +311,7 @@ def generate_rag_answer(
     except Exception as exc:
         reason = f"{provider} provider 调用失败，已降级到 mock：{exc}"
         record_fallback("llm", reason)
+        logger.warning("LLM fallback: %s", reason)
         return mock_rag_answer(
             device_model,
             fault_text,

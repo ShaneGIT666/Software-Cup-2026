@@ -10,7 +10,7 @@
 
 最近确认事实：
 
-1. Windows 本地后端完整测试最新结果：`74 passed in 12.75s`。
+1. Windows 本地后端完整测试最新结果：`78 passed in 18.67s`。
 2. 前端 `npm.cmd run build` 通过，存在 Vite chunk size warning，不阻塞。
 3. Qwen / DashScope OpenAI-compatible 文本 RAG 小样本真实 API 验收通过，`fallback=false`，citations 保留。
 4. LoongArch / 银河麒麟 V11 后端最小依赖测试子集通过：`39 passed`。
@@ -22,7 +22,7 @@
 
 ```powershell
 .\backend\.venv\Scripts\python.exe -m pytest tests/ -q
-# 74 passed in 12.75s
+# 78 passed in 18.67s
 ```
 
 前端：
@@ -69,7 +69,10 @@ npm run test:e2e
 | T-BE-014 | embedding provider | `hash`/`openai` 标记进入 `scoreBreakdown.embeddingProvider` |
 | T-BE-015 | embedding fallback | 真实 embedding 失败时回退 hash，不影响检索 |
 | T-BE-016 | FastAPI 前端托管 | `SERVE_FRONTEND=auto` 时 `/` 返回 SPA，API 不受影响 |
-| T-BE-017 | 官方 PDF | 官方摩托车维修手册入库、检索、RAG、删除、Chroma 流程 |
+| T-BE-017 | 动态诊断 | `/api/diagnosis` 复用检索/RAG citations，不再返回固定硬编码结果 |
+| T-BE-018 | JSON 原子写 | `save_cases()` 等写入先写临时文件再 `os.replace()` |
+| T-BE-019 | Chroma 降级 | Chroma 初始化失败或查询失败时返回空召回，不影响主链路 |
+| T-BE-020 | 官方 PDF | 官方摩托车维修手册入库、检索、RAG、删除、Chroma 流程 |
 
 ## 4. LoongArch / 银河麒麟验证
 
@@ -105,7 +108,7 @@ npm/git 不存在
 | hash embedding 非真实语义 | 答辩术语风险 | 文档和返回字段明确标记 `embeddingProvider=hash` |
 | 真实多模态 payload 差异 | 不同 provider 兼容性不确定 | 只通过 `/api/providers/multimodal/validate` 做小样本验收 |
 | 前端 E2E 依赖未安装 | 自动化演示防线不完整 | 网络可用后安装 `@playwright/test` 并执行 |
-| JSON 文件并发写 | 多请求写入可能覆盖 | 比赛 MVP 低并发可接受；后续可引入文件锁或数据库 |
+| JSON 文件并发写 | 多请求写入可能覆盖 | 已改为原子替换降低写坏文件风险；比赛 MVP 低并发可接受，后续可引入文件锁或数据库 |
 
 ## 6. 结论
 

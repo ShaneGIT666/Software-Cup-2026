@@ -4,6 +4,19 @@
 
 系统面向工业、能源、制造等场景中的设备检修作业，目标是通过多模态大模型、知识检索、标准化作业流程和经验案例沉淀，帮助一线检修人员更快查找资料、诊断故障、规范作业，并让维修经验持续进入知识库。
 
+## 当前验证状态
+
+| 项目 | 当前状态 |
+| --- | --- |
+| 后端自动化测试 | `78 passed`，覆盖动态诊断、原子写和 Chroma 降级测试 |
+| 前端生产构建 | `npm.cmd run build` 通过；Vite chunk size warning 不阻塞演示 |
+| LoongArch / 银河麒麟 | 后端最小依赖链路已验证；本轮按要求暂不继续做 VM 复验 |
+| 前端目标环境托管 | 已支持 FastAPI 静态托管 `frontend/dist`，适配无 npm/nginx 的演示环境 |
+| Qwen 文本 RAG | DashScope OpenAI-compatible 小样本已验收，支持 `fallback=false` 与 citations |
+| Chroma 向量增强 | 可选开启；`hash` embedding 明确为 fallback，占位不冒充生产级语义向量 |
+| 多模态能力 | mock 演示链路稳定；真实 provider 通过 `/api/providers/multimodal/validate` 做小样本验收 |
+| 现场兜底 | `REMOTE_API_MODE=off` 可强制本地 mock/检索链路，避免弱网断链 |
+
 ## 参赛信息
 
 | 项目 | 内容 |
