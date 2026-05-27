@@ -155,20 +155,21 @@ powershell -ExecutionPolicy Bypass -File .\scripts\stop-dev.ps1
 
 当前仓库已完成：
 
-1. Vue 3 + TypeScript + Vite + Element Plus 前端工作台。
-2. FastAPI 后端 API 骨架。
-3. 本地 JSON 样例数据，包括设备、手册、案例和流程。
-4. 检索、流程查看、上传、案例提交、案例审核、审核后再检索的 MVP 闭环。
-5. 资料入库 MVP：支持 PDF/TXT/Markdown 上传，生成本地知识片段并进入检索结果。
-6. 前端组件拆分：检索输入、结果列表、作业流程、案例提交、案例审核、资料入库。
-7. Anaconda 本地环境脚本、前端启动脚本、后端启动脚本和后端测试脚本。
-8. 后端接口测试通过，前端生产构建通过。
-9. Coding Agent 动态交接入口：`docs/project-management/agent-startup-context.md`。
+1. Vue 3 + TypeScript + Vite + Element Plus 工业检修指挥台界面。
+2. FastAPI 后端 API，覆盖检索、诊断、RAG、资料入库、多模态分析、知识关系网络、案例提交和审核。
+3. 本地 JSON 样例数据与原子写入持久化，保留轻量架构和比赛现场兜底能力。
+4. 检索、流程查看、资料上传/入库、RAG citations、案例提交、案例审核、审核后再检索的 MVP 闭环。
+5. 资料入库支持 `pdf/txt/md/jpg/jpeg/png/webp`，文本型 PDF 可解析为知识片段，图片/扫描类资料可走多模态分析入口。
+6. RAG provider 支持 `mock/openai/anthropic`，已完成 Qwen / DashScope OpenAI-compatible 文本 RAG 小样本验收。
+7. Chroma 可选向量索引已接入，默认关闭；`hash` embedding 是 fallback，占位不冒充真实语义 embedding。
+8. FastAPI 可选静态托管 `frontend/dist`，用于无 npm/nginx 的目标环境演示。
+9. 后端 `78 passed`，前端生产构建通过；Playwright 冒烟测试文件已提交，依赖需联网安装后执行。
+10. Coding Agent 动态交接入口：`docs/project-management/agent-startup-context.md`。
 
 下一步建议：
 
-1. 设计检索排序和来源引用规则，让 mock 手册、案例和入库资料都能解释命中原因、来源章节和页码。
-2. 在现有 Mock RAG Adapter 边界上接入真实 OpenAI/Anthropic provider，并保留无 Key 降级策略。
-3. 对 Docling、MinerU、PaddleOCR 做小样本验证，记录许可证、依赖体积和国产化兼容风险。
-4. 同步更新 `development-plan.md` 和 `task-board.md` 的完成状态。
-5. 继续完善 `docs/product/demo-checklist.md`，补充截图点和预录视频脚本。
+1. 面向评委整理最终产品说明书、演示 runbook、PPT 大纲和 7 分钟视频脚本。
+2. 网络可用后安装 `@playwright/test` 并运行 `npm run test:e2e`，把浏览器演示路径纳入自动化冒烟。
+3. 用一张小图片做真实多模态 provider 验收，记录 provider、模型、耗时和 fallback 结果。
+4. 按 `docs/superpowers/specs/2026-05-27-ceiling-improvement-design.md` 继续推进低风险提分项，例如扩展演示种子数据和演示检查清单。
+5. 如恢复 LoongArch 工作，再上传最新 `frontend/dist`，复验 FastAPI 静态托管前端访问。

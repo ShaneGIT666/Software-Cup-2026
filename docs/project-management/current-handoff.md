@@ -24,12 +24,12 @@
 1. `POST /api/search`：关键词加权检索，返回 `matchedTerms`、`reason`、`scoreBreakdown`。
 2. `POST /api/diagnosis`：复用检索/RAG 管道生成结构化诊断，返回可能原因、排查动作、安全提醒和 citations，不再是固定硬编码结果。
 3. `POST /api/rag/answer`：基于检索结果生成 RAG 回答，支持 mock/openai/anthropic、citations、上下文裁剪、token 控制和 fallback。
-3. `POST /api/providers/llm/validate`：真实文本 LLM 小样本验收，只读取服务端环境变量，不接收前端 Key。
-4. `GET /api/providers/status`：返回 LLM、多模态、embedding 和离线兜底状态。
-5. `POST /api/knowledge/documents`：资料入库，支持 `pdf/txt/md/jpg/jpeg/png/webp`。
-6. `POST /api/knowledge/documents/{document_id}/analyze`：对 PDF/图片资料做多模态分析并生成可检索 chunks。
-7. `POST /api/providers/multimodal/validate`：真实多模态小样本验收入口，失败不影响主链路。
-8. `POST /api/knowledge/graph`：轻量知识关系网络原型。
+4. `POST /api/providers/llm/validate`：真实文本 LLM 小样本验收，只读取服务端环境变量，不接收前端 Key。
+5. `GET /api/providers/status`：返回 LLM、多模态、embedding 和离线兜底状态。
+6. `POST /api/knowledge/documents`：资料入库，支持 `pdf/txt/md/jpg/jpeg/png/webp`。
+7. `POST /api/knowledge/documents/{document_id}/analyze`：对 PDF/图片资料做多模态分析并生成可检索 chunks。
+8. `POST /api/providers/multimodal/validate`：真实多模态小样本验收入口，失败不影响主链路。
+9. `POST /api/knowledge/graph`：轻量知识关系网络原型。
 10. Chroma 可选向量索引：`RAG_VECTOR_STORE=chroma` 时启用；默认关闭，初始化或查询失败会降级为空召回。
 11. FastAPI 可选托管前端：`SERVE_FRONTEND=auto` 且 `frontend/dist/index.html` 存在时，`/` 返回 SPA 页面。
 12. JSON 持久化已使用临时文件 + `os.replace()` 原子替换，降低异常中断导致文件损坏的风险。
@@ -109,11 +109,11 @@ FRONTEND_DIST_DIR=../frontend/dist
 
 ## 5. 推荐下一步
 
-1. 运行完整后端测试和前端构建，更新 `docs/testing/software-test-report.md` 的最新数量。
-2. 在 LoongArch VM 上传最新 release 包，验证 `/`、`/api/health`、`/api/providers/status`。
-3. 网络可用时安装 `@playwright/test`，运行 `npm run test:e2e`，把演示路径纳入自动化冒烟。
-4. 如要展示真实多模态，只用一张小图片做 `POST /api/providers/multimodal/validate`，不要一次上传整本 PDF 消耗 token。
-5. 进入最终材料阶段后制作 PPT、7 分钟视频脚本和演示录屏。
+1. 面向评委整理最终产品说明书、演示 runbook、PPT 大纲和 7 分钟视频脚本。
+2. 网络可用时安装 `@playwright/test`，运行 `npm run test:e2e`，把演示路径纳入自动化冒烟。
+3. 如要展示真实多模态，只用一张小图片做 `POST /api/providers/multimodal/validate`，不要一次上传整本 PDF 消耗 token。
+4. 按 `docs/superpowers/specs/2026-05-27-ceiling-improvement-design.md` 继续推进低风险提分项，例如扩展演示种子数据和演示检查清单。
+5. 如恢复 LoongArch 工作，再上传最新 release 包，验证 `/`、`/api/health`、`/api/providers/status`。
 
 ## 6. 接手规则
 
