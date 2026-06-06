@@ -114,6 +114,41 @@ MVP 完成前，优先保证“能打开、能搜索、能看步骤、能提交�
 2. 当前系统仍以文本检索和资料入库 MVP 为主，不能夸大为“已完成多模态跨模态检索”。
 3. 当前知识沉淀能力应表述为“可审核更新的知识库雏形”，不能直接宣称“知识图谱已完成”。
 
+## 统一启动入口（推荐）
+
+本地开发优先使用根目录 `dev.bat` 统一管理前后端。它会在后台启动 FastAPI 与 Vite，记录 PID 和日志，并提供状态检查、健康检查、日志查看和停止能力。
+
+```bat
+dev start
+dev status
+dev verify
+dev logs
+dev stop
+dev restart
+```
+
+启动后访问：
+
+```text
+http://127.0.0.1:5173/
+```
+
+常用命令说明：
+
+1. `dev start`：启动后端 `127.0.0.1:8000` 和前端 `127.0.0.1:5173`。
+2. `dev status`：查看进程、端口和访问地址。
+3. `dev verify`：检查 `/api/health` 与前端首页是否可访问。
+4. `dev logs`：查看最近的后端和前端日志。
+5. `dev stop`：停止保存的进程，并清理 8000/5173 端口残留服务。
+
+PowerShell 直连方式：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\dev.ps1 -Action start -OpenBrowser
+```
+
+`start-dev.bat` 和 `stop-dev.bat` 已保留为兼容入口，内部会转发到统一管理脚本。
+
 ## 本地运行
 
 一键启动前后端开发服务：

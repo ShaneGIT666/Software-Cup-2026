@@ -12,6 +12,7 @@ try {
     if (-not (Test-Path "node_modules")) {
         npm.cmd install --cache $NpmCache
     }
+    $ErrorActionPreference = "Continue"
     npm.cmd run dev -- --host 127.0.0.1 --port $Port
 }
 finally {

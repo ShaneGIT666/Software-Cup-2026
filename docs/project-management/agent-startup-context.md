@@ -1,5 +1,22 @@
 # Coding Agent 初始化入口
 
+## 最新启动入口（2026-06-06）
+
+本地开发优先使用仓库根目录 `dev.bat` 统一管理前后端：
+
+```bat
+dev start
+dev status
+dev verify
+dev logs
+dev stop
+dev restart
+```
+
+详细说明见 `docs/deployment/unified-dev-entry.md`。`start-dev.bat` 和 `stop-dev.bat` 仍保留，但已作为兼容包装转发到 `scripts/dev.ps1`。
+
+启动后默认访问 `http://127.0.0.1:5173/`，后端健康检查为 `http://127.0.0.1:8000/api/health`。
+
 更新时间：2026-05-27
 用途：所有后续 Coding Agent 在没有对话上下文时的第一阅读入口。
 规则：如果本文与其他历史文档冲突，以本文和 `docs/project-management/current-handoff.md` 为准。

@@ -67,8 +67,9 @@ E:/Download/Downloads/摩托车发动机维修手册.pdf
 
 ## 5. 演示步骤
 
-1. 运行 `start-dev.bat`。
-2. 打开 `http://localhost:5173`。
+1. 运行 `dev start`。
+2. 运行 `dev verify` 确认后端健康检查和前端首页可访问。
+3. 打开 `http://127.0.0.1:5173/`。
 3. 确认首页自动检索并显示结果。
 4. 上传 Markdown/TXT 资料，确认显示 `已入库` 和 chunk 数。
 5. 上传官方 PDF 或图片，确认显示 `待多模态分析`。

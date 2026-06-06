@@ -4,11 +4,12 @@
 
 ## 1. 演示前检查
 
-1. 在仓库根目录运行 `start-dev.bat`。
-2. 打开 `http://localhost:5173`。
-3. 后端健康检查访问 `http://127.0.0.1:8000/api/health`。
-4. 如需命令验证，运行 `powershell -ExecutionPolicy Bypass -File .\scripts\run-backend-tests.ps1`。
-5. 准备一份小于 20MB 的 `md` 或 `txt` 检修资料，内容建议包含“摩托车发动机无法启动、火花塞、高压包、燃油供给”等关键词。
+1. 在仓库根目录运行 `dev start`。
+2. 运行 `dev verify` 确认后端和前端都可访问。
+3. 打开 `http://127.0.0.1:5173/`。
+4. 后端健康检查访问 `http://127.0.0.1:8000/api/health`。
+5. 如需命令验证，运行 `powershell -ExecutionPolicy Bypass -File .\scripts\run-backend-tests.ps1`。
+6. 准备一份小于 20MB 的 `md` 或 `txt` 检修资料，内容建议包含“摩托车发动机无法启动、火花塞、高压包、燃油供给”等关键词。
 
 ## 2. 固定演示输入
 
