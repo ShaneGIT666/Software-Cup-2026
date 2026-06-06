@@ -23,7 +23,8 @@ WORKDIR /app
 
 COPY backend/requirements.txt /app/backend/requirements.txt
 RUN python -m pip install --no-cache-dir --upgrade pip \
-    && python -m pip install --no-cache-dir -r /app/backend/requirements.txt
+    && python -c "from pathlib import Path; p=Path('/app/backend/requirements.txt'); q=Path('/app/backend/requirements-container.txt'); text=p.read_text(encoding='utf-8').replace('uvicorn[standard]==0.34.0','uvicorn==0.34.0'); q.write_text(text + '\npydantic<2\n', encoding='utf-8')" \
+    && python -m pip install --no-cache-dir -r /app/backend/requirements-container.txt
 
 COPY backend /app/backend
 COPY data/examples /app/data/examples
@@ -34,4 +35,4 @@ RUN mkdir -p /app/runtime/knowledge /app/runtime/uploads
 
 EXPOSE 8000
 
-CMD ["python", "-m", "uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python", "-c", "import uvicorn.server; uvicorn.server.HANDLED_SIGNALS=(); import uvicorn; uvicorn.run('backend.app.main:app', host='0.0.0.0', port=8000)"]

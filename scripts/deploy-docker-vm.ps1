@@ -133,7 +133,8 @@ curl -fsS "http://127.0.0.1:`$APP_PORT/api/health"
 echo
 curl -fsS "http://127.0.0.1:`$APP_PORT/api/providers/status"
 echo
-curl -fsSI "http://127.0.0.1:`$APP_PORT/" | head -n 5
+curl -fsS "http://127.0.0.1:`$APP_PORT/" | head -c 160
+echo
 echo "[deploy] Docker deployment verification finished."
 "@
 

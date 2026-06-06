@@ -114,7 +114,7 @@ RAG_VECTOR_STORE=off
 sudo docker ps --filter name=software-cup-demo
 curl -fsS http://127.0.0.1:8000/api/health
 curl -fsS http://127.0.0.1:8000/api/providers/status
-curl -fsSI http://127.0.0.1:8000/
+curl -fsS http://127.0.0.1:8000/ | head -c 160
 ```
 
 预期：
@@ -123,7 +123,7 @@ curl -fsSI http://127.0.0.1:8000/
 容器状态为 Up
 /api/health 返回 success=true
 /api/providers/status 返回 provider 和 offline/fallback 状态
-/ 返回 200 或包含 index.html 的 HTML 响应
+/ 返回包含 `<!doctype html>` 的前端 HTML 响应
 ```
 
 ## 6. 常见失败
