@@ -459,6 +459,47 @@ def test_workflow_lookup(tmp_path, monkeypatch) -> None:
     assert payload["data"]["id"] == "wf-001"
 
 
+def test_expanded_seed_workflows_are_searchable(tmp_path, monkeypatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    scenarios = [
+        ("发动机-示例型号 D", "机油压力低 润滑不足 高温报警", "wf-004"),
+        ("电气系统-示例型号 E", "无法上电 保险丝 主继电器", "wf-005"),
+        ("传动系统-示例型号 F", "链条张紧 传动异响 润滑", "wf-006"),
+    ]
+
+    for device_model, fault_text, workflow_id in scenarios:
+        search_response = client.post(
+            "/api/search",
+            json={"deviceModel": device_model, "faultText": fault_text, "inputType": "text", "topK": 5},
+        )
+
+        assert search_response.status_code == 200
+        results = search_response.json()["data"]["results"]
+        assert any(item.get("workflowId") == workflow_id for item in results)
+
+        workflow_response = client.get(f"/api/workflows/{workflow_id}")
+        assert workflow_response.status_code == 200
+        workflow = workflow_response.json()["data"]
+        assert workflow["id"] == workflow_id
+        assert len(workflow["steps"]) >= 3
+        assert workflow["tools"]
+        assert workflow["safetyNotes"]
+
+
+def test_global_graph_includes_expanded_seed_workflows(tmp_path, monkeypatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+
+    response = client.post("/api/knowledge/graph/rebuild")
+
+    assert response.status_code == 200
+    graph = response.json()["data"]
+    labels = {node["label"] for node in graph["nodes"]}
+    assert any("润滑" in label for label in labels)
+    assert any("电气" in label or "上电" in label for label in labels)
+    assert any("链传动" in label or "链条" in label for label in labels)
+    assert graph["stats"]["nodeTypes"]["workflow"] >= 6
+
+
 def test_upload_uses_configured_upload_dir(tmp_path, monkeypatch) -> None:
     client = make_client(tmp_path, monkeypatch)
     upload_dir = tmp_path / "uploads"

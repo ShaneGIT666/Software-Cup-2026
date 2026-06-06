@@ -90,5 +90,104 @@
       }
     ],
     "acceptanceCriteria": ["异响消除或明显降低", "关键紧固件无松动"]
+  },
+  {
+    "id": "wf-004",
+    "title": "润滑不足与机油压力异常检查流程",
+    "deviceType": "发动机",
+    "faultType": "机油压力异常",
+    "level": "重点检修",
+    "tools": ["机油压力表", "滤清器扳手", "红外测温仪"],
+    "safetyNotes": ["确认发动机冷却后再拆检", "防止热油烫伤", "废油按规范回收"],
+    "steps": [
+      {
+        "order": 1,
+        "title": "确认报警与液位",
+        "description": "读取机油压力或高温报警记录，检查机油液位和油品状态。",
+        "checkRequired": true,
+        "warning": "液位过低时不得继续运行。"
+      },
+      {
+        "order": 2,
+        "title": "检查滤清器与油道",
+        "description": "检查机油滤清器堵塞、油道泄漏和接头密封情况。",
+        "checkRequired": true,
+        "warning": ""
+      },
+      {
+        "order": 3,
+        "title": "复测压力与温度",
+        "description": "更换或清洁后复测机油压力和关键部位温度。",
+        "checkRequired": true,
+        "warning": "压力仍异常时停止运行并检查机油泵。"
+      }
+    ],
+    "acceptanceCriteria": ["机油压力恢复规定范围", "温度报警消除", "无渗漏"]
+  },
+  {
+    "id": "wf-005",
+    "title": "电气系统无法上电检查流程",
+    "deviceType": "电气系统",
+    "faultType": "无法上电",
+    "level": "安全检修",
+    "tools": ["万用表", "绝缘手套", "保险丝拔取器", "接插件清洁剂"],
+    "safetyNotes": ["执行断电挂牌", "确认电容放电", "禁止带电插拔控制模块"],
+    "steps": [
+      {
+        "order": 1,
+        "title": "断电与急停确认",
+        "description": "确认电源隔离、急停回路状态和控制柜安全边界。",
+        "checkRequired": true,
+        "warning": "未断电不得打开控制柜。"
+      },
+      {
+        "order": 2,
+        "title": "检查保险丝和继电器",
+        "description": "测量保险丝通断、主继电器吸合状态和供电端电压。",
+        "checkRequired": true,
+        "warning": ""
+      },
+      {
+        "order": 3,
+        "title": "检查接插件与接地",
+        "description": "检查线束接插件松动、氧化和接地电阻是否异常。",
+        "checkRequired": true,
+        "warning": "接插件修复后需复测绝缘状态。"
+      }
+    ],
+    "acceptanceCriteria": ["设备可正常上电", "急停回路有效", "无异常发热或报警"]
+  },
+  {
+    "id": "wf-006",
+    "title": "链传动异响与张紧度检查流程",
+    "deviceType": "传动系统",
+    "faultType": "传动异响",
+    "level": "常规检修",
+    "tools": ["张紧度测量尺", "扭矩扳手", "润滑脂", "防护手套"],
+    "safetyNotes": ["停机并锁定动力源", "禁止在运行链条附近操作", "复位防护罩后再试运行"],
+    "steps": [
+      {
+        "order": 1,
+        "title": "确认异响位置",
+        "description": "停机后检查链条、防护罩和链轮是否存在摩擦痕迹。",
+        "checkRequired": true,
+        "warning": ""
+      },
+      {
+        "order": 2,
+        "title": "测量张紧度",
+        "description": "按手册测量链条挠度，调整张紧轮或安装位置。",
+        "checkRequired": true,
+        "warning": "张紧过大可能导致轴承负荷升高。"
+      },
+      {
+        "order": 3,
+        "title": "润滑并复测",
+        "description": "清洁链条后补充润滑，低速试运行确认异响是否消除。",
+        "checkRequired": true,
+        "warning": "试运行前必须复位防护罩。"
+      }
+    ],
+    "acceptanceCriteria": ["链条挠度符合手册要求", "异响消除或明显降低", "防护罩安装到位"]
   }
 ]

@@ -62,5 +62,53 @@
     "workflowId": "wf-001",
     "createdAt": "2026-05-19T00:00:00Z",
     "reviewedAt": ""
+  },
+  {
+    "id": "case-005",
+    "deviceType": "发动机",
+    "deviceModel": "发动机-示例型号 D",
+    "faultTitle": "机油压力低报警",
+    "faultText": "高负载运行 20 分钟后机油压力低报警，机体温度升高。",
+    "symptoms": ["机油压力低", "高温报警"],
+    "possibleCauses": ["机油滤清器堵塞", "机油液位偏低"],
+    "solution": "补充规定型号机油，更换滤清器并检查油道接头密封。",
+    "result": "机油压力恢复正常，连续运行无高温报警。",
+    "status": "approved",
+    "tags": ["机油压力", "润滑不足", "高温报警"],
+    "workflowId": "wf-004",
+    "createdAt": "2026-05-20T00:00:00Z",
+    "reviewedAt": "2026-05-20T02:00:00Z"
+  },
+  {
+    "id": "case-006",
+    "deviceType": "电气系统",
+    "deviceModel": "电气系统-示例型号 E",
+    "faultTitle": "控制柜无法上电",
+    "faultText": "按下启动按钮后控制柜无响应，主继电器不吸合。",
+    "symptoms": ["无法上电", "主继电器不吸合"],
+    "possibleCauses": ["急停回路未复位", "保险丝熔断", "接插件松动"],
+    "solution": "复位急停回路，更换熔断保险丝，清洁并固定线束接插件。",
+    "result": "设备恢复上电，启动控制正常。",
+    "status": "approved",
+    "tags": ["无法上电", "保险丝", "主继电器", "线束接插件"],
+    "workflowId": "wf-005",
+    "createdAt": "2026-05-20T00:00:00Z",
+    "reviewedAt": "2026-05-20T02:00:00Z"
+  },
+  {
+    "id": "case-007",
+    "deviceType": "传动系统",
+    "deviceModel": "传动系统-示例型号 F",
+    "faultTitle": "链条传动异响",
+    "faultText": "低速运行时链条区域出现连续摩擦声，防护罩内侧有磨痕。",
+    "symptoms": ["传动异响", "链条松弛"],
+    "possibleCauses": ["链条张紧度不足", "防护罩干涉", "润滑不良"],
+    "solution": "调整张紧轮位置，重新固定防护罩并补充链条润滑脂。",
+    "result": "低速和额定工况下异响消除。",
+    "status": "approved",
+    "tags": ["链条张紧", "传动异响", "润滑"],
+    "workflowId": "wf-006",
+    "createdAt": "2026-05-20T00:00:00Z",
+    "reviewedAt": "2026-05-20T02:00:00Z"
   }
 ]

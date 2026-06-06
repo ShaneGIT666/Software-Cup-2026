@@ -205,3 +205,35 @@ CitationHit@5 = 12/12 = 100.00%
 2. 优化 Top1 排序，优先考虑 BM25 或真实 embedding，不要急于引入重型图数据库。
 3. 如果答辩强调创新点，可展示“检索结果 -> 图谱证据链 -> RAG 回答”的完整路径。
 4. 若后续引入 Neo4j 或 GraphRAG，应作为二阶段升级，并保持当前 JSON fallback 可用。
+
+## 8. 2026-06-06 追加：演示种子数据扩展
+
+为避免比赛演示显得只覆盖“发动机启动困难”单一场景，本轮继续扩展 seed 数据，仍保持轻量 JSON 架构。
+
+新增数据：
+
+1. `data/examples/devices.json`：从 3 台设备扩展到 6 台，新增润滑发动机、电气启动控制系统、链传动执行机构。
+2. `data/examples/manuals.json`：从 5 条手册片段扩展到 8 条，新增润滑系统、电气控制、链传动检修片段。
+3. `data/examples/workflows.json`：从 3 条标准作业流程扩展到 6 条。
+4. `data/examples/repair-cases.json`：从 4 条维修案例扩展到 7 条，新增 3 条已审核案例。
+
+新增流程：
+
+| workflowId | 场景 | 演示关键词 |
+| --- | --- | --- |
+| `wf-004` | 润滑不足与机油压力异常 | 机油压力低、润滑不足、高温报警 |
+| `wf-005` | 电气系统无法上电 | 无法上电、保险丝、主继电器、线束接插件 |
+| `wf-006` | 链传动异响与张紧度 | 链条张紧、传动异响、润滑 |
+
+新增测试覆盖：
+
+1. `test_expanded_seed_workflows_are_searchable`：验证 3 个新增场景均可被 `/api/search` 命中，并带出对应 `workflowId`。
+2. `test_global_graph_includes_expanded_seed_workflows`：验证全局知识图谱包含新增流程和场景节点。
+
+最新后端测试结果：
+
+```text
+83 passed
+```
+
+演示口径：当前系统已有 6 条标准作业流程，可覆盖启动、排气、异响、润滑、电气上电、链传动等典型检修场景；这些流程均可通过检索结果、RAG citations 和知识图谱证据链串联展示。
