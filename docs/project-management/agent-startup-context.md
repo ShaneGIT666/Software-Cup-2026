@@ -147,3 +147,14 @@ OPENAI_EMBEDDING_MODEL=text-embedding-v3
 3. 运行后端测试和前端构建。
 4. 若改 API、数据状态、演示路径、部署方式或风险边界，必须同步更新本文和交接文档。
 5. 不使用 `git reset --hard` 或 `git checkout --` 回滚协作者改动。
+# Docker 部署快速入口（2026-06-06 最新）
+
+后续 agent 如果需要继续国产化部署验证，应从 `docs/deployment/docker-loongarch-deployment.md` 开始。当前新增的 Docker 脚本入口是：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\deploy-docker-vm.ps1
+```
+
+默认目标是 LoongArch / Kylin VM，容器内提供 FastAPI API 与 `frontend/dist` 静态前端。部署脚本不保存 sudo 密码；如果远程 `sudo -n docker info` 不可用，脚本会停止并提示在 VM 内手动执行 Docker 预处理命令。
+
+重要边界：仓库默认不提交 `frontend/dist`。如果 VM 通过 GitHub 源码 zip 拉取时缺少 dist，应使用包含 dist 的 GitHub Release/Artifact zip，并通过 `-PackageUrl` 传给部署脚本。

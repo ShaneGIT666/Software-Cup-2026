@@ -21,12 +21,36 @@ if (-not (Test-Path $frontendDist)) {
 
 New-Item -ItemType Directory -Force -Path $packageRoot | Out-Null
 
+function Copy-DemoItem {
+    param(
+        [string]$Source,
+        [string]$Target
+    )
+
+    New-Item -ItemType Directory -Force -Path (Split-Path $Target -Parent) | Out-Null
+
+    if ((Get-Item $Source).PSIsContainer) {
+        New-Item -ItemType Directory -Force -Path $Target | Out-Null
+        $excludeDirs = @(".venv", "venv", "node_modules", "__pycache__", ".pytest_cache", ".mypy_cache")
+        $excludeFiles = @("*.pyc", "*.pyo", "*.log")
+        & robocopy $Source $Target /E /XD $excludeDirs /XF $excludeFiles /NFL /NDL /NJH /NJS /NC /NS | Out-Null
+        if ($LASTEXITCODE -gt 7) {
+            throw "robocopy failed with exit code $LASTEXITCODE while copying $Source"
+        }
+    }
+    else {
+        Copy-Item -Path $Source -Destination $Target -Force
+    }
+}
+
 $include = @(
     "backend",
     "data\examples",
     "docs",
     "frontend\dist",
     "scripts",
+    "Dockerfile",
+    ".dockerignore",
     ".env.example",
     "README.md",
     "start-dev.bat",
@@ -37,8 +61,7 @@ foreach ($item in $include) {
     $source = Join-Path $projectRoot $item
     if (Test-Path $source) {
         $target = Join-Path $packageRoot $item
-        New-Item -ItemType Directory -Force -Path (Split-Path $target -Parent) | Out-Null
-        Copy-Item -Path $source -Destination $target -Recurse -Force
+        Copy-DemoItem -Source $source -Target $target
     }
 }
 

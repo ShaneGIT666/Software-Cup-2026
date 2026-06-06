@@ -122,3 +122,14 @@ FRONTEND_DIST_DIR=../frontend/dist
 2. 不使用 `git reset --hard` 或 `git checkout --` 回滚协作者改动。
 3. 任何 API、数据状态、演示路径、风险边界变化，都必须同步更新本文。
 4. 新增重依赖前先说明 LoongArch 风险，并保留 mock/offline 兜底。
+# Docker 部署入口（2026-06-06 最新）
+
+Docker 方案已经作为 LoongArch / Kylin V11 国产化部署验证的辅助路径补充进项目。后续 agent 接手时必须优先阅读 `docs/deployment/docker-loongarch-deployment.md`，再运行相关脚本。
+
+当前 Docker 路线的边界如下：
+
+1. Docker 默认使用离线兜底配置：`REMOTE_API_MODE=off`、`LLM_PROVIDER=mock`、`MULTIMODAL_PROVIDER=mock`、`RAG_VECTOR_STORE=off`。
+2. VM 没有 `git/npm`，因此远程部署脚本优先通过 `curl` 下载 GitHub zip，不依赖 `git clone`。
+3. 如果 GitHub 源码包不包含 `frontend/dist`，脚本会显式失败并提示使用包含 dist 的 GitHub Release/Artifact zip；不应在 VM 上临时安装 npm 来绕过该问题。
+4. 脚本不会保存 sudo 密码；如果 `sudo -n docker info` 不可用，需先在 VM 终端手动完成 Docker 预处理。
+5. Docker 是比赛演示和部署验证辅助方案，不替代原生 LoongArch/Kylin 运行验证要求。
