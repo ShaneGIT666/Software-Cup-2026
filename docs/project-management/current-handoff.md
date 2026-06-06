@@ -133,3 +133,16 @@ Docker 方案已经作为 LoongArch / Kylin V11 国产化部署验证的辅助�
 3. 如果 GitHub 源码包不包含 `frontend/dist`，脚本会显式失败并提示使用包含 dist 的 GitHub Release/Artifact zip；不应在 VM 上临时安装 npm 来绕过该问题。
 4. 脚本不会保存 sudo 密码；如果 `sudo -n docker info` 不可用，需先在 VM 终端手动完成 Docker 预处理。
 5. Docker 是比赛演示和部署验证辅助方案，不替代原生 LoongArch/Kylin 运行验证要求。
+# 最新交接补充：Docker 验证已完成（2026-06-06）
+
+LoongArch / Kylin V11 Docker 一体化部署已完成真实验证。后续 agent 不应再把 Docker 部署描述为“待验证”。
+
+已确认：
+
+1. VM 架构为 `loongarch64`，Docker 服务为 `active`。
+2. `software-cup-demo:loongarch` 镜像构建成功。
+3. `software-cup-demo` 容器启动成功。
+4. `/api/health`、`/api/providers/status` 和 `/` 均已验证通过。
+5. Dockerfile 已针对 LoongArch 容器适配：`uvicorn==0.34.0`、`pydantic<2`、兼容 uvicorn signal 启动。
+
+复现入口：`docs/deployment/docker-loongarch-deployment.md`。

@@ -113,3 +113,60 @@ npm/git 不存在
 ## 6. 结论
 
 项目已具备比赛演示所需的主要工程闭环。后续最重要的是在 LoongArch VM 上复验 FastAPI 静态托管前端，并在最终提交前重新执行后端测试、前端构建和演示路径冒烟。
+# 最新测试补充：LoongArch/Kylin Docker 验证（2026-06-06）
+
+本节为最新事实记录，优先级高于下方历史记录。本文必须在不依赖聊天上下文的情况下，让后续 agent、开发者和指导老师理解当前验证状态。
+
+## 验证环境
+
+```text
+操作系统：Kylin Linux Advanced Server V11 (Swan25)
+CPU 架构：loongarch64
+主机名：win000k10481
+Docker：24.0.9，服务状态 active
+容器基础镜像：cr.loongnix.cn/library/python:3.11
+部署方式：本地构建 frontend/dist -> package-demo 打包 -> 上传 VM -> Docker build/run
+```
+
+## 验证结论
+
+LoongArch/Kylin VM 上的 Docker 一体化部署已经通过。容器成功构建并运行，FastAPI 后端接口和前端静态页面均可访问。
+
+已验证项目：
+
+1. Docker 镜像构建成功：`software-cup-demo:loongarch`。
+2. Docker 容器启动成功：`software-cup-demo Up`。
+3. `GET /api/health` 返回 `success=true`。
+4. `GET /api/providers/status` 返回离线兜底 provider 状态。
+5. `GET /` 返回前端 HTML，开头包含 `<!doctype html>` 和 `lang="zh-CN"`。
+
+关键输出：
+
+```json
+{"success":true,"data":{"status":"ok","version":"0.1.0"},"message":""}
+```
+
+```html
+<!doctype html>
+<html lang="zh-CN">
+```
+
+## 本轮暴露并修复的问题
+
+1. `uvicorn[standard]` 会触发 `httptools` 原生构建，在 LoongArch 容器中失败；Dockerfile 已改为容器内使用 `uvicorn==0.34.0`。
+2. Pydantic 2 会触发 `pydantic-core` 原生构建，在 LoongArch 容器中失败；Dockerfile 已追加 `pydantic<2` 容器运行时约束。
+3. Uvicorn 在 LoongArch 容器内注册 signal handler 时出现 `OSError: [Errno 22] Invalid argument`；Dockerfile 已改为清空 `uvicorn.server.HANDLED_SIGNALS` 后启动。
+4. `HEAD /` 对当前 SPA fallback 返回 405；验证脚本已改为 `GET / | head -c 160`。
+
+## 当前风险边界
+
+Docker 验证默认采用离线兜底配置：
+
+```env
+REMOTE_API_MODE=off
+LLM_PROVIDER=mock
+MULTIMODAL_PROVIDER=mock
+RAG_VECTOR_STORE=off
+```
+
+这说明 Docker 部署链路、前后端一体化访问、Mock/RAG 兜底链路已经可用于比赛演示。真实 API、Chroma、真实多模态仍属于增强能力，应在网络、Key 和依赖可控时单独验收。

@@ -158,3 +158,15 @@ powershell -ExecutionPolicy Bypass -File .\scripts\deploy-docker-vm.ps1
 默认目标是 LoongArch / Kylin VM，容器内提供 FastAPI API 与 `frontend/dist` 静态前端。部署脚本不保存 sudo 密码；如果远程 `sudo -n docker info` 不可用，脚本会停止并提示在 VM 内手动执行 Docker 预处理命令。
 
 重要边界：仓库默认不提交 `frontend/dist`。如果 VM 通过 GitHub 源码 zip 拉取时缺少 dist，应使用包含 dist 的 GitHub Release/Artifact zip，并通过 `-PackageUrl` 传给部署脚本。
+# 最新事实：Docker 国产化验证已通过（2026-06-06）
+
+后续 agent 接手时必须知道：LoongArch / Kylin V11 Docker 一体化部署已经真实跑通，不再是待验证项。
+
+已验证：
+
+1. Docker 镜像 `software-cup-demo:loongarch` 在 `loongarch64` VM 上构建成功。
+2. Docker 容器 `software-cup-demo` 启动成功。
+3. `GET /api/health`、`GET /api/providers/status`、`GET /` 均通过。
+4. Docker 默认使用离线兜底：`REMOTE_API_MODE=off`、`LLM_PROVIDER=mock`、`MULTIMODAL_PROVIDER=mock`、`RAG_VECTOR_STORE=off`。
+
+复现与风险边界见 `docs/deployment/docker-loongarch-deployment.md`。

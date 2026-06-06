@@ -139,3 +139,27 @@ curl -fsS http://127.0.0.1:8000/ | head -c 160
 ## 7. 交接注意
 
 不要提交 `.env`、官方 PDF、`release/`、`frontend/dist/`、`data/uploads/`、`data/knowledge/`、`.venv/` 或 `node_modules/`。如果改变 Docker 部署流程，必须同步更新本文、`docs/project-management/current-handoff.md` 和 `docs/project-management/agent-startup-context.md`。
+# 最新验证状态（2026-06-06）
+
+本 Docker 部署方案已在 LoongArch / Kylin V11 虚拟机上完成真实验证。
+
+验证环境：
+
+```text
+Kylin Linux Advanced Server V11 (Swan25)
+loongarch64
+Docker 24.0.9
+基础镜像：cr.loongnix.cn/library/python:3.11
+```
+
+验证结果：
+
+```text
+Docker build：通过
+Docker run：通过
+GET /api/health：通过
+GET /api/providers/status：通过
+GET /：通过，返回前端 HTML
+```
+
+关键注意：LoongArch 容器内不要直接使用 `uvicorn[standard]` 或 Pydantic 2 原生核心依赖。当前 Dockerfile 会在容器内自动转换为最小运行依赖：`uvicorn==0.34.0` + `pydantic<2`，并使用兼容方式启动 uvicorn。
