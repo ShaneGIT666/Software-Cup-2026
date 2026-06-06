@@ -62,6 +62,12 @@ powershell -ExecutionPolicy Bypass -File .\scripts\deploy-docker-vm.ps1 `
   -IdentityFile "$env:USERPROFILE\.ssh\software_cup_kylin_vm"
 ```
 
+脚本默认允许 SSH 交互登录。如果已经配置好 SSH key 免密，且希望脚本在 CI/无人值守场景中失败即退出，可追加：
+
+```powershell
+-NonInteractiveSsh
+```
+
 可覆盖基础镜像：
 
 ```powershell

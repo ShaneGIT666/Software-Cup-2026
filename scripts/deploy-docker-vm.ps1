@@ -11,14 +11,20 @@ param(
     [string]$ContainerName = "software-cup-demo",
     [int]$AppPort = 8000,
     [string]$BaseImage = "cr.loongnix.cn/library/python:3.11",
-    [switch]$SkipLocalFrontendBuild
+    [switch]$SkipLocalFrontendBuild,
+    [switch]$NonInteractiveSsh
 )
 
 $ErrorActionPreference = "Stop"
 
 function Invoke-Remote {
     param([string]$Command)
-    & ssh -i $IdentityFile -p $Port -o BatchMode=yes -o ConnectTimeout=15 "$User@$HostName" $Command
+    $sshArgs = @("-i", $IdentityFile, "-p", $Port, "-o", "ConnectTimeout=15")
+    if ($NonInteractiveSsh) {
+        $sshArgs += @("-o", "BatchMode=yes")
+    }
+    $sshArgs += @("$User@$HostName", $Command)
+    & ssh @sshArgs
 }
 
 function Escape-BashSingleQuote {
