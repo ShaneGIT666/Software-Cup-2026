@@ -33,9 +33,11 @@ function handleFileChange(event: Event) {
   <aside class="query-panel panel-accent">
     <div class="section-title">
       <Search :size="18" />
-      <span>故障输入</span>
+      <span>故障输入 / Field Signal</span>
     </div>
-    <p class="panel-note">输入设备型号与现场现象，系统会检索手册、案例和已入库资料，并给出可解释证据。</p>
+    <p class="panel-note">
+      输入设备型号与现场现象，系统会检索手册、案例和已入库资料，并给出可解释证据、命中原因和后续作业链路。
+    </p>
 
     <el-form label-position="top">
       <el-form-item label="设备型号">

@@ -25,7 +25,7 @@ function sourceLabel(sourceType: SearchResult["sourceType"]) {
   <section class="results-panel">
     <div class="section-title">
       <FileText :size="18" />
-      <span>证据检索</span>
+      <span>证据检索 / Evidence Feed</span>
     </div>
     <template v-if="searchPayload && searchPayload.results.length">
       <p class="summary">{{ searchPayload.summary }}</p>
@@ -46,8 +46,8 @@ function sourceLabel(sourceType: SearchResult["sourceType"]) {
           <small v-if="item.reason" class="reason-line">{{ item.reason }}</small>
           <small>
             置信度 {{ Math.round(item.confidence * 100) }}%
-            {{ item.scoreBreakdown ? ` · 排序分 ${item.scoreBreakdown.score}` : "" }}
-            {{ item.page ? ` · p.${item.page}` : "" }}
+            {{ item.scoreBreakdown ? ` / 排序分 ${item.scoreBreakdown.score}` : "" }}
+            {{ item.page ? ` / p.${item.page}` : "" }}
           </small>
         </button>
       </div>

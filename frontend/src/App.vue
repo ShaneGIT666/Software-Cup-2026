@@ -28,7 +28,7 @@ import ResultsPanel from "./components/ResultsPanel.vue";
 import ReviewPanel from "./components/ReviewPanel.vue";
 import WorkflowPanel from "./components/WorkflowPanel.vue";
 
-const deviceModel = ref("发动机-示例型号 A");
+const deviceModel = ref("发动机示例型号 A");
 const faultText = ref("启动困难，怠速不稳，排气异常");
 const loading = ref(false);
 const graphLoading = ref(false);
@@ -53,6 +53,7 @@ const caseForm = ref({
 
 const resultCount = computed(() => searchPayload.value?.results.length ?? 0);
 const documentNodeCount = computed(() => knowledgeGraph.value?.nodes.filter((node) => node.type === "document").length ?? 0);
+const graphEdgeCount = computed(() => knowledgeGraph.value?.edges.length ?? 0);
 
 const providerModeLabel = computed(() => {
   if (!providerStatus.value) {
@@ -71,7 +72,9 @@ const providerDetailLabel = computed(() => {
   }
   const llm = providerStatus.value.llm;
   const multimodal = providerStatus.value.multimodal;
-  return `RAG ${llm.effectiveProvider} / 多模态 ${multimodal.effectiveProvider}`;
+  const embedding = providerStatus.value.embedding;
+  const embeddingProvider = embedding?.effectiveProvider ?? "hash";
+  return `RAG ${llm.effectiveProvider} / 多模态 ${multimodal.effectiveProvider} / 向量 ${embeddingProvider}`;
 });
 
 const providerToneClass = computed(() => ({
@@ -203,20 +206,26 @@ runSearch();
   <main class="shell">
     <section class="hero">
       <div class="hero-copy">
-        <p class="eyebrow">Software Cup 2026 · Maintenance Copilot</p>
+        <div class="hero-gridline" aria-hidden="true" />
+        <p class="eyebrow">Software Cup 2026 / Industrial AI Command Deck</p>
         <h1>设备检修知识检索与作业指挥台</h1>
         <p class="subtle">
-          面向一线检修场景，把手册、案例、资料入库、RAG 引用回答、标准作业流程和审核沉淀汇聚成一个可演示、可追溯、可兜底的工业 AI 工作台。
+          面向一线检修现场，将手册、案例、资料入库、RAG 引用回答、标准作业流程和审核沉淀整合为一套
+          可演示、可追溯、可兜底的工业 AI 工作台。
         </p>
         <div class="hero-insights" aria-label="系统态势总览">
-          <span><strong>{{ resultCount }}</strong> 条证据命中</span>
-          <span><strong>{{ selectedWorkflow?.steps.length ?? 0 }}</strong> 个作业步骤</span>
-          <span><strong>{{ documentNodeCount }}</strong> 个资料节点</span>
-          <span><strong>{{ ragAnswer?.citations.length ?? 0 }}</strong> 条回答引用</span>
+          <span><strong>{{ resultCount }}</strong> 证据命中</span>
+          <span><strong>{{ selectedWorkflow?.steps.length ?? 0 }}</strong> 作业步骤</span>
+          <span><strong>{{ documentNodeCount }}</strong> 资料节点</span>
+          <span><strong>{{ graphEdgeCount }}</strong> 关系链路</span>
+          <span><strong>{{ ragAnswer?.citations.length ?? 0 }}</strong> 回答引用</span>
         </div>
       </div>
 
       <aside class="command-card" :class="providerToneClass">
+        <div class="radar" aria-hidden="true">
+          <span />
+        </div>
         <span class="command-label">运行状态</span>
         <strong>{{ providerModeLabel }}</strong>
         <p>{{ providerDetailLabel }}</p>
@@ -224,17 +233,19 @@ runSearch();
           <span>可解释检索</span>
           <span>本地知识库</span>
           <span>弱网兜底</span>
+          <span>Docker 已验证</span>
         </div>
       </aside>
     </section>
 
     <nav class="demo-flow" aria-label="演示流程">
-      <span class="flow-step active">1 输入故障</span>
-      <span class="flow-step">2 检索证据</span>
-      <span class="flow-step">3 作业指引</span>
-      <span class="flow-step">4 资料入库</span>
-      <span class="flow-step">5 RAG 建议</span>
-      <span class="flow-step">6 审核沉淀</span>
+      <span class="flow-step active">01 故障输入</span>
+      <span class="flow-step">02 证据检索</span>
+      <span class="flow-step">03 作业指引</span>
+      <span class="flow-step">04 资料入库</span>
+      <span class="flow-step">05 RAG 建议</span>
+      <span class="flow-step">06 图谱证据</span>
+      <span class="flow-step">07 审核沉淀</span>
     </nav>
 
     <section class="workspace">

@@ -91,10 +91,10 @@ defineExpose({ loadDocuments });
   <section class="knowledge-panel panel-highlight">
     <div class="section-title">
       <Database :size="18" />
-      <span>资料入库</span>
+      <span>资料入库 / Knowledge Dock</span>
     </div>
     <p class="panel-note">
-      上传 PDF、TXT、Markdown 或图片资料。系统优先解析本地文本，扫描 PDF 和图片可通过多模态分析生成可检索知识片段。
+      上传 PDF、TXT、Markdown 或图片资料。系统优先解析本地文本；扫描 PDF 和图片可通过多模态分析生成可检索知识片段。
     </p>
 
     <div class="knowledge-upload">
@@ -113,7 +113,7 @@ defineExpose({ loadDocuments });
 
     <div v-if="lastUploaded" class="knowledge-status">
       <strong>{{ lastUploaded.fileName }}</strong>
-      <span>{{ statusText(lastUploaded.status) }} · {{ lastUploaded.chunkCount }} 个片段 · {{ lastUploaded.parser }}</span>
+      <span>{{ statusText(lastUploaded.status) }} / {{ lastUploaded.chunkCount }} 个片段 / {{ lastUploaded.parser }}</span>
       <p v-if="lastUploaded.analysis?.summary">{{ lastUploaded.analysis.summary }}</p>
       <small v-if="lastUploaded.analysis?.fallbackReason" class="fallback-note">{{ lastUploaded.analysis.fallbackReason }}</small>
     </div>
@@ -128,7 +128,7 @@ defineExpose({ loadDocuments });
           <el-tag :type="statusType(document.status)" size="small">{{ statusText(document.status) }}</el-tag>
         </div>
         <p>{{ document.fileName }}</p>
-        <small>{{ document.chunkCount }} 个片段 · {{ document.parser }} · {{ document.uploadedAt }}</small>
+        <small>{{ document.chunkCount }} 个片段 / {{ document.parser }} / {{ document.uploadedAt }}</small>
         <p v-if="document.analysis?.summary" class="knowledge-analysis-summary">{{ document.analysis.summary }}</p>
         <small v-if="document.analysis?.fallbackReason" class="fallback-note">{{ document.analysis.fallbackReason }}</small>
         <div v-if="document.analysis?.keyComponents?.length" class="knowledge-tags">

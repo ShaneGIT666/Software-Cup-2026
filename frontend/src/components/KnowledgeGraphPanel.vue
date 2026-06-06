@@ -54,10 +54,10 @@ function relationLine(source: string, target: string) {
   <section class="knowledge-graph-panel">
     <div class="section-title">
       <Network :size="18" />
-      <span>知识图谱 / Graph RAG 证据链</span>
+      <span>知识图谱 / Graph RAG Evidence Chain</span>
     </div>
     <p class="panel-note">
-      将设备、故障、资料、案例、流程和术语组织成轻量知识图谱；RAG 回答会读取当前查询子图，沿证据关系生成更可解释的检修建议。
+      将设备、故障、资料、案例、流程和术语组织成轻量知识关系网络。RAG 回答可沿证据关系生成更可解释的检修建议。
     </p>
 
     <div class="action-row">

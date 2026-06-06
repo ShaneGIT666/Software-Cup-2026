@@ -25,10 +25,10 @@ function sourceLabel(sourceType: string) {
   <section class="rag-panel panel-highlight">
     <div class="section-title">
       <Bot :size="18" />
-      <span>RAG 辅助建议</span>
+      <span>RAG 辅助建议 / AI Copilot</span>
     </div>
     <p class="panel-note">
-      基于当前检索证据生成带引用的检修建议。网络或 Key 不可用时，会使用本地兜底结果，保证演示不断链。
+      基于当前检索证据生成带引用的检修建议。网络或 Key 不可用时会使用本地兜底结果，保证演示不中断。
     </p>
 
     <div class="action-row">
@@ -39,7 +39,7 @@ function sourceLabel(sourceType: string) {
       <el-tag v-if="ragAnswer?.fallback" type="warning">本地兜底</el-tag>
       <el-tag v-if="ragAnswer && !ragAnswer.fallback" type="success">云端增强</el-tag>
       <el-tag v-if="ragAnswer" type="info">{{ ragAnswer.provider }} / requested {{ ragAnswer.requestedProvider }}</el-tag>
-      <el-tag v-if="ragAnswer?.model" type="info">{{ ragAnswer.model }} · {{ ragAnswer.apiStyle }}</el-tag>
+      <el-tag v-if="ragAnswer?.model" type="info">{{ ragAnswer.model }} / {{ ragAnswer.apiStyle }}</el-tag>
       <el-tag v-if="ragAnswer?.contextCount !== undefined" type="info">
         {{ ragAnswer.contextCount }} 条上下文 / {{ ragAnswer.contextChars ?? 0 }} 字符
       </el-tag>
@@ -66,8 +66,8 @@ function sourceLabel(sourceType: string) {
           <strong>{{ citation.title }}</strong>
           <small>
             {{ citation.sourceName }}
-            {{ citation.scoreBreakdown ? ` · 排序分 ${citation.scoreBreakdown.score}` : "" }}
-            {{ citation.page ? ` · p.${citation.page}` : "" }}
+            {{ citation.scoreBreakdown ? ` / 排序分 ${citation.scoreBreakdown.score}` : "" }}
+            {{ citation.page ? ` / p.${citation.page}` : "" }}
           </small>
           <p>{{ citation.snippet }}</p>
         </div>

@@ -52,10 +52,12 @@ defineExpose({ loadCases });
   <section class="review-panel">
     <div class="section-title">
       <Eye :size="18" />
-      <span>审核入库</span>
+      <span>审核入库 / Quality Gate</span>
       <el-button size="small" :loading="loading" @click="loadCases">刷新</el-button>
     </div>
-    <p class="panel-note">审核一线经验，控制知识入库质量。通过后的案例会进入后续检索和 RAG 引用链路。</p>
+    <p class="panel-note">
+      审核一线经验，控制知识库质量。通过后的案例会进入后续检索和 RAG 引用链路。
+    </p>
 
     <div v-if="!loaded && !loading" class="empty-hint">
       <span>点击“刷新”加载待审核案例。</span>
