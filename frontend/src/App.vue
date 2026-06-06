@@ -3,8 +3,10 @@ import { computed, ref } from "vue";
 import { ElMessage } from "element-plus";
 import {
   fetchKnowledgeGraph,
+  fetchKnowledgeGraphOverview,
   fetchProviderStatus,
   fetchWorkflow,
+  rebuildKnowledgeGraph,
   requestRagAnswer,
   searchKnowledge,
   submitCase,
@@ -129,6 +131,29 @@ async function refreshKnowledgeGraph() {
   }
 }
 
+async function loadKnowledgeGraphOverview() {
+  graphLoading.value = true;
+  try {
+    knowledgeGraph.value = await fetchKnowledgeGraphOverview();
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : "知识图谱总览读取失败");
+  } finally {
+    graphLoading.value = false;
+  }
+}
+
+async function rebuildKnowledgeGraphOverview() {
+  graphLoading.value = true;
+  try {
+    knowledgeGraph.value = await rebuildKnowledgeGraph();
+    ElMessage.success("知识图谱已根据资料、案例和流程重建");
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : "知识图谱重建失败");
+  } finally {
+    graphLoading.value = false;
+  }
+}
+
 async function openWorkflow(result: SearchResult) {
   if (!result.workflowId) {
     ElMessage.warning("该证据暂未关联标准作业流程");
@@ -228,7 +253,13 @@ runSearch();
       <WorkflowPanel :selected-workflow="selectedWorkflow" />
       <KnowledgePanel />
       <RagPanel :rag-answer="ragAnswer" :loading="ragLoading" @answer="generateRagAnswer" />
-      <KnowledgeGraphPanel :graph="knowledgeGraph" :loading="graphLoading" @refresh="refreshKnowledgeGraph" />
+      <KnowledgeGraphPanel
+        :graph="knowledgeGraph"
+        :loading="graphLoading"
+        @refresh="refreshKnowledgeGraph"
+        @overview="loadKnowledgeGraphOverview"
+        @rebuild="rebuildKnowledgeGraphOverview"
+      />
       <CasePanel
         v-model:cause="caseForm.cause"
         v-model:solution="caseForm.solution"

@@ -21,7 +21,7 @@ from .knowledge import (
     list_knowledge_document_chunks,
     list_knowledge_documents,
 )
-from .knowledge_graph import build_knowledge_graph
+from .knowledge_graph import build_global_knowledge_graph, build_knowledge_graph, knowledge_graph_overview
 from .provider_policy import provider_status
 from .rag import answer_with_rag, diagnose_with_rag, validate_llm_provider
 from .multimodal_adapter import validate_multimodal_provider
@@ -155,6 +155,16 @@ def rag_answer(request: RagAnswerRequest) -> ApiResponse:
 @app.post("/api/knowledge/graph", response_model=ApiResponse)
 def knowledge_graph(request: SearchRequest) -> ApiResponse:
     return ApiResponse(data=build_knowledge_graph(request))
+
+
+@app.get("/api/knowledge/graph", response_model=ApiResponse)
+def knowledge_graph_global() -> ApiResponse:
+    return ApiResponse(data=knowledge_graph_overview())
+
+
+@app.post("/api/knowledge/graph/rebuild", response_model=ApiResponse)
+def rebuild_knowledge_graph() -> ApiResponse:
+    return ApiResponse(data=build_global_knowledge_graph(), message="知识图谱已重建")
 
 
 @app.get("/api/workflows/{workflow_id}", response_model=ApiResponse)

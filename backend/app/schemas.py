@@ -29,6 +29,7 @@ class RagAnswerRequest(BaseModel):
     faultText: str = ""
     topK: int = Field(default=5, ge=1, le=10)
     provider: Literal["mock", "openai", "anthropic"] | None = None
+    includeGraphContext: bool = True
 
 
 class LlmValidateRequest(BaseModel):

@@ -1036,6 +1036,81 @@ def test_knowledge_graph_returns_nodes_and_edges(tmp_path, monkeypatch) -> None:
     assert any(edge["relation"] for edge in graph["edges"])
 
 
+def test_knowledge_graph_global_overview_and_rebuild(tmp_path, monkeypatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+
+    overview_response = client.get("/api/knowledge/graph")
+    rebuild_response = client.post("/api/knowledge/graph/rebuild")
+
+    assert overview_response.status_code == 200
+    overview = overview_response.json()["data"]
+    assert overview["mode"] == "global"
+    assert overview["nodes"]
+    assert overview["edges"]
+    assert overview["stats"]["nodeCount"] == len(overview["nodes"])
+    assert overview["recommendations"]
+
+    assert rebuild_response.status_code == 200
+    rebuilt = rebuild_response.json()["data"]
+    assert rebuilt["mode"] == "global"
+    assert rebuilt["stats"]["edgeCount"] == len(rebuilt["edges"])
+
+
+def test_rag_answer_includes_graph_context(tmp_path, monkeypatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+
+    response = client.post(
+        "/api/rag/answer",
+        json={
+            "deviceModel": "发动机-示例型号 A",
+            "faultText": "启动困难 怠速不稳",
+            "topK": 3,
+            "provider": "mock",
+            "includeGraphContext": True,
+        },
+    )
+
+    assert response.status_code == 200
+    graph_context = response.json()["data"]["graphContext"]
+    assert graph_context["enabled"] is True
+    assert graph_context["nodeCount"] > 0
+    assert graph_context["edgeCount"] > 0
+    assert graph_context["paths"]
+
+
+def test_real_rag_prompt_receives_graph_context(tmp_path, monkeypatch) -> None:
+    def fake_post_json(url: str, headers: dict[str, str], payload: dict[str, Any], timeout: float) -> dict[str, Any]:
+        prompt = payload["messages"][0]["content"]
+        assert "知识图谱关系上下文" in prompt
+        assert "图谱规模" in prompt
+        assert "G1." in prompt
+        return {"choices": [{"message": {"content": "基于图谱证据链给出建议。[1]"}}]}
+
+    monkeypatch.setenv("OPENAI_API_KEY", "compatible-key")
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://compatible-provider.test/v1")
+    monkeypatch.setenv("OPENAI_MODEL", "compatible-model")
+    monkeypatch.setenv("OPENAI_API_STYLE", "chat_completions")
+    monkeypatch.setattr(llm_adapter, "_post_json", fake_post_json)
+    client = make_client(tmp_path, monkeypatch)
+
+    response = client.post(
+        "/api/rag/answer",
+        json={
+            "deviceModel": "发动机-示例型号 A",
+            "faultText": "启动困难",
+            "topK": 2,
+            "provider": "openai",
+            "includeGraphContext": True,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    assert payload["provider"] == "openai"
+    assert payload["fallback"] is False
+    assert payload["graphContext"]["enabled"] is True
+
+
 def test_knowledge_graph_rejects_empty_query(tmp_path, monkeypatch) -> None:
     client = make_client(tmp_path, monkeypatch)
 

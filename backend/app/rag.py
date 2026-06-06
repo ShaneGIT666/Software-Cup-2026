@@ -1,51 +1,90 @@
 from __future__ import annotations
 
+import time
 from typing import Any
 
-from .llm_adapter import generate_rag_answer
-from .llm_adapter import real_rag_answer
+from .knowledge_graph import build_knowledge_graph
+from .llm_adapter import generate_rag_answer, real_rag_answer
 from .provider_policy import configured_llm_provider, remote_api_disabled
 from .schemas import DiagnosisRequest, LlmValidateRequest, RagAnswerRequest, SearchRequest
 from .services import search_knowledge
 
 
-def answer_with_rag(request: RagAnswerRequest) -> dict[str, Any]:
-    search_payload = search_knowledge(
-        SearchRequest(
-            deviceModel=request.deviceModel,
-            faultText=request.faultText,
-            inputType="text",
-            topK=request.topK,
+def compact_graph_context(graph: dict[str, Any] | None, limit: int = 8) -> dict[str, Any]:
+    if not graph:
+        return {"enabled": False, "summary": "", "nodeCount": 0, "edgeCount": 0, "paths": []}
+
+    nodes = {node["id"]: node for node in graph.get("nodes", [])}
+    paths = []
+    for edge in graph.get("edges", [])[:limit]:
+        source = nodes.get(edge.get("source"), {})
+        target = nodes.get(edge.get("target"), {})
+        paths.append(
+            {
+                "source": source.get("label", edge.get("source", "")),
+                "sourceType": source.get("type", ""),
+                "relation": edge.get("relation", ""),
+                "target": target.get("label", edge.get("target", "")),
+                "targetType": target.get("type", ""),
+                "evidence": edge.get("evidence", ""),
+                "confidence": edge.get("confidence", 0),
+            }
         )
+
+    stats = graph.get("stats", {})
+    return {
+        "enabled": True,
+        "summary": graph.get("summary", ""),
+        "nodeCount": stats.get("nodeCount", len(nodes)),
+        "edgeCount": stats.get("edgeCount", len(graph.get("edges", []))),
+        "paths": paths,
+    }
+
+
+def answer_with_rag(request: RagAnswerRequest) -> dict[str, Any]:
+    search_request = SearchRequest(
+        deviceModel=request.deviceModel,
+        faultText=request.faultText,
+        inputType="text",
+        topK=request.topK,
+    )
+    search_payload = search_knowledge(search_request)
+    graph_context = (
+        compact_graph_context(build_knowledge_graph(search_request))
+        if request.includeGraphContext
+        else compact_graph_context(None)
     )
     rag_payload = generate_rag_answer(
         device_model=request.deviceModel.strip(),
         fault_text=request.faultText.strip(),
         contexts=search_payload["results"],
         requested_provider=request.provider,
+        graph_context=graph_context,
     )
     return {
         "queryId": search_payload["queryId"],
         "summary": search_payload["summary"],
+        "graphContext": graph_context,
         **rag_payload,
     }
 
 
 def diagnose_with_rag(request: DiagnosisRequest) -> dict[str, Any]:
-    search_payload = search_knowledge(
-        SearchRequest(
-            deviceModel=request.deviceModel,
-            faultText=request.faultText,
-            inputType="text",
-            topK=5,
-        )
+    search_request = SearchRequest(
+        deviceModel=request.deviceModel,
+        faultText=request.faultText,
+        inputType="text",
+        topK=5,
     )
+    search_payload = search_knowledge(search_request)
     contexts = search_payload["results"]
+    graph_context = compact_graph_context(build_knowledge_graph(search_request))
     rag_payload = generate_rag_answer(
         device_model=request.deviceModel.strip(),
         fault_text=request.faultText.strip(),
         contexts=contexts,
         requested_provider=None,
+        graph_context=graph_context,
     )
     citations = rag_payload.get("citations", [])
     selected_citations = [
@@ -77,6 +116,7 @@ def diagnose_with_rag(request: DiagnosisRequest) -> dict[str, Any]:
         "fallbackReason": rag_payload.get("fallbackReason", ""),
         "queryId": search_payload["queryId"],
         "summary": search_payload["summary"],
+        "graphContext": graph_context,
     }
 
 
@@ -85,15 +125,15 @@ def validate_llm_provider(request: LlmValidateRequest) -> dict[str, Any]:
     if provider == "mock":
         provider = "openai"
 
-    search_payload = search_knowledge(
-        SearchRequest(
-            deviceModel=request.deviceModel,
-            faultText=request.faultText,
-            inputType="text",
-            topK=request.topK,
-        )
+    search_request = SearchRequest(
+        deviceModel=request.deviceModel,
+        faultText=request.faultText,
+        inputType="text",
+        topK=request.topK,
     )
+    search_payload = search_knowledge(search_request)
     contexts = search_payload["results"]
+    graph_context = compact_graph_context(build_knowledge_graph(search_request))
 
     if remote_api_disabled():
         return {
@@ -106,9 +146,8 @@ def validate_llm_provider(request: LlmValidateRequest) -> dict[str, Any]:
             "fallbackReason": "REMOTE_API_MODE=off，真实 API 验收已跳过。",
             "answerPreview": "",
             "contextCount": len(contexts),
+            "graphContext": graph_context,
         }
-
-    import time
 
     started = time.perf_counter()
     try:
@@ -117,6 +156,7 @@ def validate_llm_provider(request: LlmValidateRequest) -> dict[str, Any]:
             fault_text=request.faultText.strip(),
             contexts=contexts,
             provider=provider,
+            graph_context=graph_context,
         )
         latency_ms = round((time.perf_counter() - started) * 1000)
         return {
@@ -129,6 +169,7 @@ def validate_llm_provider(request: LlmValidateRequest) -> dict[str, Any]:
             "fallbackReason": "",
             "answerPreview": str(payload["answer"])[:240],
             "contextCount": payload.get("contextCount", len(contexts)),
+            "graphContext": graph_context,
         }
     except Exception as exc:
         latency_ms = round((time.perf_counter() - started) * 1000)
@@ -142,4 +183,5 @@ def validate_llm_provider(request: LlmValidateRequest) -> dict[str, Any]:
             "fallbackReason": str(exc),
             "answerPreview": "",
             "contextCount": len(contexts),
+            "graphContext": graph_context,
         }

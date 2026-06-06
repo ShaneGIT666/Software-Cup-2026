@@ -57,13 +57,34 @@ def _read_knowledge_json(name: str) -> list[dict[str, Any]]:
     return data
 
 
+def _read_knowledge_object(name: str) -> dict[str, Any]:
+    path = knowledge_dir() / name
+    if not path.exists():
+        return {}
+    with path.open("r", encoding="utf-8") as file:
+        data = json.load(file)
+    if not isinstance(data, dict):
+        raise ValueError(f"{path} must contain a JSON object")
+    return data
+
+
 def _write_knowledge_json(name: str, data: list[dict[str, Any]]) -> None:
     path = knowledge_dir() / name
     path.parent.mkdir(parents=True, exist_ok=True)
     _atomic_write_json(path, data)
 
 
+def _write_knowledge_object(name: str, data: dict[str, Any]) -> None:
+    path = knowledge_dir() / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _atomic_write_json_value(path, data)
+
+
 def _atomic_write_json(path: Path, data: list[dict[str, Any]]) -> None:
+    _atomic_write_json_value(path, data)
+
+
+def _atomic_write_json_value(path: Path, data: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temp_path = path.with_name(f"{path.name}.{uuid4().hex}.tmp")
     temp_path.write_text(
@@ -104,3 +125,11 @@ def load_document_chunks() -> list[dict[str, Any]]:
 
 def save_document_chunks(chunks: list[dict[str, Any]]) -> None:
     _write_knowledge_json("document-chunks.json", chunks)
+
+
+def load_knowledge_graph_cache() -> dict[str, Any]:
+    return _read_knowledge_object("knowledge-graph.json")
+
+
+def save_knowledge_graph_cache(graph: dict[str, Any]) -> None:
+    _write_knowledge_object("knowledge-graph.json", graph)

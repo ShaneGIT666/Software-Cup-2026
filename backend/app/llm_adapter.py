@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import logging
 import os
 import time
-import logging
 from typing import Any
 
 import httpx
@@ -83,23 +83,45 @@ def citation_from_result(result: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def graph_context_prompt(graph_context: dict[str, Any] | None) -> str:
+    if not graph_context or not graph_context.get("enabled"):
+        return "暂无知识图谱关系上下文。"
+
+    lines = [
+        f"图谱摘要：{graph_context.get('summary', '')}",
+        f"图谱规模：{graph_context.get('nodeCount', 0)} 个节点 / {graph_context.get('edgeCount', 0)} 条关系",
+    ]
+    for index, path in enumerate(graph_context.get("paths", [])[:8], start=1):
+        lines.append(
+            f"G{index}. {path.get('source')}({path.get('sourceType')}) "
+            f"-[{path.get('relation')}]-> {path.get('target')}({path.get('targetType')})；"
+            f"证据：{path.get('evidence', '')}"
+        )
+    return "\n".join(lines)
+
+
 def mock_rag_answer(
     device_model: str,
     fault_text: str,
     contexts: list[dict[str, Any]],
     requested_provider: str | None,
     fallback_reason: str | None = None,
+    graph_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     provider = configured_provider(requested_provider)
     compressed_contexts, context_chars = compress_contexts(contexts)
     citations = [citation_from_result(item) for item in compressed_contexts]
     source_names = list(dict.fromkeys(item["sourceName"] for item in citations))[:3]
 
+    graph_note = ""
+    if graph_context and graph_context.get("enabled"):
+        graph_note = f" 知识图谱已组织 {graph_context.get('nodeCount', 0)} 个节点、{graph_context.get('edgeCount', 0)} 条关系，可辅助解释证据链。"
+
     if compressed_contexts:
         answer = (
             f"基于已检索到的 {len(compressed_contexts)} 条资料，{device_model or '该设备'} 的“{fault_text}”"
-            "优先按引用资料进行排查：先核对高置信度手册/入库资料，再结合历史案例确认常见原因。"
-            f"当前可参考来源包括：{'、'.join(source_names)}。"
+            "应优先按引用资料进行排查：先核对高置信度手册/入库资料，再结合历史案例确认常见原因。"
+            f"当前可参考来源包括：{'、'.join(source_names)}。{graph_note}"
         )
         recommended_actions = [
             "优先查看引用来源中的手册页码或资料片段，确认安全前置条件。",
@@ -120,15 +142,22 @@ def mock_rag_answer(
         "provider": "mock",
         "requestedProvider": provider,
         "fallback": True,
-        "fallbackReason": fallback_reason or "未配置真实模型或真实模型调用不可用，已使用 mock provider 保证演示不断线。",
+        "fallbackReason": fallback_reason
+        or "未配置真实模型或真实模型调用不可用，已使用 mock provider 保证演示不断链。",
         "contextCount": len(compressed_contexts),
         "contextChars": context_chars,
         "model": "mock",
         "apiStyle": "mock",
+        "graphContext": graph_context or {},
     }
 
 
-def build_context_prompt(device_model: str, fault_text: str, contexts: list[dict[str, Any]]) -> str:
+def build_context_prompt(
+    device_model: str,
+    fault_text: str,
+    contexts: list[dict[str, Any]],
+    graph_context: dict[str, Any] | None = None,
+) -> str:
     context_lines = []
     for index, item in enumerate(contexts, start=1):
         source = f"{item['sourceType']} / {item['sourceName']}"
@@ -141,12 +170,13 @@ def build_context_prompt(device_model: str, fault_text: str, contexts: list[dict
         )
     context_text = "\n\n".join(context_lines) if context_lines else "暂无检索上下文。"
     return (
-        "你是设备检修知识检索与作业辅助系统。请严格基于给定检索上下文回答，不要编造未出现的资料。"
+        "你是设备检修知识检索与作业辅助系统。请严格基于给定检索上下文和知识图谱关系上下文回答，不要编造未出现的资料。"
         "必须使用 [1]、[2] 这样的编号标注引用来源；如果证据不足，明确说明需要补充资料。"
-        "回答使用中文，包含：可能原因、建议排查动作、安全提醒。\n\n"
+        "回答使用中文，包含：可能原因、建议排查动作、安全提醒、图谱证据链解释。\n\n"
         f"设备型号：{device_model or '未提供'}\n"
         f"故障现象：{fault_text or '未提供'}\n\n"
-        f"检索上下文：\n{context_text}"
+        f"检索上下文：\n{context_text}\n\n"
+        f"知识图谱关系上下文：\n{graph_context_prompt(graph_context)}"
     )
 
 
@@ -205,9 +235,10 @@ def real_rag_answer(
     fault_text: str,
     contexts: list[dict[str, Any]],
     provider: str,
+    graph_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     compressed_contexts, context_chars = compress_contexts(contexts)
-    prompt = build_context_prompt(device_model, fault_text, compressed_contexts)
+    prompt = build_context_prompt(device_model, fault_text, compressed_contexts, graph_context)
     timeout = float(os.getenv("LLM_TIMEOUT_SECONDS", "20"))
     citations = [citation_from_result(item) for item in compressed_contexts]
     model = provider_model(provider)
@@ -288,6 +319,7 @@ def real_rag_answer(
         "contextChars": context_chars,
         "model": model,
         "apiStyle": api_style,
+        "graphContext": graph_context or {},
     }
 
 
@@ -296,18 +328,19 @@ def generate_rag_answer(
     fault_text: str,
     contexts: list[dict[str, Any]],
     requested_provider: str | None,
+    graph_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     provider = configured_provider(requested_provider)
     if provider == "mock":
-        return mock_rag_answer(device_model, fault_text, contexts, provider)
+        return mock_rag_answer(device_model, fault_text, contexts, provider, graph_context=graph_context)
     if remote_api_disabled():
         reason = "REMOTE_API_MODE=off，已强制使用本地 mock provider，避免比赛现场网络不稳定影响演示。"
         record_fallback("llm", reason)
         logger.info("LLM fallback: %s", reason)
-        return mock_rag_answer(device_model, fault_text, contexts, provider, fallback_reason=reason)
+        return mock_rag_answer(device_model, fault_text, contexts, provider, fallback_reason=reason, graph_context=graph_context)
 
     try:
-        return real_rag_answer(device_model, fault_text, contexts, provider)
+        return real_rag_answer(device_model, fault_text, contexts, provider, graph_context=graph_context)
     except Exception as exc:
         reason = f"{provider} provider 调用失败，已降级到 mock：{exc}"
         record_fallback("llm", reason)
@@ -318,4 +351,5 @@ def generate_rag_answer(
             contexts,
             provider,
             fallback_reason=reason,
+            graph_context=graph_context,
         )

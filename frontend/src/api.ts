@@ -271,6 +271,7 @@ export interface RagAnswerPayload {
   contextChars?: number;
   model?: string;
   apiStyle?: string;
+  graphContext?: GraphContextPayload;
 }
 
 export function requestRagAnswer(deviceModel: string, faultText: string, provider?: string) {
@@ -288,8 +289,9 @@ export function requestRagAnswer(deviceModel: string, faultText: string, provide
 export interface KnowledgeGraphNode {
   id: string;
   label: string;
-  type: "device" | "fault" | "manual" | "case" | "document" | "workflow" | "source" | "term" | "provider" | string;
+  type: "device" | "fault" | "manual" | "case" | "document" | "workflow" | "source" | "term" | "provider" | "chunk" | string;
   weight: number;
+  properties?: Record<string, unknown>;
 }
 
 export interface KnowledgeGraphEdge {
@@ -298,13 +300,43 @@ export interface KnowledgeGraphEdge {
   target: string;
   relation: string;
   evidence: string;
+  confidence?: number;
+}
+
+export interface GraphContextPath {
+  source: string;
+  sourceType: string;
+  relation: string;
+  target: string;
+  targetType: string;
+  evidence: string;
+  confidence: number;
+}
+
+export interface GraphContextPayload {
+  enabled: boolean;
+  summary: string;
+  nodeCount: number;
+  edgeCount: number;
+  paths: GraphContextPath[];
 }
 
 export interface KnowledgeGraphPayload {
+  mode?: "query" | "global" | string;
   queryId: string;
   summary: string;
+  generatedAt?: string;
   nodes: KnowledgeGraphNode[];
   edges: KnowledgeGraphEdge[];
+  stats?: {
+    nodeCount: number;
+    edgeCount: number;
+    nodeTypes: Record<string, number>;
+    relationTypes: Record<string, number>;
+  };
+  focusNodeIds?: string[];
+  recommendations?: string[];
+  cacheHit?: boolean;
 }
 
 export function fetchKnowledgeGraph(deviceModel: string, faultText: string) {
@@ -316,5 +348,16 @@ export function fetchKnowledgeGraph(deviceModel: string, faultText: string) {
       inputType: "text",
       topK: 6
     })
+  });
+}
+
+export function fetchKnowledgeGraphOverview() {
+  return request<KnowledgeGraphPayload>("/api/knowledge/graph");
+}
+
+export function rebuildKnowledgeGraph() {
+  return request<KnowledgeGraphPayload>("/api/knowledge/graph/rebuild", {
+    method: "POST",
+    body: JSON.stringify({})
   });
 }
