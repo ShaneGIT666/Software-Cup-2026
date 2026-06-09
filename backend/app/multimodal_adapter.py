@@ -11,7 +11,8 @@ from typing import Any
 from fastapi import HTTPException
 
 from .data_store import knowledge_dir, load_documents
-from .llm_adapter import _post_json
+from .llm_adapter import _post_json, parse_openai_chat_response
+from .ocr_adapter import analyze_ocr_document
 from .provider_policy import (
     configured_multimodal_provider as configured_multimodal_provider_from_policy,
     key_configured,
@@ -48,12 +49,21 @@ def mock_multimodal_analysis(
     suffix: str,
     requested_provider: str | None,
     fallback_reason: str | None = None,
+    ocr_result: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     provider = configured_multimodal_provider(requested_provider)
     text = (
         f"{source_name} 的多模态资料已完成演示级分析。资料类型为 {suffix.upper()}，"
         "重点关注摩托车发动机无法启动、怠速不稳、点火系统、燃油供给和安全检修步骤。"
     )
+    text_segments = [
+        text,
+        "当发动机启动困难时，应优先检查点火系统、燃油供给系统和进气密封状态，并记录现场现象。",
+        "标准作业应包含安全确认、部件检查、故障复测和案例沉淀，审核通过后进入知识库。",
+    ]
+    if ocr_result and ocr_result.get("textSegments"):
+        text_segments.extend(str(segment) for segment in ocr_result.get("textSegments", []) if str(segment).strip())
+
     return {
         "summary": text,
         "keyComponents": ["发动机", "火花塞", "高压包", "燃油供给", "进气管路"],
@@ -65,16 +75,13 @@ def mock_multimodal_analysis(
             "按手册要求复测启动状态和怠速稳定性。",
         ],
         "safetyNotes": ["检修前确认发动机冷却", "佩戴护目镜和绝缘手套", "避免在通风不良环境中长时间试车"],
-        "textSegments": [
-            text,
-            "当发动机启动困难时，应优先检查点火系统、燃油供给系统和进气密封状态，并记录现场现象。",
-            "标准作业应包含安全确认、部件检查、故障复测和案例沉淀，审核通过后进入知识库。",
-        ],
+        "textSegments": text_segments,
         "provider": "mock",
         "requestedProvider": provider,
         "fallback": True,
         "fallbackReason": fallback_reason or "未配置真实多模态模型或真实模型不可用，已使用 mock provider 保证演示连续性。",
         "fileName": file_name,
+        "ocr": ocr_result or {},
     }
 
 
@@ -95,6 +102,26 @@ def parse_openai_multimodal_response(payload: dict[str, Any]) -> str:
 def parse_anthropic_multimodal_response(payload: dict[str, Any]) -> str:
     parts = [item.get("text", "") for item in payload.get("content", []) if item.get("type") == "text"]
     return "\n".join(part for part in parts if part).strip()
+
+
+def local_multimodal_base_url() -> str:
+    return (
+        os.getenv("LOCAL_MULTIMODAL_BASE_URL", "").strip()
+        or os.getenv("LOCAL_LLM_BASE_URL", "").strip()
+        or "http://127.0.0.1:11434/v1"
+    ).rstrip("/")
+
+
+def local_multimodal_model() -> str:
+    return (
+        os.getenv("LOCAL_MULTIMODAL_MODEL", "").strip()
+        or os.getenv("LOCAL_LLM_MODEL", "").strip()
+        or "llava:latest"
+    )
+
+
+def local_multimodal_api_key() -> str:
+    return os.getenv("LOCAL_MULTIMODAL_API_KEY", "").strip() or os.getenv("LOCAL_LLM_API_KEY", "").strip() or "ollama"
 
 
 def structured_from_model_text(
@@ -118,6 +145,20 @@ def structured_from_model_text(
         "fallbackReason": "",
         "fileName": file_name,
     }
+
+
+def enrich_with_ocr(analysis: dict[str, Any], ocr_result: dict[str, Any]) -> dict[str, Any]:
+    if not ocr_result or not ocr_result.get("textSegments"):
+        analysis["ocr"] = ocr_result or {}
+        return analysis
+
+    segments = [str(segment).strip() for segment in ocr_result.get("textSegments", []) if str(segment).strip()]
+    existing_segments = [str(segment) for segment in analysis.get("textSegments", []) if str(segment).strip()]
+    analysis["textSegments"] = existing_segments + segments
+    analysis["ocr"] = ocr_result
+    if not analysis.get("summary") and ocr_result.get("text"):
+        analysis["summary"] = str(ocr_result["text"])[:240]
+    return analysis
 
 
 def real_multimodal_analysis(
@@ -163,6 +204,30 @@ def real_multimodal_analysis(
             timeout=timeout,
         )
         text = parse_openai_multimodal_response(payload)
+    elif provider == "local":
+        if suffix == "pdf":
+            raise RuntimeError("local multimodal provider supports image files directly; use OCR ingestion for PDFs.")
+        model = local_multimodal_model()
+        payload = _post_json(
+            f"{local_multimodal_base_url()}/chat/completions",
+            headers={"Authorization": f"Bearer {local_multimodal_api_key()}", "Content-Type": "application/json"},
+            payload={
+                "model": model,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {"type": "image_url", "image_url": {"url": data_url(content, suffix)}},
+                        ],
+                    }
+                ],
+                "max_tokens": int(os.getenv("LOCAL_MULTIMODAL_MAX_TOKENS", "1200")),
+                "temperature": float(os.getenv("LOCAL_MULTIMODAL_TEMPERATURE", "0.2")),
+            },
+            timeout=timeout,
+        )
+        text = parse_openai_chat_response(payload)
     elif provider == "anthropic":
         api_key = os.getenv("ANTHROPIC_API_KEY", "")
         if not api_key:
@@ -217,16 +282,17 @@ def analyze_multimodal_document(
     requested_provider: str | None,
 ) -> dict[str, Any]:
     provider = configured_multimodal_provider(requested_provider)
+    ocr_result = analyze_ocr_document(file_path, source_name, suffix)
     if provider == "mock":
-        return mock_multimodal_analysis(file_path.name, source_name, suffix, provider)
-    if remote_api_disabled():
+        return mock_multimodal_analysis(file_path.name, source_name, suffix, provider, ocr_result=ocr_result)
+    if remote_api_disabled() and provider != "local":
         reason = "REMOTE_API_MODE=off，已强制使用本地 mock 多模态分析，避免比赛现场网络不稳定影响演示。"
         record_fallback("multimodal", reason)
         logger.info("Multimodal fallback: %s", reason)
-        return mock_multimodal_analysis(file_path.name, source_name, suffix, provider, fallback_reason=reason)
+        return mock_multimodal_analysis(file_path.name, source_name, suffix, provider, fallback_reason=reason, ocr_result=ocr_result)
 
     try:
-        return real_multimodal_analysis(file_path, source_name, suffix, provider)
+        return enrich_with_ocr(real_multimodal_analysis(file_path, source_name, suffix, provider), ocr_result)
     except Exception as exc:
         reason = f"{provider} 多模态 provider 调用失败，已降级到 mock：{exc}"
         record_fallback("multimodal", reason)
@@ -237,6 +303,7 @@ def analyze_multimodal_document(
             suffix,
             provider,
             fallback_reason=reason,
+            ocr_result=ocr_result,
         )
 
 
@@ -263,9 +330,12 @@ def document_file_for_validation(document_id: str) -> tuple[Path, str, str]:
 
 def validate_multimodal_provider(request: Any) -> dict[str, Any]:
     provider = configured_multimodal_provider(getattr(request, "provider", None))
-    model = os.getenv("OPENAI_MODEL", "gpt-4.1-mini") if provider == "openai" else os.getenv(
-        "ANTHROPIC_MODEL", "claude-3-5-haiku-latest"
-    )
+    if provider == "openai":
+        model = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
+    elif provider == "local":
+        model = local_multimodal_model()
+    else:
+        model = os.getenv("ANTHROPIC_MODEL", "claude-3-5-haiku-latest")
     start = time.perf_counter()
     temp_file: Path | None = None
 
@@ -289,7 +359,7 @@ def validate_multimodal_provider(request: Any) -> dict[str, Any]:
                 "latencyMs": round((time.perf_counter() - start) * 1000),
             }
 
-        if remote_api_disabled():
+        if remote_api_disabled() and provider != "local":
             reason = "REMOTE_API_MODE=off，已跳过真实多模态 API 验收。"
             record_fallback("multimodal", reason)
             logger.info("Multimodal validation skipped: %s", reason)

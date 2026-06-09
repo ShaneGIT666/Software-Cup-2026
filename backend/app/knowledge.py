@@ -13,10 +13,14 @@ from .data_store import (
     knowledge_dir,
     load_document_chunks,
     load_documents,
+    load_knowledge_revisions,
     save_document_chunks,
     save_documents,
+    save_knowledge_revisions,
 )
 from .multimodal_adapter import analyze_multimodal_document
+from .parser_router import parse_document, save_parse_artifacts
+from .schemas import KnowledgeChunkRevisionRequest
 from .vector_store import delete_document as delete_vector_document
 from .vector_store import sync_chunks
 
@@ -26,6 +30,9 @@ ALLOWED_KNOWLEDGE_TYPES = {
     "pdf": {"application/pdf"},
     "txt": {"text/plain", "application/octet-stream"},
     "md": {"text/markdown", "text/plain", "application/octet-stream"},
+    "docx": {"application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/octet-stream"},
+    "pptx": {"application/vnd.openxmlformats-officedocument.presentationml.presentation", "application/octet-stream"},
+    "xlsx": {"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/octet-stream"},
     "jpg": {"image/jpeg"},
     "jpeg": {"image/jpeg"},
     "png": {"image/png"},
@@ -146,18 +153,37 @@ def build_chunk(
     chunk_index: int,
     page: int | None = None,
     analysis_provider: str | None = None,
+    section: str | None = None,
+    review_status: str = "pending_review",
 ) -> dict[str, Any]:
+    chunk_id = f"{document_id}-chunk-{chunk_index:03d}"
+    now = utc_now()
     chunk = {
-        "id": f"{document_id}-chunk-{chunk_index:03d}",
+        "id": chunk_id,
+        "chunk_id": chunk_id,
         "documentId": document_id,
+        "source_doc_id": document_id,
         "title": Path(file_name or document_id).stem,
         "sourceType": "document",
+        "source_type": "document",
         "sourceName": source_name or file_name or document_id,
         "page": page,
+        "section": section or "",
         "chunkIndex": chunk_index,
         "content": chunk_text,
         "snippet": chunk_text[:160],
         "keywords": build_keywords(chunk_text),
+        "device_model": "",
+        "component": "",
+        "fault_symptom": "",
+        "fault_code": "",
+        "knowledge_type": "manual_excerpt",
+        "risk_level": "medium",
+        "evidence_location": {"page": page, "section": section or ""},
+        "review_status": review_status,
+        "version": 1,
+        "created_at": now,
+        "updated_at": now,
     }
     if analysis_provider:
         chunk["analysisProvider"] = analysis_provider
@@ -175,10 +201,13 @@ async def ingest_knowledge_document(file: UploadFile, source_name: str | None = 
     target = target_dir / f"{document_id}.{suffix}"
     target.write_bytes(content)
 
-    pages, status, parser = extract_pages(content, suffix)
+    parse_result = parse_document(target, suffix, content)
+    parse_artifacts = save_parse_artifacts(knowledge_dir() / "parsed" / document_id, parse_result)
+    pages = parse_result.get("pages", [])
+    parser = str(parse_result.get("parser", "parser-router"))
     chunks: list[dict[str, Any]] = []
     for page in pages:
-        for chunk_text in split_text(page["text"]):
+        for chunk_text in split_text(str(page.get("text", ""))):
             chunks.append(
                 build_chunk(
                     document_id=document_id,
@@ -186,9 +215,12 @@ async def ingest_knowledge_document(file: UploadFile, source_name: str | None = 
                     source_name=display_source,
                     chunk_text=chunk_text,
                     chunk_index=len(chunks) + 1,
-                    page=page["page"],
+                    page=page.get("page"),
+                    section=page.get("section"),
+                    review_status="pending_review",
                 )
             )
+    status = "pending_review" if chunks else str(parse_result.get("status", "needs_parser"))
 
     document = {
         "id": document_id,
@@ -196,9 +228,13 @@ async def ingest_knowledge_document(file: UploadFile, source_name: str | None = 
         "fileType": file.content_type or "",
         "suffix": suffix,
         "sourceName": display_source,
-        "status": "indexed" if chunks else status,
+        "status": status,
         "chunkCount": len(chunks),
+        "pendingReviewCount": len(chunks),
         "parser": parser,
+        "parserFallback": bool(parse_result.get("fallback", False)),
+        "parserFallbackReason": parse_result.get("fallbackReason", ""),
+        "parseArtifacts": parse_artifacts,
         "uploadedAt": utc_now(),
         "url": f"/knowledge/files/{target.name}",
     }
@@ -210,7 +246,6 @@ async def ingest_knowledge_document(file: UploadFile, source_name: str | None = 
     existing_chunks = load_document_chunks()
     existing_chunks.extend(chunks)
     save_document_chunks(existing_chunks)
-    sync_chunks(chunks)
 
     return {**document, "chunks": chunks[:3]}
 
@@ -240,7 +275,9 @@ def build_multimodal_chunks(document: dict[str, Any], analysis: dict[str, Any]) 
                 analysis_provider=analysis.get("provider", "mock"),
             )
             chunk["id"] = f"{document['id']}-mm-chunk-{len(chunks) + 1:03d}"
+            chunk["chunk_id"] = chunk["id"]
             chunk["keywords"] = build_keywords(f"{chunk_text} {keyword_context}")
+            chunk["knowledge_type"] = "image_analysis"
             chunks.append(chunk)
     return chunks
 
@@ -273,10 +310,10 @@ def analyze_knowledge_document(document_id: str, provider: str | None = None) ->
     existing_chunks = [chunk for chunk in load_document_chunks() if chunk.get("documentId") != document_id]
     existing_chunks.extend(chunks)
     save_document_chunks(existing_chunks)
-    sync_chunks(chunks)
 
-    document["status"] = "analyzed" if chunks else "needs_multimodal_analysis"
+    document["status"] = "pending_review" if chunks else "needs_multimodal_analysis"
     document["chunkCount"] = len(chunks)
+    document["pendingReviewCount"] = len(chunks)
     document["parser"] = f"multimodal-{analysis.get('provider', 'mock')}"
     document["analysis"] = {
         "summary": analysis.get("summary", ""),
@@ -288,6 +325,7 @@ def analyze_knowledge_document(document_id: str, provider: str | None = None) ->
         "requestedProvider": analysis.get("requestedProvider", provider or "mock"),
         "fallback": analysis.get("fallback", False),
         "fallbackReason": analysis.get("fallbackReason", ""),
+        "ocr": analysis.get("ocr", {}),
         "analyzedAt": utc_now(),
     }
     save_documents(documents)
@@ -303,7 +341,14 @@ def get_knowledge_document(document_id: str) -> dict[str, Any]:
     for document in load_documents():
         if document["id"] == document_id:
             chunks = [chunk for chunk in load_document_chunks() if chunk.get("documentId") == document_id]
-            return {**document, "chunks": chunks[:10], "chunkTotal": len(chunks)}
+            revisions = [item for item in load_knowledge_revisions() if item.get("documentId") == document_id]
+            return {
+                **document,
+                "chunks": chunks[:10],
+                "chunkTotal": len(chunks),
+                "revisionCount": len(revisions),
+                "latestRevision": revisions[-1] if revisions else None,
+            }
     raise HTTPException(status_code=404, detail="入库资料不存在")
 
 
@@ -313,6 +358,98 @@ def list_knowledge_document_chunks(document_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail="入库资料不存在")
     chunks = [chunk for chunk in load_document_chunks() if chunk.get("documentId") == document_id]
     return {"items": chunks, "total": len(chunks)}
+
+
+def list_knowledge_revisions(document_id: str) -> dict[str, Any]:
+    documents = load_documents()
+    if not any(document["id"] == document_id for document in documents):
+        raise HTTPException(status_code=404, detail="knowledge document not found")
+    revisions = [item for item in load_knowledge_revisions() if item.get("documentId") == document_id]
+    revisions = sorted(revisions, key=lambda item: item.get("createdAt", ""), reverse=True)
+    return {"items": revisions, "total": len(revisions)}
+
+
+def revise_knowledge_chunk(document_id: str, request: KnowledgeChunkRevisionRequest) -> dict[str, Any]:
+    documents = load_documents()
+    document = next((item for item in documents if item.get("id") == document_id), None)
+    if document is None:
+        raise HTTPException(status_code=404, detail="knowledge document not found")
+
+    content = request.content.strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="revision content cannot be empty")
+
+    chunks = load_document_chunks()
+    chunk_index = next(
+        (
+            index
+            for index, chunk in enumerate(chunks)
+            if chunk.get("documentId") == document_id and chunk.get("id") == request.chunkId
+        ),
+        None,
+    )
+    if chunk_index is None:
+        raise HTTPException(status_code=404, detail="knowledge chunk not found")
+
+    previous = dict(chunks[chunk_index])
+    updated = dict(previous)
+    updated["content"] = content
+    updated["snippet"] = content[:160]
+    updated["keywords"] = build_keywords(" ".join([content, " ".join(request.tags)]))
+    updated["manuallyCorrected"] = True
+    updated["updatedAt"] = utc_now()
+    updated["revisionTags"] = request.tags
+    if request.title is not None and request.title.strip():
+        updated["title"] = request.title.strip()
+    if request.sourceName is not None and request.sourceName.strip():
+        updated["sourceName"] = request.sourceName.strip()
+    if request.page is not None:
+        updated["page"] = request.page
+
+    revision = {
+        "id": f"krev-{uuid4().hex[:8]}",
+        "documentId": document_id,
+        "chunkId": request.chunkId,
+        "source": "manual-correction",
+        "status": "applied",
+        "reason": request.reason.strip(),
+        "reviewer": request.reviewer.strip() or "operator",
+        "createdAt": utc_now(),
+        "before": {
+            "title": previous.get("title", ""),
+            "sourceName": previous.get("sourceName", ""),
+            "page": previous.get("page"),
+            "content": previous.get("content", ""),
+            "keywords": previous.get("keywords", []),
+        },
+        "after": {
+            "title": updated.get("title", ""),
+            "sourceName": updated.get("sourceName", ""),
+            "page": updated.get("page"),
+            "content": updated.get("content", ""),
+            "keywords": updated.get("keywords", []),
+            "tags": request.tags,
+        },
+    }
+
+    chunks[chunk_index] = updated
+    save_document_chunks(chunks)
+
+    document_chunks = [chunk for chunk in chunks if chunk.get("documentId") == document_id]
+    delete_vector_document(document_id)
+    sync_chunks(document_chunks)
+
+    revisions = load_knowledge_revisions()
+    revisions.append(revision)
+    save_knowledge_revisions(revisions)
+
+    document["revisionCount"] = int(document.get("revisionCount") or 0) + 1
+    document["latestRevisionAt"] = revision["createdAt"]
+    if document.get("status") not in {"analyzed", "needs_multimodal_analysis"}:
+        document["status"] = "indexed"
+    save_documents(documents)
+
+    return {"document": document, "chunk": updated, "revision": revision}
 
 
 def delete_knowledge_document(document_id: str) -> dict[str, Any]:

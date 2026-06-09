@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 import backend.app.llm_adapter as llm_adapter
 import backend.app.knowledge as knowledge
 import backend.app.multimodal_adapter as multimodal_adapter
+import backend.app.ocr_adapter as ocr_adapter
 import backend.app.vector_store as vector_store
 import backend.app.data_store as data_store
 from backend.app.main import app
@@ -50,8 +51,91 @@ def test_provider_status_reports_offline_fallback(tmp_path, monkeypatch) -> None
     assert payload["llm"]["effectiveProvider"] == "mock"
     assert payload["multimodal"]["provider"] == "anthropic"
     assert payload["multimodal"]["effectiveProvider"] == "mock"
-    assert payload["embedding"]["provider"] == "hash"
+    assert payload["ocr"]["provider"] == "mock"
+    assert payload["ocr"]["effectiveProvider"] == "mock"
+    assert payload["embedding"]["provider"] == "openai"
     assert payload["embedding"]["effectiveProvider"] == "hash"
+
+
+def test_provider_status_defaults_to_openai_embedding_with_hash_fallback(tmp_path, monkeypatch) -> None:
+    monkeypatch.delenv("REMOTE_API_MODE", raising=False)
+    monkeypatch.delenv("RAG_EMBEDDING_PROVIDER", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_EMBEDDING_MODEL", raising=False)
+    client = make_client(tmp_path, monkeypatch)
+
+    response = client.get("/api/providers/status")
+
+    assert response.status_code == 200
+    embedding = response.json()["data"]["embedding"]
+    assert embedding["provider"] == "openai"
+    assert embedding["vectorStore"] == "chroma"
+    assert embedding["remoteCapable"] is True
+    assert embedding["keyConfigured"] is False
+    assert embedding["effectiveProvider"] == "hash"
+    assert embedding["model"] == "text-embedding-3-small"
+
+
+def test_provider_status_keeps_local_multimodal_available_when_offline(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("REMOTE_API_MODE", "off")
+    monkeypatch.setenv("MULTIMODAL_PROVIDER", "local")
+    client = make_client(tmp_path, monkeypatch)
+
+    response = client.get("/api/providers/status")
+
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    assert payload["offlineFallback"] is True
+    assert payload["multimodal"]["provider"] == "local"
+    assert payload["multimodal"]["localCapable"] is True
+    assert payload["multimodal"]["effectiveProvider"] == "local"
+
+
+def test_local_multimodal_validate_runs_even_when_remote_mode_off(tmp_path, monkeypatch) -> None:
+    def fake_real_multimodal(*_: Any, **__: Any) -> dict[str, Any]:
+        return {"summary": "本地视觉模型验收通过。"}
+
+    monkeypatch.setenv("REMOTE_API_MODE", "off")
+    monkeypatch.setenv("MULTIMODAL_PROVIDER", "local")
+    monkeypatch.setattr(multimodal_adapter, "real_multimodal_analysis", fake_real_multimodal)
+    client = make_client(tmp_path, monkeypatch)
+
+    response = client.post("/api/providers/multimodal/validate", json={"provider": "local"})
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["provider"] == "local"
+    assert data["remoteOk"] is True
+    assert data["fallback"] is False
+    assert "本地视觉模型" in data["summaryPreview"]
+
+
+def test_local_multimodal_uses_openai_compatible_vision_payload(tmp_path, monkeypatch) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_post_json(url: str, headers: dict[str, str], payload: dict[str, Any], timeout: float) -> dict[str, Any]:
+        captured["url"] = url
+        captured["headers"] = headers
+        captured["payload"] = payload
+        captured["timeout"] = timeout
+        return {"choices": [{"message": {"content": "本地模型识别到设备故障图片。"}}]}
+
+    image = tmp_path / "fault.png"
+    image.write_bytes(b"image-bytes")
+    monkeypatch.setenv("LOCAL_MULTIMODAL_BASE_URL", "http://127.0.0.1:11434/v1")
+    monkeypatch.setenv("LOCAL_MULTIMODAL_MODEL", "llava:latest")
+    monkeypatch.setattr(multimodal_adapter, "_post_json", fake_post_json)
+
+    result = multimodal_adapter.real_multimodal_analysis(image, "fault.png", "png", "local")
+
+    assert captured["url"] == "http://127.0.0.1:11434/v1/chat/completions"
+    assert captured["payload"]["model"] == "llava:latest"
+    content = captured["payload"]["messages"][0]["content"]
+    assert content[1]["type"] == "image_url"
+    assert content[1]["image_url"]["url"].startswith("data:image/png;base64,")
+    assert result["provider"] == "local"
+    assert result["fallback"] is False
+    assert "本地模型" in result["summary"]
 
 
 def test_search_returns_seed_results(tmp_path, monkeypatch) -> None:
@@ -671,7 +755,7 @@ def test_invalid_review_action_is_rejected_without_status_change(tmp_path, monke
     assert any(item["id"] == pending_case["id"] for item in after_items)
 
 
-def test_knowledge_document_upload_indexes_text_and_is_searchable(tmp_path, monkeypatch) -> None:
+def test_knowledge_document_upload_creates_pending_review_chunks_and_parse_artifacts(tmp_path, monkeypatch) -> None:
     client = make_client(tmp_path, monkeypatch)
 
     response = client.post(
@@ -689,8 +773,15 @@ def test_knowledge_document_upload_indexes_text_and_is_searchable(tmp_path, monk
     assert response.status_code == 200
     payload = response.json()
     assert payload["success"] is True
-    assert payload["data"]["status"] == "indexed"
+    assert payload["data"]["status"] == "pending_review"
     assert payload["data"]["chunkCount"] == 1
+    assert payload["data"]["pendingReviewCount"] == 1
+    assert payload["data"]["chunks"][0]["review_status"] == "pending_review"
+    assert payload["data"]["chunks"][0]["chunk_id"] == payload["data"]["chunks"][0]["id"]
+    assert payload["data"]["parseArtifacts"]["rawParseResult"]
+    assert payload["data"]["parseArtifacts"]["parsedMarkdown"]
+    assert (tmp_path / "knowledge" / "parsed" / payload["data"]["id"] / "raw_parse_result.json").exists()
+    assert (tmp_path / "knowledge" / "parsed" / payload["data"]["id"] / "parsed.md").exists()
 
     search_response = client.post(
         "/api/search",
@@ -702,10 +793,10 @@ def test_knowledge_document_upload_indexes_text_and_is_searchable(tmp_path, monk
         },
     )
     results = search_response.json()["data"]["results"]
-    assert any(item["sourceType"] == "document" and item["sourceName"] == "摩托车检修手册" for item in results)
+    assert not any(item["sourceType"] == "document" and item["sourceName"] == "摩托车检修手册" for item in results)
 
 
-def test_knowledge_document_upload_syncs_chunks_to_vector_store(tmp_path, monkeypatch) -> None:
+def test_knowledge_document_upload_does_not_sync_pending_chunks_to_vector_store(tmp_path, monkeypatch) -> None:
     synced: list[dict[str, Any]] = []
 
     def capture_sync(chunks: list[dict[str, Any]]) -> None:
@@ -727,8 +818,31 @@ def test_knowledge_document_upload_syncs_chunks_to_vector_store(tmp_path, monkey
     )
 
     assert response.status_code == 200
-    assert synced
-    assert synced[0]["sourceName"] == "摩托车检修手册"
+    assert synced == []
+
+
+def test_docx_upload_falls_back_to_mock_parser_pending_review(tmp_path, monkeypatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+
+    response = client.post(
+        "/api/knowledge/documents",
+        files={
+            "file": (
+                "maintenance.docx",
+                b"fake office bytes",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+        data={"source_name": "Office 检修资料"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    assert payload["status"] == "needs_parser"
+    assert payload["parser"] == "mock-parser"
+    assert payload["parserFallback"] is True
+    assert "MinerU unavailable" in payload["parserFallbackReason"]
+    assert (tmp_path / "knowledge" / "parsed" / payload["id"] / "raw_parse_result.json").exists()
 
 
 def test_search_merges_chroma_vector_recall(tmp_path, monkeypatch) -> None:
@@ -771,7 +885,7 @@ def test_search_merges_chroma_vector_recall(tmp_path, monkeypatch) -> None:
     assert vector_item["scoreBreakdown"]["vectorDistance"] == 0.12
 
 
-def test_rag_answer_uses_ingested_document_citation(tmp_path, monkeypatch) -> None:
+def test_rag_answer_excludes_pending_review_document_citation(tmp_path, monkeypatch) -> None:
     client = make_client(tmp_path, monkeypatch)
     client.post(
         "/api/knowledge/documents",
@@ -797,7 +911,7 @@ def test_rag_answer_uses_ingested_document_citation(tmp_path, monkeypatch) -> No
 
     assert response.status_code == 200
     citations = response.json()["data"]["citations"]
-    assert any(item["sourceType"] == "document" and item["sourceName"] == "摩托车检修手册" for item in citations)
+    assert not any(item["sourceType"] == "document" and item["sourceName"] == "摩托车检修手册" for item in citations)
 
 
 def test_knowledge_documents_list_returns_ingested_items(tmp_path, monkeypatch) -> None:
@@ -951,8 +1065,9 @@ def test_image_knowledge_document_can_be_multimodal_analyzed_and_searched(tmp_pa
     analyze_response = client.post(f"/api/knowledge/documents/{uploaded['id']}/analyze", json={"provider": "mock"})
     assert analyze_response.status_code == 200
     analyzed = analyze_response.json()["data"]
-    assert analyzed["status"] == "analyzed"
+    assert analyzed["status"] == "pending_review"
     assert analyzed["chunkCount"] > 0
+    assert analyzed["pendingReviewCount"] == analyzed["chunkCount"]
     assert analyzed["analysis"]["provider"] == "mock"
     assert analyzed["analysis"]["fallback"] is True
 
@@ -961,7 +1076,110 @@ def test_image_knowledge_document_can_be_multimodal_analyzed_and_searched(tmp_pa
         json={"deviceModel": "A", "faultText": "mock", "inputType": "text", "topK": 5},
     )
     results = search_response.json()["data"]["results"]
-    assert any(item.get("documentId") == uploaded["id"] and item["sourceType"] == "document" for item in results)
+    assert not any(item.get("documentId") == uploaded["id"] and item["sourceType"] == "document" for item in results)
+
+
+def test_knowledge_chunk_revision_updates_chunk_and_revisions(tmp_path, monkeypatch) -> None:
+    sync_calls: list[list[dict[str, Any]]] = []
+    deleted: list[str] = []
+
+    monkeypatch.setattr(knowledge, "sync_chunks", lambda chunks: sync_calls.append(chunks))
+    monkeypatch.setattr(knowledge, "delete_vector_document", lambda document_id: deleted.append(document_id))
+    client = make_client(tmp_path, monkeypatch)
+
+    upload_response = client.post(
+        "/api/knowledge/documents",
+        files={"file": ("repair-note.txt", b"old spark plug note", "text/plain")},
+        data={"source_name": "manual correction source"},
+    )
+    document = upload_response.json()["data"]
+    chunk_id = document["chunks"][0]["id"]
+
+    response = client.patch(
+        f"/api/knowledge/documents/{document['id']}/chunks/{chunk_id}",
+        json={
+            "content": "修正后：火花塞积碳导致启动困难，应清洁或更换火花塞。",
+            "tags": ["人工修正", "火花塞"],
+            "reason": "现场技师确认 OCR/模型输出需要修正",
+            "reviewer": "technician-a",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    assert payload["chunk"]["content"].startswith("修正后")
+    assert payload["chunk"]["manuallyCorrected"] is True
+    assert payload["revision"]["before"]["content"] == "old spark plug note"
+    assert "火花塞" in payload["revision"]["after"]["content"]
+    assert deleted == [document["id"]]
+    assert sync_calls and sync_calls[-1][0]["id"] == chunk_id
+
+    revisions_response = client.get(f"/api/knowledge/documents/{document['id']}/revisions")
+    revisions = revisions_response.json()["data"]
+    assert revisions["total"] == 1
+    assert revisions["items"][0]["reviewer"] == "technician-a"
+
+    chunks_response = client.get(f"/api/knowledge/documents/{document['id']}/chunks")
+    chunks = chunks_response.json()["data"]["items"]
+    assert chunks[0]["content"].startswith("修正后")
+
+    search_response = client.post(
+        "/api/search",
+        json={"deviceModel": "发动机", "faultText": "火花塞积碳 启动困难", "inputType": "text", "topK": 5},
+    )
+    results = search_response.json()["data"]["results"]
+    assert not any(item.get("chunkId") == chunk_id for item in results)
+
+
+def test_mock_ocr_text_is_indexed_for_image_documents(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("OCR_PROVIDER", "mock")
+    client = make_client(tmp_path, monkeypatch)
+
+    upload_response = client.post(
+        "/api/knowledge/documents",
+        files={"file": ("fault-code-photo.png", b"fake png bytes", "image/png")},
+        data={"source_name": "fault-code-photo"},
+    )
+    document_id = upload_response.json()["data"]["id"]
+
+    analyze_response = client.post(f"/api/knowledge/documents/{document_id}/analyze", json={"provider": "mock"})
+
+    assert analyze_response.status_code == 200
+    analyzed = analyze_response.json()["data"]
+    assert analyzed["analysis"]["ocr"]["provider"] == "mock"
+    assert analyzed["analysis"]["ocr"]["fallback"] is True
+
+    chunks_response = client.get(f"/api/knowledge/documents/{document_id}/chunks")
+    chunks = chunks_response.json()["data"]["items"]
+    assert any("OCR" in chunk["content"] or "跨模态检索" in chunk["content"] for chunk in chunks)
+
+    search_response = client.post(
+        "/api/search",
+        json={"deviceModel": "摩托车发动机", "faultText": "OCR 跨模态 火花塞", "inputType": "text", "topK": 5},
+    )
+    results = search_response.json()["data"]["results"]
+    assert not any(item.get("documentId") == document_id for item in results)
+
+
+def test_ocr_provider_missing_dependency_falls_back_to_mock(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("OCR_PROVIDER", "rapidocr")
+    monkeypatch.setattr(ocr_adapter, "rapidocr_text", lambda _: (_ for _ in ()).throw(ImportError("rapidocr missing")))
+    client = make_client(tmp_path, monkeypatch)
+
+    upload_response = client.post(
+        "/api/knowledge/documents",
+        files={"file": ("scan.webp", b"fake webp bytes", "image/webp")},
+    )
+    document_id = upload_response.json()["data"]["id"]
+
+    response = client.post(f"/api/knowledge/documents/{document_id}/analyze", json={"provider": "mock"})
+
+    assert response.status_code == 200
+    ocr = response.json()["data"]["analysis"]["ocr"]
+    assert ocr["provider"] == "mock"
+    assert ocr["requestedProvider"] == "rapidocr"
+    assert ocr["fallback"] is True
+    assert "rapidocr" in ocr["fallbackReason"]
 
 
 def test_multimodal_analysis_falls_back_when_real_provider_is_unconfigured(tmp_path, monkeypatch) -> None:
@@ -1027,7 +1245,7 @@ def test_multimodal_analysis_network_error_falls_back_to_mock(tmp_path, monkeypa
     assert analysis["fallback"] is True
 
 
-def test_multimodal_analyzed_document_is_used_by_rag(tmp_path, monkeypatch) -> None:
+def test_multimodal_analyzed_document_stays_pending_before_rag(tmp_path, monkeypatch) -> None:
     client = make_client(tmp_path, monkeypatch)
     upload_response = client.post(
         "/api/knowledge/documents",
@@ -1044,7 +1262,7 @@ def test_multimodal_analyzed_document_is_used_by_rag(tmp_path, monkeypatch) -> N
 
     assert response.status_code == 200
     citations = response.json()["data"]["citations"]
-    assert any(item.get("documentId") == document_id for item in citations)
+    assert not any(item.get("documentId") == document_id for item in citations)
 
 
 def test_multimodal_analysis_missing_document_returns_404(tmp_path, monkeypatch) -> None:
@@ -1268,6 +1486,14 @@ def test_vector_sync_uses_openai_embedding_when_available(monkeypatch) -> None:
     assert captured["collectionProvider"] == "openai"
     assert captured["embeddings"] == [[0.1, 0.2, 0.3]]
     assert captured["metadatas"][0]["embeddingProvider"] == "openai"
+
+
+def test_vector_store_defaults_to_chroma_with_current_embedding_model(monkeypatch) -> None:
+    monkeypatch.delenv("RAG_VECTOR_STORE", raising=False)
+    monkeypatch.delenv("OPENAI_EMBEDDING_MODEL", raising=False)
+
+    assert vector_store.vector_store_enabled() is True
+    assert vector_store.embedding_model() == "text-embedding-3-small"
 
 
 def test_vector_sync_falls_back_to_hash_embedding_when_remote_fails(monkeypatch) -> None:

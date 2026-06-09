@@ -11,10 +11,12 @@ $ErrorActionPreference = "Stop"
 
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $PreferredRuntimeDir = Join-Path $RepoRoot ".dev-runtime"
+$LocalRuntimeDir = if ($env:LOCALAPPDATA) { Join-Path $env:LOCALAPPDATA "software-cup-2026-dev-runtime" } else { $null }
 $FallbackRuntimeDir = Join-Path ([System.IO.Path]::GetTempPath()) "software-cup-2026-dev-runtime"
 
 function Initialize-RuntimeDir {
-    foreach ($candidate in @($PreferredRuntimeDir, $FallbackRuntimeDir)) {
+    $candidates = @($PreferredRuntimeDir, $LocalRuntimeDir, $FallbackRuntimeDir) | Where-Object { $_ }
+    foreach ($candidate in $candidates) {
         try {
             New-Item -ItemType Directory -Force -Path $candidate | Out-Null
             $probe = Join-Path $candidate ".write-test"
@@ -27,15 +29,31 @@ function Initialize-RuntimeDir {
         }
     }
 
+    if ($Action -in @("status", "verify", "logs", "stop")) {
+        Write-Host "Continuing without runtime writes. Some saved PID/log details may be unavailable." -ForegroundColor Yellow
+        return $PreferredRuntimeDir
+    }
+
     throw "No writable runtime directory is available."
 }
 
-$RuntimeDir = Initialize-RuntimeDir
-$StateFile = Join-Path $RuntimeDir "dev-services.json"
-$BackendLog = Join-Path $RuntimeDir "backend.log"
-$BackendErr = Join-Path $RuntimeDir "backend.err.log"
-$FrontendLog = Join-Path $RuntimeDir "frontend.log"
-$FrontendErr = Join-Path $RuntimeDir "frontend.err.log"
+$RuntimeDir = $null
+$StateFile = $null
+$BackendLog = $null
+$BackendErr = $null
+$FrontendLog = $null
+$FrontendErr = $null
+
+function Set-RuntimePaths {
+    param([string]$Directory)
+
+    $script:RuntimeDir = $Directory
+    $script:StateFile = Join-Path $RuntimeDir "dev-services.json"
+    $script:BackendLog = Join-Path $RuntimeDir "backend.log"
+    $script:BackendErr = Join-Path $RuntimeDir "backend.err.log"
+    $script:FrontendLog = Join-Path $RuntimeDir "frontend.log"
+    $script:FrontendErr = Join-Path $RuntimeDir "frontend.err.log"
+}
 
 function Write-Section {
     param([string]$Message)
@@ -108,6 +126,55 @@ function Test-Port {
     }
 }
 
+function Get-ListeningProcessIds {
+    param([int]$Port)
+    $connections = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
+    @($connections | Where-Object { $_.OwningProcess } | Select-Object -ExpandProperty OwningProcess -Unique)
+}
+
+function Get-ServiceStatus {
+    param(
+        [string]$Name,
+        [object]$Entry,
+        [int]$Port,
+        [string]$Url
+    )
+
+    $savedProcess = Get-ProcessBySavedId -Entry $Entry
+    $portOwnerPids = Get-ListeningProcessIds -Port $Port
+    $listening = ($portOwnerPids.Count -gt 0) -or (Test-Port -Port $Port)
+    $pidText = if ($savedProcess) {
+        [string]$savedProcess.Id
+    }
+    elseif ($portOwnerPids.Count -gt 0) {
+        ($portOwnerPids -join ",")
+    }
+    elseif ($listening) {
+        "unknown"
+    }
+    else {
+        ""
+    }
+    $processText = if ($savedProcess) {
+        "running"
+    }
+    elseif ($listening) {
+        "running (detected by port)"
+    }
+    else {
+        "stopped"
+    }
+
+    [PSCustomObject]@{
+        Service = $Name
+        Pid = $pidText
+        Process = $processText
+        Port = $Port
+        Listening = $listening
+        Url = $Url
+    }
+}
+
 function Stop-SavedServices {
     $state = Get-State
     if ($state) {
@@ -168,7 +235,8 @@ function Start-DevServices {
     New-Item -ItemType Directory -Force -Path $RuntimeDir | Out-Null
 
     if ((Test-Port -Port $BackendPort) -or (Test-Port -Port $FrontendPort)) {
-        Write-Host "Port $BackendPort or $FrontendPort is already in use. Run 'dev stop' first if these are stale." -ForegroundColor Yellow
+        Write-Host "Port $BackendPort or $FrontendPort is already in use. Services may already be running." -ForegroundColor Yellow
+        Write-Host "If this is stale, run 'dev stop' and then 'dev start' again." -ForegroundColor Yellow
         Show-Status
         return
     }
@@ -202,29 +270,19 @@ function Start-DevServices {
 
 function Show-Status {
     $state = Get-State
-    $backendProcess = Get-ProcessBySavedId -Entry $state.backend
-    $frontendProcess = Get-ProcessBySavedId -Entry $state.frontend
-    $backendPortOpen = Test-Port -Port $BackendPort
-    $frontendPortOpen = Test-Port -Port $FrontendPort
 
     Write-Section "Development service status"
-    [PSCustomObject]@{
-        Service = "backend"
-        Pid = if ($backendProcess) { $backendProcess.Id } else { "" }
-        Process = if ($backendProcess) { "running" } else { "stopped" }
-        Port = $BackendPort
-        Listening = $backendPortOpen
-        Url = "http://127.0.0.1:$BackendPort/api/health"
-    } | Format-List
+    Get-ServiceStatus `
+        -Name "backend" `
+        -Entry $state.backend `
+        -Port $BackendPort `
+        -Url "http://127.0.0.1:$BackendPort/api/health" | Format-List
 
-    [PSCustomObject]@{
-        Service = "frontend"
-        Pid = if ($frontendProcess) { $frontendProcess.Id } else { "" }
-        Process = if ($frontendProcess) { "running" } else { "stopped" }
-        Port = $FrontendPort
-        Listening = $frontendPortOpen
-        Url = "http://127.0.0.1:$FrontendPort/"
-    } | Format-List
+    Get-ServiceStatus `
+        -Name "frontend" `
+        -Entry $state.frontend `
+        -Port $FrontendPort `
+        -Url "http://127.0.0.1:$FrontendPort/" | Format-List
 
     if ($state) {
         Write-Host "State file: $StateFile"
@@ -257,26 +315,36 @@ function Show-Logs {
     if (Test-Path $FrontendErr) { Get-Content -Tail 60 $FrontendErr }
 }
 
-switch ($Action) {
-    "start" {
-        Start-DevServices
+try {
+    Set-RuntimePaths -Directory (Initialize-RuntimeDir)
+
+    switch ($Action) {
+        "start" {
+            Start-DevServices
+        }
+        "stop" {
+            Stop-SavedServices
+            Write-Host "Development services stopped." -ForegroundColor Green
+        }
+        "restart" {
+            Stop-SavedServices
+            Start-Sleep -Seconds 1
+            Start-DevServices
+        }
+        "status" {
+            Show-Status
+        }
+        "verify" {
+            Invoke-HealthChecks
+        }
+        "logs" {
+            Show-Logs
+        }
     }
-    "stop" {
-        Stop-SavedServices
-        Write-Host "Development services stopped." -ForegroundColor Green
-    }
-    "restart" {
-        Stop-SavedServices
-        Start-Sleep -Seconds 1
-        Start-DevServices
-    }
-    "status" {
-        Show-Status
-    }
-    "verify" {
-        Invoke-HealthChecks
-    }
-    "logs" {
-        Show-Logs
-    }
+
+    exit 0
+}
+catch {
+    Write-Host $_.Exception.Message -ForegroundColor Red
+    exit 1
 }

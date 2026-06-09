@@ -25,7 +25,7 @@ DEFAULT_DIMENSION = 384
 
 
 def vector_store_enabled() -> bool:
-    return os.getenv("RAG_VECTOR_STORE", "off").strip().lower() == "chroma"
+    return os.getenv("RAG_VECTOR_STORE", "chroma").strip().lower() == "chroma"
 
 
 def embedding_dimension() -> int:
@@ -33,7 +33,7 @@ def embedding_dimension() -> int:
 
 
 def embedding_model() -> str:
-    return os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-v3").strip() or "text-embedding-v3"
+    return os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small").strip() or "text-embedding-3-small"
 
 
 def embedding_api_style() -> str:
@@ -149,8 +149,11 @@ def metadata_for_chunk(chunk: dict[str, Any], embedding_provider: str) -> dict[s
         "sourceName": chunk.get("sourceName", ""),
         "snippet": chunk.get("snippet", ""),
         "page": chunk.get("page") or "",
+        "section": chunk.get("section", ""),
         "chunkIndex": chunk.get("chunkIndex") or 0,
         "embeddingProvider": embedding_provider,
+        "reviewStatus": chunk.get("review_status", "approved"),
+        "version": chunk.get("version", 1),
     }
     if chunk.get("analysisProvider"):
         metadata["analysisProvider"] = chunk["analysisProvider"]
@@ -158,6 +161,7 @@ def metadata_for_chunk(chunk: dict[str, Any], embedding_provider: str) -> dict[s
 
 
 def sync_chunks(chunks: list[dict[str, Any]]) -> None:
+    chunks = [chunk for chunk in chunks if chunk.get("review_status", "approved") == "approved"]
     if not chunks:
         return
     documents = [chunk.get("content") or chunk.get("snippet", "") for chunk in chunks]
@@ -223,6 +227,8 @@ def search_similar_chunks(query: str, top_k: int) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     for index, chunk_id in enumerate(ids):
         metadata = metadatas[index] if index < len(metadatas) and metadatas[index] else {}
+        if metadata.get("reviewStatus", "approved") != "approved":
+            continue
         document = documents[index] if index < len(documents) else ""
         distance = distances[index] if index < len(distances) else 1.0
         page = metadata.get("page") or None
@@ -236,6 +242,8 @@ def search_similar_chunks(query: str, top_k: int) -> list[dict[str, Any]]:
                 "documentId": metadata.get("documentId", ""),
                 "chunkId": metadata.get("chunkId") or chunk_id,
                 "page": int(page) if str(page).isdigit() else None,
+                "section": metadata.get("section", ""),
+                "version": metadata.get("version", 1),
                 "distance": float(distance),
                 "embeddingProvider": metadata.get("embeddingProvider") or provider,
             }

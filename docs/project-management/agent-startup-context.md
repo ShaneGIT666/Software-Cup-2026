@@ -30,11 +30,12 @@ dev restart
 
 1. LoongArch / 银河麒麟 V11 后端最小依赖验证已完成；后端测试子集 `39 passed`，`/api/health` 和 `/api/providers/status` 正常。
 2. 目标 VM 无 npm/git，因此前端采用 Windows 本地构建 `frontend/dist`，再由 FastAPI 静态托管的方案。
-3. Windows 本地主线后端测试最新结果为 `78 passed in 18.67s`。
+3. Windows 本地主线后端测试最新结果为 `85 passed in 14.26s`。
 4. 前端生产构建已通过；存在 Vite chunk size warning，不阻塞。
 5. Qwen / DashScope OpenAI-compatible 文本 RAG 已完成真实 API 小样本验收，返回 `fallback=false` 且保留 citations。
 6. Chroma 是可选向量索引增强；hash embedding 是断网和无 Key 场景的 fallback/占位，不是生产级语义 embedding。
 7. 真实多模态 API 新增小样本验收接口，但默认演示仍可使用 mock 兜底。
+8. OCR 已新增可选 provider 层：默认 `OCR_PROVIDER=mock`，可选 `rapidocr` 或 `tesseract`；OCR 文本会并入资料分析 chunks，进入检索、RAG citations 和知识关系网络。真实 OCR 依赖需单独安装 `backend/requirements-ocr.txt` 并记录 LoongArch/Kylin 兼容性。
 
 ## 3. 核心闭环
 
@@ -45,7 +46,7 @@ dev restart
 -> 生成 RAG 辅助建议
 -> 查看标准化作业流程
 -> 上传维修手册、现场图片或经验资料
--> 多模态 mock/真实 provider 分析资料并生成知识片段
+-> 多模态 mock/真实 provider 与可选 OCR 分析资料并生成知识片段
 -> 提交维修案例
 -> 审核通过后再次检索命中新案例
 ```
@@ -56,14 +57,15 @@ dev restart
 2. 检索与案例服务：`backend/app/services.py`
 3. RAG provider：`backend/app/llm_adapter.py`
 4. 多模态 provider：`backend/app/multimodal_adapter.py`
-5. 资料入库：`backend/app/knowledge.py`
-6. Chroma 可选索引：`backend/app/vector_store.py`
-7. JSON 原子写：`backend/app/data_store.py`
-8. 前端入口：`frontend/src/App.vue`
-9. 前端 API 类型：`frontend/src/api.ts`
-10. 当前交接：`docs/project-management/current-handoff.md`
-11. 测试报告：`docs/testing/software-test-report.md`
-12. LoongArch 验证：`docs/deployment/loongarch-kylin-verification.md`
+5. OCR provider：`backend/app/ocr_adapter.py`
+6. 资料入库：`backend/app/knowledge.py`
+7. Chroma 可选索引：`backend/app/vector_store.py`
+8. JSON 原子写：`backend/app/data_store.py`
+9. 前端入口：`frontend/src/App.vue`
+10. 前端 API 类型：`frontend/src/api.ts`
+11. 当前交接：`docs/project-management/current-handoff.md`
+12. 测试报告：`docs/testing/software-test-report.md`
+13. LoongArch 验证：`docs/deployment/loongarch-kylin-verification.md`
 
 ## 5. 常用命令
 
@@ -148,6 +150,15 @@ RAG_EMBEDDING_PROVIDER=openai
 OPENAI_EMBEDDING_MODEL=text-embedding-v3
 ```
 
+OCR 可选增强：
+
+```env
+OCR_PROVIDER=mock
+OCR_LANG=ch
+```
+
+真实本地 OCR 可先评估 `rapidocr` 或 `tesseract`。相关依赖放在 `backend/requirements-ocr.txt`，不要并入默认后端依赖。
+
 ## 7. 风险口径
 
 1. 不要把 mock 多模态分析说成生产级 OCR。
@@ -155,7 +166,8 @@ OPENAI_EMBEDDING_MODEL=text-embedding-v3
 3. 不要把 hash embedding 说成真实语义 embedding。
 4. 不要提交 `.env`、官方 PDF、`data/uploads/`、`data/knowledge/`、`frontend/dist/`、`node_modules/`、`.venv/`。
 5. 真实多模态 API 只做小样本验收，不承诺所有 OpenAI-compatible 网关都支持图片/PDF。
-6. LoongArch 后端已验证；前端完整访问需按 FastAPI 静态托管方案在 VM 上复验。
+6. 真实 OCR 是可选增强，不是默认生产级能力；RapidOCR、PaddleOCR、Docling、MinerU 等依赖在 LoongArch/Kylin 上必须单独验收。
+7. LoongArch 后端已验证；前端完整访问需按 FastAPI 静态托管方案在 VM 上复验。
 
 ## 8. 接手流程
 

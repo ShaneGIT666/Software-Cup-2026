@@ -1,0 +1,78 @@
+# 语义检索主方案：Embedding + ChromaDB
+
+本项目将“真实 embedding 模型 + ChromaDB 向量数据库”设为知识检索主方案，用于提升检修手册、OCR 文本、故障图片分析结果和维修案例的语义召回能力。关键词检索与 hash embedding 不再作为主卖点，而是作为无 Key、弱网、依赖不可用时的兜底链路。
+
+## 默认配置
+
+```env
+RAG_VECTOR_STORE=chroma
+RAG_EMBEDDING_PROVIDER=openai
+OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+OPENAI_EMBEDDING_API_STYLE=openai_compatible
+EMBEDDING_TIMEOUT_SECONDS=20
+```
+
+说明：
+
+- `RAG_VECTOR_STORE=chroma`：资料入库后自动同步到 Chroma collection。
+- `RAG_EMBEDDING_PROVIDER=openai`：通过 OpenAI-compatible `/embeddings` 接口生成真实语义向量。
+- `text-embedding-3-small` 是当前官方确认可用的 OpenAI embedding 模型名；不要写 `text-embedding-v4`。
+- 如果未配置 Key、`REMOTE_API_MODE=off`、embedding 服务失败或 Chroma 初始化失败，系统会自动回退到 hash embedding 或关键词检索，接口不崩。
+
+## 云端模型示例
+
+```env
+REMOTE_API_MODE=auto
+RAG_VECTOR_STORE=chroma
+RAG_EMBEDDING_PROVIDER=openai
+OPENAI_API_KEY=your-key
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+```
+
+## 国产 / OpenAI-Compatible 示例
+
+可使用支持 `/embeddings` 的 Qwen、SiliconFlow、LiteLLM 网关或其他兼容服务：
+
+```env
+REMOTE_API_MODE=auto
+RAG_VECTOR_STORE=chroma
+RAG_EMBEDDING_PROVIDER=openai
+OPENAI_API_KEY=your-key
+OPENAI_BASE_URL=https://your-compatible-provider/v1
+OPENAI_EMBEDDING_MODEL=your-embedding-model
+```
+
+## 本地模型示例
+
+若本地服务提供 OpenAI-compatible `/embeddings`：
+
+```env
+REMOTE_API_MODE=auto
+RAG_VECTOR_STORE=chroma
+RAG_EMBEDDING_PROVIDER=openai
+OPENAI_API_KEY=local-placeholder
+OPENAI_BASE_URL=http://127.0.0.1:11434/v1
+OPENAI_EMBEDDING_MODEL=nomic-embed-text
+```
+
+## 检索流程
+
+```text
+资料上传/案例审核/OCR 文本/多模态分析结果
+-> 切分为 document chunks
+-> embedding 模型生成向量
+-> ChromaDB 持久化索引
+-> /api/search 混合召回：关键词结果 + Chroma 语义结果
+-> /api/rag/answer 引用召回片段生成回答
+```
+
+## 答辩口径
+
+系统采用混合语义检索架构。主路径使用 ChromaDB 向量数据库和可配置 OpenAI-compatible embedding 模型，实现检修知识片段、OCR 文本和案例经验的语义召回；兜底路径保留关键词检索与 hash embedding，确保离线、弱网或模型不可用时仍能完成演示。
+
+## 风险边界
+
+- hash embedding 只能称为 fallback，不应宣称为真实语义 embedding。
+- LoongArch/Kylin 最小部署可显式设置 `RAG_VECTOR_STORE=off`，先保证前后端和 mock/RAG 演示链路稳定。
+- ChromaDB 是单机 MVP 友好的向量库；若后续需要多租户、高并发或更强过滤检索，可升级到 Qdrant、Milvus 等服务型向量库。

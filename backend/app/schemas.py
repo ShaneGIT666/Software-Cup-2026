@@ -40,12 +40,12 @@ class LlmValidateRequest(BaseModel):
 
 
 class MultimodalAnalyzeRequest(BaseModel):
-    provider: Literal["mock", "openai", "anthropic"] | None = None
+    provider: Literal["mock", "openai", "anthropic", "local"] | None = None
 
 
 class MultimodalValidateRequest(BaseModel):
     documentId: str | None = None
-    provider: Literal["openai", "anthropic"] | None = None
+    provider: Literal["openai", "anthropic", "local"] | None = None
 
 
 class CaseCreateRequest(BaseModel):
@@ -61,3 +61,14 @@ class CaseReviewRequest(BaseModel):
     action: Literal["approve", "reject"]
     reviewNote: str = ""
     normalizedTags: list[str] = Field(default_factory=list)
+
+
+class KnowledgeChunkRevisionRequest(BaseModel):
+    chunkId: str = ""
+    content: str = Field(min_length=1)
+    title: str | None = None
+    sourceName: str | None = None
+    page: int | None = None
+    tags: list[str] = Field(default_factory=list)
+    reason: str = ""
+    reviewer: str = "operator"

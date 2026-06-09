@@ -6,11 +6,11 @@
 
 ## 1. 测试结论
 
-当前项目已覆盖比赛 MVP 的核心后端链路：检索、资料入库、上传安全、RAG、provider fallback、多模态 mock、知识关系网络、Chroma 可选召回、官方 PDF 流程、LoongArch 后端最小部署验证。
+当前项目已覆盖比赛 MVP 的核心后端链路：检索、资料入库、上传安全、RAG、provider fallback、多模态 mock、可选 OCR provider、知识关系网络、Chroma 可选召回、官方 PDF 流程、LoongArch 后端最小部署验证。
 
 最近确认事实：
 
-1. Windows 本地后端完整测试最新结果：`78 passed in 18.67s`。
+1. Windows 本地后端完整测试最新结果：`85 passed in 14.26s`。
 2. 前端 `npm.cmd run build` 通过，存在 Vite chunk size warning，不阻塞。
 3. Qwen / DashScope OpenAI-compatible 文本 RAG 小样本真实 API 验收通过，`fallback=false`，citations 保留。
 4. LoongArch / 银河麒麟 V11 后端最小依赖测试子集通过：`39 passed`。
@@ -22,7 +22,7 @@
 
 ```powershell
 .\backend\.venv\Scripts\python.exe -m pytest tests/ -q
-# 78 passed in 18.67s
+# 85 passed in 14.26s
 ```
 
 前端：
@@ -54,7 +54,7 @@ npm run test:e2e
 | 编号 | 范围 | 说明 |
 | --- | --- | --- |
 | T-BE-001 | 健康检查 | `/api/health` 返回服务状态 |
-| T-BE-002 | Provider 状态 | `/api/providers/status` 返回 LLM、多模态、embedding 和 fallback 状态 |
+| T-BE-002 | Provider 状态 | `/api/providers/status` 返回 LLM、多模态、OCR、embedding 和 fallback 状态 |
 | T-BE-003 | 检索 | 正常查询返回 seed 数据、命中词、来源和排序解释 |
 | T-BE-004 | 空查询 | 设备型号和故障现象都为空时返回 400 |
 | T-BE-005 | RAG mock | mock RAG 返回回答和 citations |
@@ -73,6 +73,8 @@ npm run test:e2e
 | T-BE-018 | JSON 原子写 | `save_cases()` 等写入先写临时文件再 `os.replace()` |
 | T-BE-019 | Chroma 降级 | Chroma 初始化失败或查询失败时返回空召回，不影响主链路 |
 | T-BE-020 | 官方 PDF | 官方摩托车维修手册入库、检索、RAG、删除、Chroma 流程 |
+| T-BE-021 | OCR 可选增强 | mock OCR 文本可生成 document chunks，并被检索和 RAG citations 复用 |
+| T-BE-022 | OCR fallback | `rapidocr` 等真实 provider 缺失或失败时降级 mock OCR，不影响多模态分析 |
 
 ## 4. LoongArch / 银河麒麟验证
 
@@ -107,6 +109,7 @@ npm/git 不存在
 | Chroma 在 LoongArch 未验收 | 可选向量增强不可用 | 默认 `RAG_VECTOR_STORE=off`，关键词检索不受影响 |
 | hash embedding 非真实语义 | 答辩术语风险 | 文档和返回字段明确标记 `embeddingProvider=hash` |
 | 真实多模态 payload 差异 | 不同 provider 兼容性不确定 | 只通过 `/api/providers/multimodal/validate` 做小样本验收 |
+| 真实 OCR 依赖兼容性 | RapidOCR/PaddleOCR/Docling/MinerU 等依赖在 LoongArch/Kylin 上未完整验收 | 默认 `OCR_PROVIDER=mock`；真实 OCR 依赖放在 `backend/requirements-ocr.txt` 单独安装验证 |
 | 前端 E2E 依赖未安装 | 自动化演示防线不完整 | 网络可用后安装 `@playwright/test` 并执行 |
 | JSON 文件并发写 | 多请求写入可能覆盖 | 已改为原子替换降低写坏文件风险；比赛 MVP 低并发可接受，后续可引入文件锁或数据库 |
 
@@ -170,3 +173,25 @@ RAG_VECTOR_STORE=off
 ```
 
 这说明 Docker 部署链路、前后端一体化访问、Mock/RAG 兜底链路已经可用于比赛演示。真实 API、Chroma、真实多模态仍属于增强能力，应在网络、Key 和依赖可控时单独验收。
+## 最新测试补充：MinerU 接入验证（2026-06-09）
+
+本次补充验证 MinerU 已从“预留接口”推进为文档解析主链路：
+
+1. 后端虚拟环境已安装 `mineru[all]==3.2.3`，CLI 返回 `mineru, version 3.2.3`。
+2. DOCX 小样本已通过项目 `parse_document()` 链路解析，返回 `parser=mineru`、`status=parsed`、`fallback=False`。
+3. `parser_router` 对 PDF / DOCX / PPTX / XLSX 优先调用 MinerU；失败、超时、未安装或关闭时自动 fallback。
+4. MinerU 解析结果保存 `raw_parse_result.json`、`parsed.md`、`assets/`。
+5. 解析生成的知识片段默认 `review_status=pending_review`，审核通过前不参与正式 RAG 检索和 Chroma 同步。
+
+最新回归命令与结果：
+
+```powershell
+.\backend\.venv\Scripts\python.exe -m pytest tests\test_backend_api.py
+# 70 passed
+
+cd frontend
+npm.cmd run build
+# passed, only existing Vite chunk size warning
+```
+
+详细部署说明见：`docs/deployment/mineru-document-parsing.md`。

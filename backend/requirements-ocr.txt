@@ -1,0 +1,5 @@
+-r requirements.txt
+
+# Optional local OCR enhancement. Keep these out of the default dependency set
+# so LoongArch/Kylin deployment can still use the conservative mock fallback.
+rapidocr-onnxruntime>=1.4.0,<2.0.0

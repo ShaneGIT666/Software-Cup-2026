@@ -70,6 +70,9 @@ export interface ProviderChannelStatus {
   keyConfigured: boolean;
   effectiveProvider: string;
   lastFallbackReason: string;
+  available?: boolean;
+  localCapable?: boolean;
+  vectorStore?: string;
   model?: string;
   apiStyle?: string;
 }
@@ -80,6 +83,7 @@ export interface ProviderStatusPayload {
   llm: ProviderChannelStatus;
   multimodal: ProviderChannelStatus;
   embedding?: ProviderChannelStatus;
+  ocr?: ProviderChannelStatus;
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
@@ -186,6 +190,37 @@ export interface KnowledgeChunkPreview {
   sourceName: string;
   page?: number | null;
   snippet: string;
+  content?: string;
+  keywords?: string[];
+  manuallyCorrected?: boolean;
+  updatedAt?: string;
+  revisionTags?: string[];
+}
+
+export interface KnowledgeRevision {
+  id: string;
+  documentId: string;
+  chunkId: string;
+  source: string;
+  status: string;
+  reason: string;
+  reviewer: string;
+  createdAt: string;
+  before: {
+    title: string;
+    sourceName: string;
+    page?: number | null;
+    content: string;
+    keywords?: string[];
+  };
+  after: {
+    title: string;
+    sourceName: string;
+    page?: number | null;
+    content: string;
+    keywords?: string[];
+    tags?: string[];
+  };
 }
 
 export interface KnowledgeDocument {
@@ -194,11 +229,31 @@ export interface KnowledgeDocument {
   fileType: string;
   suffix: string;
   sourceName: string;
-  status: "indexed" | "needs_parser" | "needs_ocr" | "needs_multimodal_analysis" | "analyzing" | "analyzed" | "empty" | string;
+  status:
+    | "indexed"
+    | "pending_review"
+    | "needs_parser"
+    | "needs_ocr"
+    | "needs_multimodal_analysis"
+    | "analyzing"
+    | "analyzed"
+    | "empty"
+    | string;
   chunkCount: number;
+  pendingReviewCount?: number;
   parser: string;
+  parserFallback?: boolean;
+  parserFallbackReason?: string;
+  parseArtifacts?: {
+    rawParseResult: string;
+    parsedMarkdown: string;
+    assetsDir: string;
+  };
   uploadedAt: string;
   url: string;
+  revisionCount?: number;
+  latestRevisionAt?: string;
+  latestRevision?: KnowledgeRevision | null;
   chunks?: KnowledgeChunkPreview[];
   analysis?: {
     summary: string;
@@ -210,6 +265,14 @@ export interface KnowledgeDocument {
     requestedProvider: string;
     fallback: boolean;
     fallbackReason?: string;
+    ocr?: {
+      provider?: string;
+      requestedProvider?: string;
+      fallback?: boolean;
+      fallbackReason?: string;
+      text?: string;
+      confidence?: number | null;
+    };
     analyzedAt?: string;
   };
 }
@@ -217,6 +280,22 @@ export interface KnowledgeDocument {
 export interface KnowledgeDocumentListPayload {
   items: KnowledgeDocument[];
   total: number;
+}
+
+export interface KnowledgeChunkListPayload {
+  items: KnowledgeChunkPreview[];
+  total: number;
+}
+
+export interface KnowledgeRevisionListPayload {
+  items: KnowledgeRevision[];
+  total: number;
+}
+
+export interface KnowledgeRevisionPayload {
+  document: KnowledgeDocument;
+  chunk: KnowledgeChunkPreview;
+  revision: KnowledgeRevision;
 }
 
 export function uploadKnowledgeDocument(file: File, sourceName?: string) {
@@ -235,7 +314,34 @@ export function fetchKnowledgeDocuments() {
   return request<KnowledgeDocumentListPayload>("/api/knowledge/documents");
 }
 
-export function analyzeKnowledgeDocument(documentId: string, provider?: "mock" | "openai" | "anthropic") {
+export function fetchKnowledgeDocumentChunks(documentId: string) {
+  return request<KnowledgeChunkListPayload>(`/api/knowledge/documents/${documentId}/chunks`);
+}
+
+export function fetchKnowledgeDocumentRevisions(documentId: string) {
+  return request<KnowledgeRevisionListPayload>(`/api/knowledge/documents/${documentId}/revisions`);
+}
+
+export function reviseKnowledgeChunk(
+  documentId: string,
+  chunkId: string,
+  payload: {
+    content: string;
+    title?: string;
+    sourceName?: string;
+    page?: number | null;
+    tags?: string[];
+    reason?: string;
+    reviewer?: string;
+  }
+) {
+  return request<KnowledgeRevisionPayload>(`/api/knowledge/documents/${documentId}/chunks/${chunkId}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function analyzeKnowledgeDocument(documentId: string, provider?: "mock" | "openai" | "anthropic" | "local") {
   return request<KnowledgeDocument>(`/api/knowledge/documents/${documentId}/analyze`, {
     method: "POST",
     body: JSON.stringify(provider ? { provider } : {})

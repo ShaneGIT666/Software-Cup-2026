@@ -126,6 +126,10 @@ def reason_text(prefix: str, terms: list[str], item: dict[str, Any]) -> str:
     return f"{prefix}：{term_text}{suffix}"
 
 
+def chunk_is_approved(chunk: dict[str, Any]) -> bool:
+    return chunk.get("review_status", "approved") == "approved"
+
+
 def build_search_summary(results: list[dict[str, Any]], query_tokens: list[str]) -> str:
     if not results:
         return "暂未命中手册、历史案例或入库资料；建议补充设备型号、故障现象关键词，或先上传对应资料。"
@@ -204,6 +208,8 @@ def search_knowledge(request: SearchRequest) -> dict[str, Any]:
 
     document_results = []
     for chunk in load_document_chunks():
+        if not chunk_is_approved(chunk):
+            continue
         field_weights = {"title": 4, "sourceName": 3, "keywords": 4, "content": 2}
         scoring = score_item(query_tokens, chunk, field_weights, source_weight=2)
         if scoring["score"]:

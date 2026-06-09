@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("compatible", "openai", "anthropic", "mock")]
+    [ValidateSet("compatible", "openai", "anthropic", "local", "mock")]
     [string]$Provider = "",
     [ValidateSet("deepseek", "qwen", "siliconflow", "custom")]
     [string]$CompatiblePreset = "",
@@ -132,23 +132,30 @@ Set-Default $values "OPENAI_BASE_URL" "https://api.openai.com/v1"
 Set-Default $values "OPENAI_MODEL" "gpt-4.1-mini"
 Set-Default $values "ANTHROPIC_BASE_URL" "https://api.anthropic.com/v1"
 Set-Default $values "ANTHROPIC_MODEL" "claude-3-5-haiku-latest"
-Set-Default $values "RAG_VECTOR_STORE" "off"
+Set-Default $values "RAG_VECTOR_STORE" "chroma"
 Set-Default $values "APP_CHROMA_DIR" "./data/knowledge/chroma"
-Set-Default $values "RAG_EMBEDDING_PROVIDER" "hash"
-Set-Default $values "OPENAI_EMBEDDING_MODEL" "text-embedding-v3"
+Set-Default $values "RAG_EMBEDDING_PROVIDER" "openai"
+Set-Default $values "OPENAI_EMBEDDING_MODEL" "text-embedding-3-small"
 Set-Default $values "OPENAI_EMBEDDING_API_STYLE" "openai_compatible"
+Set-Default $values "LOCAL_MULTIMODAL_BASE_URL" "http://127.0.0.1:11434/v1"
+Set-Default $values "LOCAL_MULTIMODAL_MODEL" "llava:latest"
+Set-Default $values "LOCAL_MULTIMODAL_API_KEY" "ollama"
+Set-Default $values "LOCAL_MULTIMODAL_MAX_TOKENS" "1200"
+Set-Default $values "LOCAL_MULTIMODAL_TEMPERATURE" "0.2"
 
 if (-not $Provider) {
     Write-Host "Choose API provider mode:" -ForegroundColor Cyan
     Write-Host "  1. OpenAI-compatible /chat/completions (recommended for DeepSeek, Qwen, SiliconFlow, gateway)"
     Write-Host "  2. OpenAI official Responses API"
     Write-Host "  3. Anthropic Messages API"
-    Write-Host "  4. Offline mock only"
-    $choice = Read-DefaultedValue -Prompt "Select 1-4" -Default "1"
+    Write-Host "  4. Local multimodal vision model (Ollama / LM Studio / vLLM-compatible)"
+    Write-Host "  5. Offline mock only"
+    $choice = Read-DefaultedValue -Prompt "Select 1-5" -Default "1"
     $Provider = switch ($choice) {
         "2" { "openai" }
         "3" { "anthropic" }
-        "4" { "mock" }
+        "4" { "local" }
+        "5" { "mock" }
         default { "compatible" }
     }
 }
@@ -205,6 +212,15 @@ switch ($Provider) {
         }
         $values["ANTHROPIC_API_KEY"] = $ApiKey
     }
+    "local" {
+        $values["REMOTE_API_MODE"] = "off"
+        $values["MULTIMODAL_PROVIDER"] = "local"
+        $values["LOCAL_MULTIMODAL_BASE_URL"] = if ($BaseUrl) { $BaseUrl } else { Read-DefaultedValue -Prompt "Local multimodal base URL" -Default $values["LOCAL_MULTIMODAL_BASE_URL"] }
+        $values["LOCAL_MULTIMODAL_MODEL"] = if ($Model) { $Model } else { Read-DefaultedValue -Prompt "Local multimodal model" -Default $values["LOCAL_MULTIMODAL_MODEL"] }
+        if ($ApiKey) {
+            $values["LOCAL_MULTIMODAL_API_KEY"] = $ApiKey
+        }
+    }
     "mock" {
         $values["REMOTE_API_MODE"] = "off"
         $values["LLM_PROVIDER"] = "mock"
@@ -219,7 +235,7 @@ elseif ($DisableChroma) {
     $values["RAG_VECTOR_STORE"] = "off"
 }
 elseif (-not $PSBoundParameters.ContainsKey("Provider")) {
-    $chroma = Read-DefaultedValue -Prompt "Enable Chroma vector retrieval? y/N" -Default "N"
+    $chroma = Read-DefaultedValue -Prompt "Enable Chroma vector retrieval? Y/n" -Default "Y"
     $values["RAG_VECTOR_STORE"] = if ($chroma -match '^(y|yes)$') { "chroma" } else { "off" }
 }
 
@@ -228,6 +244,7 @@ Write-EnvFile -Path $EnvPath -Values $values
 Write-Host ""
 Write-Host "Wrote local configuration: $EnvPath" -ForegroundColor Green
 Write-Host "Provider: $($values["LLM_PROVIDER"])"
+Write-Host "Multimodal provider: $($values["MULTIMODAL_PROVIDER"])"
 Write-Host "Remote mode: $($values["REMOTE_API_MODE"])"
 Write-Host "OpenAI API style: $($values["OPENAI_API_STYLE"])"
 Write-Host "Chroma: $($values["RAG_VECTOR_STORE"])"

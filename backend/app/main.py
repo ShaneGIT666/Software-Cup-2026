@@ -20,6 +20,8 @@ from .knowledge import (
     ingest_knowledge_document,
     list_knowledge_document_chunks,
     list_knowledge_documents,
+    list_knowledge_revisions,
+    revise_knowledge_chunk,
 )
 from .knowledge_graph import build_global_knowledge_graph, build_knowledge_graph, knowledge_graph_overview
 from .provider_policy import provider_status
@@ -30,6 +32,7 @@ from .schemas import (
     CaseCreateRequest,
     CaseReviewRequest,
     DiagnosisRequest,
+    KnowledgeChunkRevisionRequest,
     LlmValidateRequest,
     MultimodalAnalyzeRequest,
     MultimodalValidateRequest,
@@ -254,6 +257,17 @@ def get_knowledge_document_detail(document_id: str) -> ApiResponse:
 @app.get("/api/knowledge/documents/{document_id}/chunks", response_model=ApiResponse)
 def get_knowledge_document_chunks(document_id: str) -> ApiResponse:
     return ApiResponse(data=list_knowledge_document_chunks(document_id))
+
+
+@app.get("/api/knowledge/documents/{document_id}/revisions", response_model=ApiResponse)
+def get_knowledge_document_revisions(document_id: str) -> ApiResponse:
+    return ApiResponse(data=list_knowledge_revisions(document_id))
+
+
+@app.patch("/api/knowledge/documents/{document_id}/chunks/{chunk_id}", response_model=ApiResponse)
+def revise_document_chunk(document_id: str, chunk_id: str, request: KnowledgeChunkRevisionRequest) -> ApiResponse:
+    request.chunkId = chunk_id
+    return ApiResponse(data=revise_knowledge_chunk(document_id, request), message="知识片段修正已保存")
 
 
 @app.post("/api/knowledge/documents/{document_id}/analyze", response_model=ApiResponse)

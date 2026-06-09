@@ -73,8 +73,10 @@ const providerDetailLabel = computed(() => {
   const llm = providerStatus.value.llm;
   const multimodal = providerStatus.value.multimodal;
   const embedding = providerStatus.value.embedding;
+  const ocr = providerStatus.value.ocr;
   const embeddingProvider = embedding?.effectiveProvider ?? "hash";
-  return `RAG ${llm.effectiveProvider} / 多模态 ${multimodal.effectiveProvider} / 向量 ${embeddingProvider}`;
+  const ocrProvider = ocr?.effectiveProvider ?? "mock";
+  return `RAG ${llm.effectiveProvider} · 多模态 ${multimodal.effectiveProvider} · OCR ${ocrProvider} · 向量 ${embeddingProvider}`;
 });
 
 const providerToneClass = computed(() => ({
@@ -204,49 +206,37 @@ runSearch();
 
 <template>
   <main class="shell">
-    <section class="hero">
-      <div class="hero-copy">
-        <div class="hero-gridline" aria-hidden="true" />
-        <p class="eyebrow">Software Cup 2026 / Industrial AI Command Deck</p>
-        <h1>设备检修知识检索与作业指挥台</h1>
-        <p class="subtle">
-          面向一线检修现场，将手册、案例、资料入库、RAG 引用回答、标准作业流程和审核沉淀整合为一套
-          可演示、可追溯、可兜底的工业 AI 工作台。
+    <header class="app-header">
+      <div>
+        <h1>设备检修知识检索与作业辅助系统</h1>
+        <p>
+          输入设备与故障现象，先得到可追溯证据和标准作业步骤，再按需进入 RAG、资料入库和案例沉淀。
         </p>
-        <div class="hero-insights" aria-label="系统态势总览">
-          <span><strong>{{ resultCount }}</strong> 证据命中</span>
-          <span><strong>{{ selectedWorkflow?.steps.length ?? 0 }}</strong> 作业步骤</span>
-          <span><strong>{{ documentNodeCount }}</strong> 资料节点</span>
-          <span><strong>{{ graphEdgeCount }}</strong> 关系链路</span>
-          <span><strong>{{ ragAnswer?.citations.length ?? 0 }}</strong> 回答引用</span>
-        </div>
       </div>
-
-      <aside class="command-card" :class="providerToneClass">
-        <div class="radar" aria-hidden="true">
-          <span />
-        </div>
-        <span class="command-label">运行状态</span>
-        <strong>{{ providerModeLabel }}</strong>
-        <p>{{ providerDetailLabel }}</p>
-        <div class="status-strip">
-          <span>可解释检索</span>
-          <span>本地知识库</span>
-          <span>弱网兜底</span>
-          <span>Docker 已验证</span>
-        </div>
+      <aside class="status-panel" :class="providerToneClass">
+        <span>{{ providerModeLabel }}</span>
+        <strong>{{ providerDetailLabel }}</strong>
       </aside>
-    </section>
+    </header>
 
-    <nav class="demo-flow" aria-label="演示流程">
-      <span class="flow-step active">01 故障输入</span>
-      <span class="flow-step">02 证据检索</span>
-      <span class="flow-step">03 作业指引</span>
-      <span class="flow-step">04 资料入库</span>
-      <span class="flow-step">05 RAG 建议</span>
-      <span class="flow-step">06 图谱证据</span>
-      <span class="flow-step">07 审核沉淀</span>
-    </nav>
+    <section class="task-summary" aria-label="当前检修上下文">
+      <div>
+        <span>当前设备</span>
+        <strong>{{ deviceModel }}</strong>
+      </div>
+      <div>
+        <span>证据命中</span>
+        <strong>{{ resultCount }}</strong>
+      </div>
+      <div>
+        <span>作业步骤</span>
+        <strong>{{ selectedWorkflow?.steps.length ?? 0 }}</strong>
+      </div>
+      <div>
+        <span>知识节点</span>
+        <strong>{{ documentNodeCount + graphEdgeCount }}</strong>
+      </div>
+    </section>
 
     <section class="workspace">
       <QueryPanel
@@ -262,6 +252,9 @@ runSearch();
       />
       <ResultsPanel :search-payload="searchPayload" :selected-result="selectedResult" @open-workflow="openWorkflow" />
       <WorkflowPanel :selected-workflow="selectedWorkflow" />
+    </section>
+
+    <section class="secondary-workspace" aria-label="知识维护与增强能力">
       <KnowledgePanel />
       <RagPanel :rag-answer="ragAnswer" :loading="ragLoading" @answer="generateRagAnswer" />
       <KnowledgeGraphPanel

@@ -8,7 +8,7 @@
 
 | 项目 | 当前状态 |
 | --- | --- |
-| 后端自动化测试 | `78 passed`，覆盖动态诊断、原子写和 Chroma 降级测试 |
+| 后端自动化测试 | `85 passed`，覆盖动态诊断、可选 OCR、原子写和 Chroma 降级测试 |
 | 前端生产构建 | `npm.cmd run build` 通过；Vite chunk size warning 不阻塞演示 |
 | LoongArch / 银河麒麟 | 后端最小依赖链路已验证；本轮按要求暂不继续做 VM 复验 |
 | 前端目标环境托管 | 已支持 FastAPI 静态托管 `frontend/dist`，适配无 npm/nginx 的演示环境 |
@@ -51,7 +51,7 @@
 | 检索方案 | 关键词检索 + 来源引用起步，第二阶段接 Chroma |
 | 向量库 | Chroma MVP，Qdrant 二阶段 |
 | 模型接入 | OpenAI-compatible Adapter，默认 Mock 模式 |
-| 文档解析 | Markdown/JSON/PDF 文本起步，后续接 PaddleOCR、MinerU、Docling |
+| 文档解析 | Markdown/JSON/PDF 文本起步；OCR 可选接 RapidOCR/Tesseract，后续评估 PaddleOCR、MinerU、Docling |
 | 部署 | 本地脚本 MVP，Docker Compose 二阶段 |
 
 完整调研结论见：`docs/research/open-source-architecture-research.md`
@@ -198,7 +198,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\stop-dev.ps1
 6. RAG provider 支持 `mock/openai/anthropic`，已完成 Qwen / DashScope OpenAI-compatible 文本 RAG 小样本验收。
 7. Chroma 可选向量索引已接入，默认关闭；`hash` embedding 是 fallback，占位不冒充真实语义 embedding。
 8. FastAPI 可选静态托管 `frontend/dist`，用于无 npm/nginx 的目标环境演示。
-9. 后端 `78 passed`，前端生产构建通过；Playwright 冒烟测试文件已提交，依赖需联网安装后执行。
+9. 后端 `85 passed`，前端生产构建通过；Playwright 冒烟测试文件已提交，依赖需联网安装后执行。
 10. Coding Agent 动态交接入口：`docs/project-management/agent-startup-context.md`。
 
 下一步建议：
@@ -208,3 +208,32 @@ powershell -ExecutionPolicy Bypass -File .\scripts\stop-dev.ps1
 3. 用一张小图片做真实多模态 provider 验收，记录 provider、模型、耗时和 fallback 结果。
 4. 按 `docs/superpowers/specs/2026-05-27-ceiling-improvement-design.md` 继续推进低风险提分项，例如扩展演示种子数据和演示检查清单。
 5. 如恢复 LoongArch 工作，再上传最新 `frontend/dist`，复验 FastAPI 静态托管前端访问。
+## 最新补充：MinerU 文档解析主链路（2026-06-09）
+
+项目已在 Windows 本地后端虚拟环境中安装并验证 MinerU 3.2.3。PDF / DOCX / PPTX / XLSX 上传时优先通过 `parser_router -> mineru_adapter` 解析，成功后保存 `raw_parse_result.json`、`parsed.md` 和 `assets/`，并生成 `review_status=pending_review` 的知识片段。审核通过前，这些片段不会进入正式 RAG 检索或 Chroma 同步。
+
+部署和验收说明见：`docs/deployment/mineru-document-parsing.md`。
+
+关键配置：
+
+```env
+MINERU_ENABLED=true
+MINERU_BACKEND=pipeline
+MINERU_LANG=ch
+MINERU_TIMEOUT_SECONDS=180
+MINERU_API_URL=
+```
+
+安装命令：
+
+```powershell
+.\backend\.venv\Scripts\python.exe -m pip install -r backend\requirements-mineru.txt
+```
+
+当前验证：
+
+```text
+mineru, version 3.2.3
+backend API: 70 passed
+frontend build: passed
+```

@@ -127,6 +127,14 @@ def save_document_chunks(chunks: list[dict[str, Any]]) -> None:
     _write_knowledge_json("document-chunks.json", chunks)
 
 
+def load_knowledge_revisions() -> list[dict[str, Any]]:
+    return _read_knowledge_json("knowledge-revisions.json")
+
+
+def save_knowledge_revisions(revisions: list[dict[str, Any]]) -> None:
+    _write_knowledge_json("knowledge-revisions.json", revisions)
+
+
 def load_knowledge_graph_cache() -> dict[str, Any]:
     return _read_knowledge_object("knowledge-graph.json")
 
