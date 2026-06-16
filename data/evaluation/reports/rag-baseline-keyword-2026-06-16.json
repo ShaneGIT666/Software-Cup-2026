@@ -1,0 +1,594 @@
+{
+  "generated_at": "2026-06-16T03:35:56.868419Z",
+  "git": {
+    "commit": "526222742e4a1d25564427a7b33a9df8156b268b",
+    "branch": "main",
+    "working_tree": "dirty",
+    "status_short": [
+      "M .gitignore",
+      " M data/evaluation/rag-eval-template.json",
+      "?? backend/app/evaluation/",
+      "?? data/evaluation/reports/",
+      "?? docs/research/implementation-references/",
+      "?? scripts/run_rag_eval.py",
+      "?? tests/test_configuration_contract.py",
+      "?? tests/test_rag_evaluation.py"
+    ]
+  },
+  "config": {
+    "APP_EXAMPLES_DIR": "data/examples",
+    "APP_KNOWLEDGE_DIR": "<temporary>/knowledge",
+    "RAG_VECTOR_STORE": "off",
+    "RAG_EMBEDDING_PROVIDER": "hash",
+    "OPENAI_EMBEDDING_MODEL": "",
+    "OPENAI_BASE_URL": "",
+    "REMOTE_API_MODE": "off",
+    "LLM_PROVIDER": "mock"
+  },
+  "dataset": {
+    "id": "maintenance-rag-seed-baseline",
+    "schema_version": "0.2.0",
+    "created_at": "2026-06-16T00:00:00Z",
+    "purpose": "设备检修知识检索当前基线评测模板；本轮只评测检索，不评测自由生成质量。",
+    "case_count": 12,
+    "category_counts": {
+      "device_model_exact": 1,
+      "semantic_symptom": 1,
+      "safety": 1,
+      "metadata_filter": 1,
+      "electrical_safety": 1,
+      "component": 1,
+      "risk_high": 1,
+      "pending_review_isolation": 1,
+      "insufficient_evidence": 1,
+      "semantic_weak_keyword": 1,
+      "keyword_fallback": 1,
+      "llm_disabled_retrieval": 1
+    }
+  },
+  "mode": {
+    "name": "keyword",
+    "description": "Current keyword/field-weight retrieval baseline with Chroma disabled.",
+    "env_overrides": {
+      "RAG_VECTOR_STORE": "off",
+      "RAG_EMBEDDING_PROVIDER": "hash",
+      "REMOTE_API_MODE": "off",
+      "LLM_PROVIDER": "mock"
+    }
+  },
+  "metrics": {
+    "Hit@1": {
+      "value": 0.6,
+      "available": true,
+      "reason": ""
+    },
+    "Recall@1": {
+      "value": 0.35,
+      "available": true,
+      "reason": ""
+    },
+    "Hit@3": {
+      "value": 0.9,
+      "available": true,
+      "reason": ""
+    },
+    "Recall@3": {
+      "value": 0.6167,
+      "available": true,
+      "reason": ""
+    },
+    "Hit@5": {
+      "value": 0.9,
+      "available": true,
+      "reason": ""
+    },
+    "Recall@5": {
+      "value": 0.7,
+      "available": true,
+      "reason": ""
+    },
+    "MRR": {
+      "value": 0.7,
+      "available": true,
+      "reason": ""
+    },
+    "forbidden_source_violation_count": {
+      "value": 2,
+      "available": true,
+      "reason": ""
+    },
+    "approved_only_violation_count": {
+      "value": 0,
+      "available": true,
+      "reason": ""
+    },
+    "empty_retrieval_count": {
+      "value": 2,
+      "available": true,
+      "reason": ""
+    },
+    "fallback_count": {
+      "value": null,
+      "available": false,
+      "reason": "search_knowledge does not expose per-query fallback events; process-global provider fallback is not counted."
+    },
+    "average_latency_ms": {
+      "value": 0.794,
+      "available": true,
+      "reason": ""
+    },
+    "p50_latency_ms": {
+      "value": 0.772,
+      "available": true,
+      "reason": ""
+    },
+    "p95_latency_ms": {
+      "value": 0.917,
+      "available": true,
+      "reason": ""
+    }
+  },
+  "unavailable_metrics": {
+    "fallback_count": "search_knowledge does not expose per-query fallback events; process-global provider fallback is not counted."
+  },
+  "case_results": [
+    {
+      "id": "eval-001",
+      "category": "device_model_exact",
+      "question": "发动机-示例型号 A 启动困难，应该先检查什么？",
+      "returned_source_ids": [
+        "doc-001",
+        "wf-001",
+        "doc-004",
+        "wf-003",
+        "doc-002",
+        "doc-005",
+        "case-001"
+      ],
+      "top_result_id": "doc-001",
+      "result_count": 5,
+      "latency_ms": 0.917,
+      "hit_at": {
+        "Hit@1": true,
+        "Hit@3": true,
+        "Hit@5": true
+      },
+      "recall_at": {
+        "Recall@1": 0.6667,
+        "Recall@3": 0.6667,
+        "Recall@5": 1.0
+      },
+      "reciprocal_rank": 1.0,
+      "forbidden_source_violations": [],
+      "approved_only_violations": [],
+      "keyword_hits": [
+        "燃油供给",
+        "火花塞",
+        "怠速"
+      ],
+      "empty_retrieval": false,
+      "notes": "精确型号和故障词应优先命中手册、已审核案例和标准流程。"
+    },
+    {
+      "id": "eval-002",
+      "category": "semantic_symptom",
+      "question": "冷机启动后怠速忽高忽低，可能和哪些部件有关？",
+      "returned_source_ids": [
+        "doc-001",
+        "wf-001",
+        "doc-004",
+        "wf-003",
+        "doc-002",
+        "doc-005",
+        "doc-003",
+        "wf-002"
+      ],
+      "top_result_id": "doc-001",
+      "result_count": 5,
+      "latency_ms": 0.93,
+      "hit_at": {
+        "Hit@1": true,
+        "Hit@3": true,
+        "Hit@5": true
+      },
+      "recall_at": {
+        "Recall@1": 0.3333,
+        "Recall@3": 0.6667,
+        "Recall@5": 0.6667
+      },
+      "reciprocal_rank": 1.0,
+      "forbidden_source_violations": [],
+      "approved_only_violations": [],
+      "keyword_hits": [
+        "进气",
+        "节气门",
+        "火花塞",
+        "燃油压力"
+      ],
+      "empty_retrieval": false,
+      "notes": "语义描述仍应召回怠速不稳相关手册，不得使用待审核经验。"
+    },
+    {
+      "id": "eval-003",
+      "category": "safety",
+      "question": "拆检点火系统前有哪些安全要求？",
+      "returned_source_ids": [
+        "doc-001",
+        "wf-001",
+        "doc-004",
+        "wf-003",
+        "doc-002",
+        "doc-005",
+        "doc-003",
+        "wf-002"
+      ],
+      "top_result_id": "doc-001",
+      "result_count": 5,
+      "latency_ms": 0.772,
+      "hit_at": {
+        "Hit@1": true,
+        "Hit@3": true,
+        "Hit@5": true
+      },
+      "recall_at": {
+        "Recall@1": 0.5,
+        "Recall@3": 0.5,
+        "Recall@5": 1.0
+      },
+      "reciprocal_rank": 1.0,
+      "forbidden_source_violations": [],
+      "approved_only_violations": [],
+      "keyword_hits": [
+        "停止运行",
+        "高温",
+        "高压点火"
+      ],
+      "empty_retrieval": false,
+      "notes": "安全类问题应命中安全手册和流程中的安全确认。"
+    },
+    {
+      "id": "eval-004",
+      "category": "metadata_filter",
+      "question": "发动机-示例型号 C 加速排气黑烟，如何排查？",
+      "returned_source_ids": [
+        "doc-004",
+        "wf-003",
+        "doc-001",
+        "wf-001",
+        "doc-003",
+        "wf-002",
+        "doc-002",
+        "doc-005"
+      ],
+      "top_result_id": "doc-004",
+      "result_count": 5,
+      "latency_ms": 0.81,
+      "hit_at": {
+        "Hit@1": false,
+        "Hit@3": true,
+        "Hit@5": true
+      },
+      "recall_at": {
+        "Recall@1": 0.0,
+        "Recall@3": 0.6667,
+        "Recall@5": 0.6667
+      },
+      "reciprocal_rank": 0.3333,
+      "forbidden_source_violations": [
+        "doc-001"
+      ],
+      "approved_only_violations": [],
+      "keyword_hits": [
+        "空气滤清器",
+        "喷油",
+        "排气颜色"
+      ],
+      "empty_retrieval": false,
+      "notes": "跨型号问题不应把发动机 A 启动困难资料排到主证据。"
+    },
+    {
+      "id": "eval-005",
+      "category": "electrical_safety",
+      "question": "电气系统-示例型号 E 控制柜无法上电，主继电器不吸合",
+      "returned_source_ids": [
+        "doc-007",
+        "wf-005",
+        "case-006",
+        "doc-001",
+        "wf-001",
+        "doc-002",
+        "doc-003",
+        "wf-002"
+      ],
+      "top_result_id": "doc-007",
+      "result_count": 5,
+      "latency_ms": 0.812,
+      "hit_at": {
+        "Hit@1": true,
+        "Hit@3": true,
+        "Hit@5": true
+      },
+      "recall_at": {
+        "Recall@1": 0.6667,
+        "Recall@3": 1.0,
+        "Recall@5": 1.0
+      },
+      "reciprocal_rank": 1.0,
+      "forbidden_source_violations": [],
+      "approved_only_violations": [],
+      "keyword_hits": [
+        "急停回路",
+        "保险丝",
+        "线束接插件",
+        "禁止带电插拔"
+      ],
+      "empty_retrieval": false,
+      "notes": "电气安全问题应保留断电和禁止带电插拔提示。"
+    },
+    {
+      "id": "eval-006",
+      "category": "component",
+      "question": "传动系统-示例型号 F 低速运行链条区域摩擦异响",
+      "returned_source_ids": [
+        "doc-008",
+        "wf-006",
+        "doc-001",
+        "wf-001",
+        "doc-002",
+        "doc-003",
+        "wf-002",
+        "doc-004",
+        "wf-003"
+      ],
+      "top_result_id": "doc-008",
+      "result_count": 5,
+      "latency_ms": 0.771,
+      "hit_at": {
+        "Hit@1": true,
+        "Hit@3": true,
+        "Hit@5": true
+      },
+      "recall_at": {
+        "Recall@1": 0.6667,
+        "Recall@3": 0.6667,
+        "Recall@5": 0.6667
+      },
+      "reciprocal_rank": 1.0,
+      "forbidden_source_violations": [
+        "doc-003"
+      ],
+      "approved_only_violations": [],
+      "keyword_hits": [
+        "张紧度",
+        "润滑",
+        "防护罩",
+        "复测"
+      ],
+      "empty_retrieval": false,
+      "notes": "部件词应触发传动系统资料和流程。"
+    },
+    {
+      "id": "eval-007",
+      "category": "risk_high",
+      "question": "高负载运行20分钟后机油压力低报警且温度升高",
+      "returned_source_ids": [
+        "doc-004",
+        "wf-003",
+        "doc-001",
+        "wf-001",
+        "doc-006",
+        "wf-004",
+        "doc-002",
+        "doc-003",
+        "wf-002"
+      ],
+      "top_result_id": "doc-004",
+      "result_count": 5,
+      "latency_ms": 0.757,
+      "hit_at": {
+        "Hit@1": false,
+        "Hit@3": true,
+        "Hit@5": true
+      },
+      "recall_at": {
+        "Recall@1": 0.0,
+        "Recall@3": 0.6667,
+        "Recall@5": 0.6667
+      },
+      "reciprocal_rank": 0.3333,
+      "forbidden_source_violations": [],
+      "approved_only_violations": [],
+      "keyword_hits": [
+        "机油液位",
+        "滤清器",
+        "油道",
+        "机油压力"
+      ],
+      "empty_retrieval": false,
+      "notes": "高风险润滑问题不得编造证据外的压力参数。"
+    },
+    {
+      "id": "eval-008",
+      "category": "pending_review_isolation",
+      "question": "热机后偶发熄火，重新启动正常，有没有维修经验？",
+      "returned_source_ids": [
+        "doc-001",
+        "wf-001",
+        "doc-004",
+        "wf-003",
+        "doc-002",
+        "doc-005",
+        "doc-003",
+        "wf-002"
+      ],
+      "top_result_id": "doc-001",
+      "result_count": 5,
+      "latency_ms": 0.783,
+      "hit_at": {
+        "Hit@1": null,
+        "Hit@3": null,
+        "Hit@5": null
+      },
+      "recall_at": {
+        "Recall@1": null,
+        "Recall@3": null,
+        "Recall@5": null
+      },
+      "reciprocal_rank": null,
+      "forbidden_source_violations": [],
+      "approved_only_violations": [],
+      "keyword_hits": [],
+      "empty_retrieval": false,
+      "notes": "case-004 是 pending_review，评测应通过 forbidden_source_ids/status 检查隔离，而不是只看回答文本。"
+    },
+    {
+      "id": "eval-009",
+      "category": "insufficient_evidence",
+      "question": "液压泵-未知型号 X 出现压力波动应该怎么维修？",
+      "returned_source_ids": [],
+      "top_result_id": "",
+      "result_count": 0,
+      "latency_ms": 0.758,
+      "hit_at": {
+        "Hit@1": null,
+        "Hit@3": null,
+        "Hit@5": null
+      },
+      "recall_at": {
+        "Recall@1": null,
+        "Recall@3": null,
+        "Recall@5": null
+      },
+      "reciprocal_rank": null,
+      "forbidden_source_violations": [],
+      "approved_only_violations": [],
+      "keyword_hits": [],
+      "empty_retrieval": true,
+      "notes": "未知设备不能套用发动机资料；本轮只测检索为空或不命中 forbidden。"
+    },
+    {
+      "id": "eval-010",
+      "category": "semantic_weak_keyword",
+      "question": "设备运行声音像周期敲击，伴随振动，该从哪些方向定位？",
+      "returned_source_ids": [],
+      "top_result_id": "",
+      "result_count": 0,
+      "latency_ms": 0.722,
+      "hit_at": {
+        "Hit@1": false,
+        "Hit@3": false,
+        "Hit@5": false
+      },
+      "recall_at": {
+        "Recall@1": 0.0,
+        "Recall@3": 0.0,
+        "Recall@5": 0.0
+      },
+      "reciprocal_rank": 0.0,
+      "forbidden_source_violations": [],
+      "approved_only_violations": [],
+      "keyword_hits": [],
+      "empty_retrieval": true,
+      "notes": "当前未做 query expansion，这条用于记录改造前语义弱关键词表现。"
+    },
+    {
+      "id": "eval-011",
+      "category": "keyword_fallback",
+      "question": "链条张紧度不足导致传动异响",
+      "returned_source_ids": [
+        "doc-008",
+        "wf-006",
+        "doc-001",
+        "wf-001",
+        "doc-002",
+        "doc-003",
+        "wf-002",
+        "doc-004",
+        "wf-003"
+      ],
+      "top_result_id": "doc-008",
+      "result_count": 5,
+      "latency_ms": 0.742,
+      "hit_at": {
+        "Hit@1": true,
+        "Hit@3": true,
+        "Hit@5": true
+      },
+      "recall_at": {
+        "Recall@1": 0.6667,
+        "Recall@3": 0.6667,
+        "Recall@5": 0.6667
+      },
+      "reciprocal_rank": 1.0,
+      "forbidden_source_violations": [],
+      "approved_only_violations": [],
+      "keyword_hits": [
+        "张紧",
+        "润滑",
+        "复测"
+      ],
+      "empty_retrieval": false,
+      "notes": "Chroma 关闭时仍应由关键词字段权重返回传动系统资料。"
+    },
+    {
+      "id": "eval-012",
+      "category": "llm_disabled_retrieval",
+      "question": "发动机-示例型号 D 机油压力低报警，给出检修建议",
+      "returned_source_ids": [
+        "doc-004",
+        "wf-003",
+        "doc-001",
+        "wf-001",
+        "doc-006",
+        "wf-004",
+        "doc-002",
+        "doc-003",
+        "wf-002"
+      ],
+      "top_result_id": "doc-004",
+      "result_count": 5,
+      "latency_ms": 0.757,
+      "hit_at": {
+        "Hit@1": false,
+        "Hit@3": true,
+        "Hit@5": true
+      },
+      "recall_at": {
+        "Recall@1": 0.0,
+        "Recall@3": 0.6667,
+        "Recall@5": 0.6667
+      },
+      "reciprocal_rank": 0.3333,
+      "forbidden_source_violations": [],
+      "approved_only_violations": [],
+      "keyword_hits": [
+        "机油压力",
+        "滤清器"
+      ],
+      "empty_retrieval": false,
+      "notes": "本轮只测检索；LLM 关闭或 mock 不应影响 search_knowledge。"
+    }
+  ],
+  "failed_cases": [
+    "eval-004",
+    "eval-006",
+    "eval-007",
+    "eval-010",
+    "eval-012"
+  ],
+  "forbidden_source_violations": [
+    {
+      "case_id": "eval-004",
+      "violations": [
+        "doc-001"
+      ]
+    },
+    {
+      "case_id": "eval-006",
+      "violations": [
+        "doc-003"
+      ]
+    }
+  ],
+  "approved_only_violations": []
+}

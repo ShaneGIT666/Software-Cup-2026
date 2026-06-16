@@ -23,6 +23,8 @@ __pycache__/
 .dev-runtime/
 data/uploads/
 data/knowledge/
+data/evaluation/reports/rag-run-*
+data/evaluation/reports/tmp-*
 
 # AI coding assistant
 .claude/
