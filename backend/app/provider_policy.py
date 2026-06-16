@@ -7,7 +7,8 @@ from typing import Any
 SUPPORTED_REMOTE_MODES = {"auto", "off"}
 REMOTE_PROVIDERS = {"openai", "anthropic"}
 LOCAL_PROVIDERS = {"local"}
-LAST_FALLBACK: dict[str, str] = {"llm": "", "multimodal": "", "embedding": "", "ocr": ""}
+SUPPORTED_RERANKERS = {"none", "heuristic"}
+LAST_FALLBACK: dict[str, str] = {"llm": "", "multimodal": "", "embedding": "", "ocr": "", "reranker": ""}
 
 
 def remote_api_mode() -> str:
@@ -30,6 +31,15 @@ def configured_multimodal_provider(requested_provider: str | None) -> str:
 def configured_embedding_provider() -> str:
     provider = (os.getenv("RAG_EMBEDDING_PROVIDER") or "openai").strip().lower()
     return provider if provider in {"hash", "openai"} else "hash"
+
+
+def requested_reranker_provider() -> str:
+    return (os.getenv("RAG_RERANK_PROVIDER") or "none").strip().lower()
+
+
+def configured_reranker_provider() -> str:
+    provider = requested_reranker_provider()
+    return provider if provider in SUPPORTED_RERANKERS else "none"
 
 
 def key_configured(provider: str) -> bool:
@@ -57,6 +67,8 @@ def provider_status() -> dict[str, Any]:
     llm_provider = configured_llm_provider(None)
     multimodal_provider = configured_multimodal_provider(None)
     embedding_provider = configured_embedding_provider()
+    requested_reranker = requested_reranker_provider()
+    reranker_provider = configured_reranker_provider()
     vector_store = os.getenv("RAG_VECTOR_STORE", "chroma").strip().lower() or "chroma"
     offline = remote_api_disabled()
     return {
@@ -98,5 +110,15 @@ def provider_status() -> dict[str, Any]:
         "ocr": {
             **ocr_status(),
             "lastFallbackReason": LAST_FALLBACK["ocr"],
+        },
+        "reranker": {
+            "provider": requested_reranker,
+            "supported": requested_reranker in SUPPORTED_RERANKERS,
+            "remoteCapable": False,
+            "localCapable": reranker_provider == "heuristic",
+            "enabled": reranker_provider != "none",
+            "effectiveProvider": reranker_provider,
+            "fallbackProvider": "none",
+            "lastFallbackReason": LAST_FALLBACK["reranker"],
         },
     }

@@ -9,6 +9,7 @@ from .filters import apply_metadata_filter
 from .fusion import fuse_hits_rrf
 from .keyword_retriever import retrieve_keyword_hits
 from .models import QueryContext, RetrievalHit
+from .reranker import rerank_hits
 from .vector_retriever import retrieve_vector_hits
 
 
@@ -64,7 +65,8 @@ def search_knowledge(request: SearchRequest) -> dict[str, object]:
 
     keyword_hits = apply_metadata_filter(context, retrieve_keyword_hits(context))
     vector_hits = apply_metadata_filter(context, retrieve_vector_hits(context))
-    final_hits = merge_results(keyword_hits, vector_hits, request.topK)
+    fused_hits = merge_results(keyword_hits, vector_hits, request.topK)
+    final_hits = rerank_hits(context, fused_hits)[: request.topK]
     results = [hit.to_search_result() for hit in final_hits]
 
     return {

@@ -76,6 +76,21 @@ def test_provider_status_defaults_to_openai_embedding_with_hash_fallback(tmp_pat
     assert embedding["model"] == "text-embedding-3-small"
 
 
+def test_provider_status_reports_reranker_provider(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("RAG_RERANK_PROVIDER", "heuristic")
+    client = make_client(tmp_path, monkeypatch)
+
+    response = client.get("/api/providers/status")
+
+    assert response.status_code == 200
+    reranker = response.json()["data"]["reranker"]
+    assert reranker["provider"] == "heuristic"
+    assert reranker["supported"] is True
+    assert reranker["enabled"] is True
+    assert reranker["localCapable"] is True
+    assert reranker["effectiveProvider"] == "heuristic"
+
+
 def test_provider_status_keeps_local_multimodal_available_when_offline(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("REMOTE_API_MODE", "off")
     monkeypatch.setenv("MULTIMODAL_PROVIDER", "local")
