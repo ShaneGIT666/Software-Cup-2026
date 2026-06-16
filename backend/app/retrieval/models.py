@@ -1,0 +1,76 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any
+
+
+@dataclass(frozen=True)
+class QueryContext:
+    device_model: str
+    fault_text: str
+    top_k: int
+    query_tokens: list[str]
+    vector_query: str
+    metadata_filters: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
+class RetrievalHit:
+    id: str
+    title: str
+    content: str
+    source_id: str
+    source_name: str
+    source_type: str
+    confidence: float
+    snippet: str
+    reason: str
+    score_breakdown: dict[str, Any]
+    matched_terms: list[str] = field(default_factory=list)
+    workflow_id: str | None = None
+    chapter: str | None = None
+    page: int | None = None
+    section: str | None = None
+    chunk_id: str | None = None
+    document_id: str | None = None
+    device_type: str | None = None
+    device_model: str | None = None
+    component: str | None = None
+    fault_type: str | None = None
+    review_status: str | None = "approved"
+    keyword_rank: int | None = None
+    vector_rank: int | None = None
+    keyword_score: float | None = None
+    vector_score: float | None = None
+    fusion_score: float | None = None
+    rerank_score: float | None = None
+    matched_fields: list[str] = field(default_factory=list)
+
+    def dedupe_key(self) -> str:
+        if self.chunk_id:
+            version = self.score_breakdown.get("version") or ""
+            return f"chunk:{self.chunk_id}:{version}"
+        if self.document_id:
+            return f"document:{self.document_id}"
+        return f"{self.source_type}:{self.id}"
+
+    def to_search_result(self) -> dict[str, Any]:
+        result: dict[str, Any] = {
+            "id": self.id,
+            "title": self.title,
+            "sourceType": self.source_type,
+            "sourceName": self.source_name,
+            "confidence": self.confidence,
+            "snippet": self.snippet,
+            "workflowId": self.workflow_id,
+            "chapter": self.chapter,
+            "page": self.page,
+            "matchedTerms": self.matched_terms,
+            "reason": self.reason,
+            "scoreBreakdown": self.score_breakdown,
+        }
+        if self.document_id:
+            result["documentId"] = self.document_id
+        if self.chunk_id:
+            result["chunkId"] = self.chunk_id
+        return result
