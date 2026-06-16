@@ -47,8 +47,8 @@
 | --- | --- |
 | 前端 | Vue 3 + TypeScript + Vite + Element Plus |
 | 后端 | Python FastAPI |
-| 开发数据库 | SQLite |
-| 检索方案 | 关键词检索 + 来源引用起步，第二阶段接 Chroma |
+| 开发数据库 | 本地 JSON 文件持久化，后续可迁移 SQLite |
+| 检索方案 | 关键词/字段权重 + 可选 Chroma 向量混合检索，默认只检索 approved 知识 |
 | 向量库 | Chroma MVP，Qdrant 二阶段 |
 | 模型接入 | OpenAI-compatible Adapter，默认 Mock 模式 |
 | 文档解析 | `parser_router -> mineru_adapter` 优先处理 PDF/DOCX/PPTX/XLSX；PDF 可 fallback 到 pypdf，Office 文档未装 MinerU 时 fallback 到 mock parser |
@@ -196,7 +196,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\stop-dev.ps1
 4. 检索、流程查看、资料上传/入库、RAG citations、案例提交、案例审核、审核后再检索的 MVP 闭环。
 5. 资料入库支持 `pdf/txt/md/docx/pptx/xlsx/jpg/jpeg/png/webp`；解析或多模态分析生成的片段默认 `pending_review`，审核通过前不进入正式检索、RAG citations 或 Chroma。
 6. RAG provider 支持 `mock/openai/anthropic`，已完成 Qwen / DashScope OpenAI-compatible 文本 RAG 小样本验收。
-7. Chroma 可选向量索引已接入，默认关闭；`hash` embedding 是 fallback，占位不冒充真实语义 embedding。
+7. Chroma 可选向量索引已接入；未安装、关闭或查询失败时自动降级，`hash` embedding 是 fallback，占位不冒充真实语义 embedding。
 8. FastAPI 可选静态托管 `frontend/dist`，用于无 npm/nginx 的目标环境演示。
 9. 后端全量测试 `92 passed in 21.25s`；前端生产构建通过；Playwright 冒烟测试文件已提交，依赖需联网安装后执行。
 10. Coding Agent 动态交接入口：`docs/project-management/agent-startup-context.md`。

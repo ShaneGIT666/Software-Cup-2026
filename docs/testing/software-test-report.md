@@ -2,7 +2,7 @@
 
 项目名称：基于多模态大模型技术的设备检修知识检索与作业系统  
 版本：0.3
-更新时间：2026-05-27
+更新时间：2026-06-16
 
 ## 1. 测试结论
 
@@ -115,7 +115,7 @@ npm/git 不存在
 
 ## 6. 结论
 
-项目已具备比赛演示所需的主要工程闭环。后续最重要的是在 LoongArch VM 上复验 FastAPI 静态托管前端，并在最终提交前重新执行后端测试、前端构建和演示路径冒烟。
+项目已具备比赛演示所需的主要工程闭环。最终提交前仍需重新执行后端测试、前端构建和演示路径冒烟，并保留目标环境复验证据。
 # 最新测试补充：LoongArch/Kylin Docker 验证（2026-06-06）
 
 本节为最新事实记录，优先级高于下方历史记录。本文必须在不依赖聊天上下文的情况下，让后续 agent、开发者和指导老师理解当前验证状态。
@@ -186,8 +186,9 @@ RAG_VECTOR_STORE=off
 最新回归命令与结果：
 
 ```powershell
-.\backend\.venv\Scripts\python.exe -m pytest tests\test_backend_api.py
-# 70 passed
+$env:MINERU_ENABLED="false"
+.\backend\.venv\Scripts\python.exe -m pytest tests -q
+# 92 passed in 21.25s
 
 cd frontend
 npm.cmd run build

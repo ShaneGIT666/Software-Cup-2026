@@ -1,6 +1,6 @@
 # 预设目标完成状态
 
-更新时间：2026-05-27
+更新时间：2026-06-16
 范围：除 PPT、汇报材料和最终视频外的比赛作品工程目标。
 
 ## 1. 已完成
@@ -12,12 +12,12 @@
 3. 标准化作业流程展示，包括工具、安全提醒、步骤和验收标准。
 4. 案例提交、审核、审核通过后进入检索结果。
 5. 文件上传安全边界，包括扩展名、MIME、空文件和大小限制。
-6. 资料入库，支持 `pdf/txt/md/jpg/jpeg/png/webp`。
+6. 资料入库，支持 `pdf/txt/md/docx/pptx/xlsx/jpg/jpeg/png/webp`，自动解析结果默认进入 `pending_review`。
 7. 多模态资料分析接口，支持 `mock/openai/anthropic` provider 和 fallback。
-8. 可选 OCR provider 层，默认 `mock` 兜底，可选 `rapidocr` 或 `tesseract`；OCR 文本可进入资料 chunks、检索、RAG citations 和知识关系网络。
+8. 可选 OCR provider 层，默认 `mock` 兜底，可选 `rapidocr` 或 `tesseract`；OCR 文本可进入 `pending_review` 资料 chunks，审核通过前不参与正式检索。
 9. RAG 辅助回答，支持 citations、真实 provider、小样本 Qwen 验收和本地 fallback。
 10. 轻量知识关系网络，展示设备、故障、资料、案例、流程和来源之间的关系。
-11. Chroma 可选向量索引增强，默认关闭；hash embedding 明确为兜底占位，可选 OpenAI-compatible embedding。
+11. Chroma 可选向量索引增强，未安装、关闭或查询失败时自动降级；hash embedding 明确为兜底占位，可选 OpenAI-compatible embedding。
 12. FastAPI 可选托管 `frontend/dist`，用于 LoongArch 无 npm/nginx 场景。
 
 工程闭环：
@@ -59,7 +59,7 @@ npm.cmd run build
 最近记录：
 
 ```text
-后端测试：85 passed in 14.26s
+后端测试：92 passed in 21.25s
 前端构建：通过，存在 Vite chunk size warning，不阻塞
 Qwen 文本 RAG：真实 API 小样本验收通过，fallback=false，citations 保留
 ```
@@ -72,13 +72,13 @@ LoongArch / 银河麒麟 V11：
 /api/providers/status：通过
 ```
 
-说明：LoongArch 前端完整访问将采用 FastAPI 静态托管 `frontend/dist` 的方案继续复验。
+说明：LoongArch 后端最小依赖与 Docker 一体化访问已验证；最终提交前仍需保留目标环境复验证据。
 
 ## 3. 仍需赛前复验
 
 | 项目 | 状态 | 后续动作 |
 | --- | --- | --- |
-| LoongArch 前端静态托管 | 已实现方案，待 VM 复验 | 上传最新源码和 `frontend/dist` 后访问 `http://VM:8000/` |
+| LoongArch 前端静态托管 | 已实现并完成 Docker 一体化验证，最终环境仍需留证 | 上传最新源码和 `frontend/dist` 后访问 `http://VM:8000/` |
 | 真实多模态 API | 已有验收接口，未消耗真实多模态 token | 仅做小图片样本验收，不承诺所有兼容网关可用 |
 | 真实 OCR provider | 已有可选 provider 层，默认 mock OCR 通过测试 | 如需展示，安装 `backend/requirements-ocr.txt` 并用小图验证 RapidOCR |
 | Chroma 真实依赖 | Windows 代码链路可测，LoongArch 默认不启用 | 如需展示，单独安装 `backend/requirements-rag.txt` 验收 |

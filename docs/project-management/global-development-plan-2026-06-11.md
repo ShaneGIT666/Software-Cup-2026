@@ -13,12 +13,12 @@
 5. ChromaDB 与 embedding 已作为语义检索主方案之一，关键词检索保留为 fallback。
 6. 解析生成的知识片段默认进入 `pending_review`，正式检索默认只使用 `approved` 或旧数据兼容片段。
 7. 知识片段人工修正已有 revision 记录能力。
-8. Windows 本地已验证 `tests/test_backend_api.py`：70 passed；前端 `npm.cmd run build` 通过。
+8. Windows 本地最新全量回归已验证：`92 passed in 21.25s`；前端 `npm.cmd run build` 通过。
 
 当前暴露的问题：
 
-1. 全量 `pytest tests -q` 在 240 秒内超时，并在 `tests/test_motorcycle_manual.py` 出现旧预期失败。
-2. `tests/test_motorcycle_manual.py` 仍期望上传后 `status=indexed` 且立即可检索，但当前正确状态应为 `pending_review`。
+1. `tests/test_motorcycle_manual.py` 的旧预期已修正：上传后期望 `pending_review`，需要检索命中时显式构造 approved chunk。
+2. 全量 `pytest tests -q` 已恢复通过；后续如新增 MinerU/Chroma/OCR 真实依赖测试，仍需保持 mock/offline 隔离。
 3. 审核工作台只覆盖维修案例，资料解析结果、OCR 结果、多模态分析结果、知识片段、人工修正尚未形成统一审核动作。
 4. 状态机字段已有雏形，但还没有完整统一 `draft / pending_review / approved / rejected / deprecated / replaced` 的 API 与前端操作。
 5. RAG 输出还没有强制统一为“初步判断、检查步骤、维修步骤、安全提醒、验收标准、引用证据、不确定信息”。
@@ -57,7 +57,7 @@
 
 ## 3. 阶段计划
 
-### P0：稳定现状与测试口径统一
+### P0：稳定现状与测试口径统一（已完成，后续保持）
 
 周期：0.5 到 1 天  
 优先级：最高  
@@ -65,17 +65,17 @@
 
 任务：
 
-1. 更新 `tests/test_motorcycle_manual.py`：
+1. 已更新 `tests/test_motorcycle_manual.py`：
    - 上传文档后期望 `pending_review`。
    - 审核通过前不期望正式检索或 RAG citation。
-   - 需要检索命中时，显式执行“审核通过”或构造 approved chunk。
-2. 给 MinerU 真实解析相关测试加环境隔离：
+   - 需要检索命中时，显式构造 approved chunk。
+2. 已给 MinerU 真实解析相关测试保留环境隔离口径：
    - 单元测试默认 `MINERU_ENABLED=false` 或 mock adapter。
    - 真实 MinerU 样本测试单独标记为 slow/integration。
-3. 统一测试说明：
-   - 当前稳定回归是 `tests/test_backend_api.py` 70 个用例。
-   - 全量测试目标应恢复为全部通过。
-4. 修正明显过期文档中的测试数量和状态描述。
+3. 已统一测试说明：
+   - 当前稳定回归是 `$env:MINERU_ENABLED="false"; .\backend\.venv\Scripts\python.exe -m pytest tests -q`。
+   - 最新结果为 `92 passed in 21.25s`。
+4. 持续修正明显过期文档中的测试数量和状态描述。
 
 验收：
 

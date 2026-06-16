@@ -1,6 +1,6 @@
 # 当前开发交接说明
 
-更新时间：2026-05-27
+更新时间：2026-06-16
 适用对象：后续 Coding Agent、协作者、人工复审人员。
 优先级：任何后续开发前先读本文，再读 `docs/requirements/official-problem-baseline.md`。
 文档规范：本文和后续所有项目文档必须上下文自包含，确保只 clone 仓库的 agent 或开发者也能理解开发进度、软件功能、验证状态、风险边界和下一步任务；不得依赖聊天记录补全含义。
@@ -11,13 +11,13 @@
 
 已确认事实：
 
-1. Windows 本地主线后端测试最新结果为 `85 passed in 14.26s`，资料入库、RAG、上传安全、多模态/OCR mock、Chroma 可选召回和官方 PDF 流程均有覆盖。
+1. Windows 本地主线后端测试最新结果为 `92 passed in 21.25s`，覆盖 pending_review 审核门槛、资料入库、RAG、上传安全、多模态/OCR mock、Chroma 降级和官方 PDF 流程。
 2. 前端 `npm.cmd run build` 已通过；存在 Vite chunk size warning，不阻塞比赛演示。
 3. Qwen / DashScope OpenAI-compatible 文本 RAG 已完成一次真实 API 小样本验收，返回 `fallback=false`，citations 保留。
 4. LoongArch / 银河麒麟 V11 虚拟机已完成后端最小依赖验证，后端测试子集 `39 passed`，`/api/health` 与 `/api/providers/status` 正常。
 5. 目标 VM 无 npm/git，因此前端采用 Windows 本地构建 `frontend/dist`，再由 FastAPI 静态托管的方案补齐。
 6. 官方样例 PDF `E:/Download/Downloads/摩托车发动机维修手册.pdf` 只作为本地测试/演示输入，不得提交进 Git。
-7. OCR 已作为可选增强接入：`OCR_PROVIDER=mock` 默认兜底，`rapidocr`/`tesseract` 可选；OCR 识别文本会进入资料 chunks，并被检索、RAG citations 和知识关系网络复用。
+7. OCR 已作为可选增强接入：`OCR_PROVIDER=mock` 默认兜底，`rapidocr`/`tesseract` 可选；OCR 识别文本会生成 `pending_review` 资料 chunks，审核通过前不进入正式检索、RAG citations、Chroma 或知识关系网络。
 
 ## 2. 已实现能力
 
@@ -28,11 +28,11 @@
 3. `POST /api/rag/answer`：基于检索结果生成 RAG 回答，支持 mock/openai/anthropic、citations、上下文裁剪、token 控制和 fallback。
 4. `POST /api/providers/llm/validate`：真实文本 LLM 小样本验收，只读取服务端环境变量，不接收前端 Key。
 5. `GET /api/providers/status`：返回 LLM、多模态、OCR、embedding 和离线兜底状态。
-6. `POST /api/knowledge/documents`：资料入库，支持 `pdf/txt/md/jpg/jpeg/png/webp`。
-7. `POST /api/knowledge/documents/{document_id}/analyze`：对 PDF/图片资料做多模态分析和可选 OCR，并生成可检索 chunks。
+6. `POST /api/knowledge/documents`：资料入库，支持 `pdf/txt/md/docx/pptx/xlsx/jpg/jpeg/png/webp`；PDF/DOCX/PPTX/XLSX 优先走 MinerU，生成片段默认 `pending_review`。
+7. `POST /api/knowledge/documents/{document_id}/analyze`：对 PDF/图片资料做多模态分析和可选 OCR，并生成 `pending_review` chunks。
 8. `POST /api/providers/multimodal/validate`：真实多模态小样本验收入口，失败不影响主链路。
 9. `POST /api/knowledge/graph`：轻量知识关系网络原型。
-10. Chroma 可选向量索引：`RAG_VECTOR_STORE=chroma` 时启用；默认关闭，初始化或查询失败会降级为空召回。
+10. Chroma 可选向量索引：`RAG_VECTOR_STORE=chroma` 时启用；未安装、关闭、初始化失败或查询失败时会降级为空召回。
 11. FastAPI 可选托管前端：`SERVE_FRONTEND=auto` 且 `frontend/dist/index.html` 存在时，`/` 返回 SPA 页面。
 12. JSON 持久化已使用临时文件 + `os.replace()` 原子替换，降低异常中断导致文件损坏的风险。
 
@@ -115,9 +115,10 @@ OCR_LANG=ch
 2. 真实文本 RAG 已用 Qwen 小样本验收；真实多模态 API 目前只有验收接口，是否可用取决于 provider、模型、网络和 payload 支持。
 3. 多模态 mock 能保证比赛演示不断链，但不能宣称等同生产级 OCR/视觉诊断。
 4. 轻量知识关系网络是知识沉淀展示原型，不是完整图数据库或 GraphRAG。
-5. OCR provider 是可选增强；RapidOCR、PaddleOCR、Docling、MinerU 等真实依赖需要单独记录安装命令、样本效果、许可证和 LoongArch/Kylin 风险。
-6. LoongArch 后端已验证；前端完整浏览器访问需按 FastAPI 静态托管方案在 VM 上复验。
-7. 不提交 `.env`、官方 PDF、`data/uploads/`、`data/knowledge/`、`frontend/dist/`、`node_modules/`、`.venv/`。
+5. 资料片段当前已有查看与人工修正接口，尚未形成统一 approve/reject 审核工作台；代码层面已保证未审核片段不参与正式检索。
+6. OCR provider 是可选增强；RapidOCR、PaddleOCR、Docling、MinerU 等真实依赖需要单独记录安装命令、样本效果、许可证和 LoongArch/Kylin 风险。
+7. LoongArch 后端最小依赖与 Docker 一体化部署已验证；前端完整浏览器访问仍需按 FastAPI 静态托管方案在最终环境保留复验证据。
+8. 不提交 `.env`、官方 PDF、`data/uploads/`、`data/knowledge/`、`frontend/dist/`、`node_modules/`、`.venv/`。
 
 ## 5. 推荐下一步
 
@@ -176,8 +177,10 @@ MinerU 已在 Windows 本地开发环境安装并接入资料上传主链路：
 最新验证：
 
 ```text
-backend API: 70 passed
+backend tests: 92 passed in 21.25s
 frontend build: passed
 ```
+
+2026-06-16 文档同步口径：后端全量回归已更新为 `92 passed in 21.25s`；资料解析产物进入 `pending_review` 是当前真实规则，统一资料审核工作台仍是下一阶段任务。
 
 详细说明：`docs/deployment/mineru-document-parsing.md`。

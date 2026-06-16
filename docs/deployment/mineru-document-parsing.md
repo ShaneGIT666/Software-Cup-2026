@@ -1,6 +1,6 @@
 # MinerU 文档解析接入说明
 
-更新时间：2026-06-09
+更新时间：2026-06-16
 
 本文记录 MinerU 在“设备检修知识检索与作业辅助系统”中的安装、配置、运行链路和风险边界。目标是把 PDF / DOCX / PPTX / XLSX 等资料解析从普通文本 fallback 提升为可用于准生产原型的主链路，同时保留失败降级，避免资料上传流程被重依赖阻断。
 
@@ -24,8 +24,9 @@ fallback=False
 后端完整 API 测试和前端构建已通过：
 
 ```powershell
-.\backend\.venv\Scripts\python.exe -m pytest tests\test_backend_api.py
-# 70 passed
+$env:MINERU_ENABLED="false"
+.\backend\.venv\Scripts\python.exe -m pytest tests -q
+# 92 passed in 21.25s
 
 cd frontend
 npm.cmd run build
@@ -143,7 +144,8 @@ fallback 后生成的资料不会直接污染正式知识库；片段默认仍�
 
 ```powershell
 .\backend\.venv\Scripts\mineru.exe --version
-.\backend\.venv\Scripts\python.exe -m pytest tests\test_backend_api.py
+$env:MINERU_ENABLED="false"
+.\backend\.venv\Scripts\python.exe -m pytest tests -q
 cd frontend
 npm.cmd run build
 ```

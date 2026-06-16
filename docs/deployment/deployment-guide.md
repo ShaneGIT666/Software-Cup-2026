@@ -258,8 +258,8 @@ curl http://127.0.0.1:8000/api/health
 | 3 | 案例提交 | POST /api/cases，填入案例信息 | 返回 id 和 status=pending_review |
 | 4 | 案例审核 | PATCH /api/cases/{id}/review，action=approve | 返回 status=approved |
 | 5 | 前端访问 | 浏览器打开 http://localhost:5173 | 显示工业控制台风格界面，自动执行初始检索 |
-| 6 | 资料入库 | POST /api/knowledge/documents，上传 txt 文件 | 返回 status=indexed，chunkCount≥1 |
-| 7 | 资料检索 | 检索入库资料相关内容 | 结果中包含 sourceType=document 的条目 |
+| 6 | 资料入库 | POST /api/knowledge/documents，上传 txt 文件 | 返回 status=pending_review，chunkCount≥1，pendingReviewCount≥1 |
+| 7 | 资料片段查看 | GET /api/knowledge/documents/{id}/chunks | 返回 pending_review 知识片段；审核通过前不进入正式检索 |
 
 ## 5. 常见问题排查
 

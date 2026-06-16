@@ -99,19 +99,20 @@
 
 ### 2.4 产品范围
 
-#### 2.4.1 MVP 已完成范围
+#### 2.4.1 当前已完成范围
 
 - 知识检索（关键词匹配 + 来源引用解释）
 - 标准化作业流程查看
 - 维修案例提交与审核
-- 资料入库管理（PDF/TXT/Markdown）
+- 资料入库管理（PDF/TXT/Markdown/Office 文档/图片，解析结果进入 `pending_review`）
 - RAG 辅助建议生成（Mock + 可选大模型接入）
 - 现场材料上传（图片/PDF）
+- Chroma 向量检索可选增强（仅同步已审核资料片段，失败时回退关键词）
 
 #### 2.4.2 二阶段规划范围
 
-- 向量语义检索替代关键词匹配
-- 多模态图片识别与 OCR
+- 统一资料片段审核工作台（approve/reject/deprecated/replaced）
+- 多模态图片识别与 OCR 生产级验收
 - 知识图谱构建与关联推理
 - 完整的权限管理系统
 - 本地大模型部署方案
@@ -173,14 +174,14 @@
 | FR-K01 | 案例提交 | 填写设备型号、故障现象、可能原因、处理方案、处理结果和标签，提交案例 | P0 |
 | FR-K02 | 案例审核 | 知识管理员审核案例，支持通过/拒绝操作，审核通过后案例进入知识库 | P0 |
 | FR-K03 | 审核后再检索 | 审核通过的案例可被后续检索命中 | P0 |
-| FR-K04 | 资料入库 | 上传 PDF/TXT/Markdown 格式的检修资料，自动解析为知识片段 | P0 |
+| FR-K04 | 资料入库 | 上传 PDF/TXT/Markdown、DOCX/PPTX/XLSX 和图片格式的检修资料，自动解析为待审核知识片段 | P0 |
 | FR-K05 | 资料管理 | 查看入库资料列表、详情、chunk 片段，支持删除资料 | P0 |
-| FR-K06 | 手动标注修正 | 对大模型输出结果进行人工修正和标注（二阶段规划） | P2 |
+| FR-K06 | 手动标注修正 | 对资料知识片段进行人工修正并记录 revision；统一审核动作仍需补齐 | P1 |
 | FR-K07 | 知识图谱构建 | 抽取实体关系、构建图结构知识关联（二阶段规划） | P2 |
 
 #### 3.3.3 当前实现说明
 
-案例提交和审核闭环已完成：案例提交后状态为 `pending_review`，审核通过后变为 `approved`，再次检索可命中新案例。资料入库支持 PDF（通过 pypdf 解析）、TXT 和 Markdown 格式，采用 700 字符/120 字符重叠的固定分块策略，生成关键词和时间戳，存储为本地 JSON。审核会校验 `action` 字段值范围，防止非法状态变更。
+案例提交和审核闭环已完成：案例提交后状态为 `pending_review`，审核通过后变为 `approved`，再次检索可命中新案例。资料入库已接入 `parser_router` 与 `mineru_adapter`，PDF/DOCX/PPTX/XLSX 优先 MinerU，PDF 可 fallback 到 pypdf，TXT/Markdown 走纯文本解析，图片进入 OCR/多模态分析链路；自动解析和模型分析生成的知识片段默认 `review_status=pending_review`，审核通过前不参与正式检索、RAG citations 或 Chroma 同步。当前资料片段支持查看和人工修正 revision，统一 approve/reject 审核接口仍是下一阶段任务。
 
 ### 3.4 大模型辅助诊断
 
@@ -345,9 +346,9 @@ RAG 流程为：检索 → 构建中文 System Prompt（含设备型号、故障
 | 用例名称 | 上传并管理检修资料 |
 | 参与者 | 知识管理员 |
 | 前置条件 | 有待入库的检修资料文件 |
-| 基本流程 | 1. 管理员填写资料来源名称<br>2. 管理员选择 PDF/TXT/Markdown 文件上传<br>3. 系统校验文件类型、大小和内容<br>4. 系统解析文本并分块存储<br>5. 系统生成知识片段和关键词<br>6. 管理员可在资料列表中查看入库状态<br>7. 入库资料可被检索命中<br>8. 管理员可删除不需要的资料 |
+| 基本流程 | 1. 管理员填写资料来源名称<br>2. 管理员选择 PDF/TXT/Markdown、Office 文档或图片文件上传<br>3. 系统校验文件类型、大小和内容<br>4. 系统通过 parser_router/MinerU/OCR/多模态链路解析并分块<br>5. 系统生成 `pending_review` 知识片段和关键词<br>6. 管理员可在资料列表和片段接口中查看待审核内容<br>7. 片段审核通过后才可被正式检索命中<br>8. 管理员可删除不需要的资料 |
 | 异常流程 | 文件类型不合法或为空时返回错误提示 |
-| 后置条件 | 资料入库，可检索、可删除 |
+| 后置条件 | 资料进入待审核区，可查看、修正或删除；审核通过后才可检索 |
 
 ## 6. 数据需求
 
@@ -360,7 +361,7 @@ RAG 流程为：检索 → 构建中文 System Prompt（含设备型号、故障
 | 维修案例 | `repair-cases.json` | id, deviceModel, faultTitle, faultText, possibleCauses, solution, result, status, tags, workflowId | 一线人员提交的维修经验 |
 | 作业流程 | `workflows.json` | id, title, deviceType, faultType, level, tools, safetyNotes, steps[], acceptanceCriteria[] | 标准化检修作业步骤 |
 | 入库资料 | `documents.json` | id, fileName, sourceName, status, chunkCount, parser | 外部上传资料的元数据 |
-| 知识片段 | `document-chunks.json` | id, documentId, title, sourceName, page, content, snippet, keywords | 入库资料拆分后的可检索片段 |
+| 知识片段 | `document-chunks.json` | id, chunk_id, documentId, source_doc_id, title, sourceName, page, section, content, snippet, keywords, review_status, version | 入库资料拆分后的知识片段；默认 `pending_review`，只有 approved 参与检索 |
 
 ### 6.2 数据关系
 
@@ -408,8 +409,8 @@ Device (设备)
 
 | 规划功能 | 依赖条件 | 风险 |
 |----------|----------|------|
-| 向量语义检索 | Chroma/Qdrant 在 LoongArch 上编译通过 | LoongArch 二进制兼容性待验证 |
-| 图片识别/OCR | PaddleOCR/MinerU 在麒麟系统上安装成功 | 依赖体积和模型下载 |
+| 统一审核工作台 | 资料片段、OCR、多模态结果、人工修正统一状态流转 | 需要补 API、前端和测试 |
+| 图片识别/OCR | RapidOCR/PaddleOCR/MinerU 在麒麟系统上安装成功 | 依赖体积和模型下载 |
 | 知识图谱 | 实体关系抽取模型部署 | 需要额外的 NLP 模型 |
 | 本地大模型部署 | LoongArch 上部署 llama.cpp/Ollama | LLM 推理对硬件要求高 |
 | 权限管理系统 | 用户认证和角色管理 | MVP 阶段无需 |
