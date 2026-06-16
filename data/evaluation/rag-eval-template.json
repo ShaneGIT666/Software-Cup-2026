@@ -1,0 +1,288 @@
+{
+  "schema_version": "0.1.0",
+  "created_at": "2026-06-16T00:00:00Z",
+  "purpose": "设备检修知识检索与RAG回答第一轮准生产基线评测模板",
+  "notes": [
+    "本文件只作为离线评测输入模板，不进入运行期知识库。",
+    "expected_retrieval.must_include 使用当前 data/examples 种子数据 ID，后续上传资料可补充 document/chunk ID。",
+    "pending_review 数据不得作为正式检索、RAG citation 或 Chroma 召回结果。"
+  ],
+  "answer_contract": [
+    "初步判断",
+    "建议检查步骤",
+    "建议维修步骤",
+    "安全提醒",
+    "验收标准",
+    "引用证据",
+    "不确定信息"
+  ],
+  "cases": [
+    {
+      "id": "eval-001",
+      "title": "设备型号精确匹配：发动机A启动困难",
+      "query": "发动机-示例型号 A 启动困难，应该先检查什么？",
+      "filters": {
+        "device_model": "发动机-示例型号 A",
+        "review_status": "approved"
+      },
+      "expected_retrieval": {
+        "must_include": ["doc-001", "case-001", "wf-001"],
+        "must_not_include": ["case-004"],
+        "min_evidence_count": 2
+      },
+      "expected_answer": {
+        "must_sections": ["初步判断", "建议检查步骤", "安全提醒", "引用证据"],
+        "must_terms": ["燃油供给", "火花塞", "怠速"],
+        "forbidden_behavior": ["编造未在证据中出现的扭矩参数或压力数值"]
+      },
+      "risk_level": "medium",
+      "tags": ["device_model", "keyword", "case"]
+    },
+    {
+      "id": "eval-002",
+      "title": "语义描述：怠速波动",
+      "query": "冷机启动后怠速忽高忽低，可能和哪些部件有关？",
+      "filters": {
+        "device_type": "发动机",
+        "review_status": "approved"
+      },
+      "expected_retrieval": {
+        "must_include": ["doc-002", "case-001", "wf-001"],
+        "must_not_include": ["case-004"],
+        "min_evidence_count": 2
+      },
+      "expected_answer": {
+        "must_sections": ["初步判断", "建议检查步骤", "引用证据", "不确定信息"],
+        "must_terms": ["进气", "节气门", "火花塞", "燃油压力"],
+        "forbidden_behavior": ["把待审核案例当作已确认经验引用"]
+      },
+      "risk_level": "medium",
+      "tags": ["semantic", "approved_only"]
+    },
+    {
+      "id": "eval-003",
+      "title": "安全提醒优先：点火系统检修",
+      "query": "拆检点火系统前有哪些安全要求？",
+      "filters": {
+        "device_model": "发动机-示例型号 A",
+        "knowledge_type": "safety_warning",
+        "review_status": "approved"
+      },
+      "expected_retrieval": {
+        "must_include": ["doc-005", "wf-001"],
+        "must_not_include": [],
+        "min_evidence_count": 1
+      },
+      "expected_answer": {
+        "must_sections": ["安全提醒", "引用证据"],
+        "must_terms": ["停止运行", "高温", "高压点火"],
+        "forbidden_behavior": ["弱化人工复核或安全确认"]
+      },
+      "risk_level": "high",
+      "requires_human_review": true,
+      "tags": ["safety", "risk"]
+    },
+    {
+      "id": "eval-004",
+      "title": "跨设备过滤：排气黑烟只应命中发动机C",
+      "query": "发动机-示例型号 C 加速排气黑烟，如何排查？",
+      "filters": {
+        "device_model": "发动机-示例型号 C",
+        "review_status": "approved"
+      },
+      "expected_retrieval": {
+        "must_include": ["doc-003", "case-002", "wf-002"],
+        "must_not_include": ["doc-001", "case-001"],
+        "min_evidence_count": 2
+      },
+      "expected_answer": {
+        "must_sections": ["初步判断", "建议检查步骤", "验收标准", "引用证据"],
+        "must_terms": ["空气滤清器", "喷油", "排气颜色"],
+        "forbidden_behavior": ["推荐与发动机A启动困难无关的点火流程作为主流程"]
+      },
+      "risk_level": "medium",
+      "tags": ["metadata_filter", "workflow"]
+    },
+    {
+      "id": "eval-005",
+      "title": "电气系统：无法上电",
+      "query": "电气系统-示例型号 E 控制柜无法上电，主继电器不吸合",
+      "filters": {
+        "device_model": "电气系统-示例型号 E",
+        "component": "主继电器",
+        "review_status": "approved"
+      },
+      "expected_retrieval": {
+        "must_include": ["doc-007", "case-006", "wf-005"],
+        "must_not_include": ["doc-008", "case-007"],
+        "min_evidence_count": 2
+      },
+      "expected_answer": {
+        "must_sections": ["建议检查步骤", "安全提醒", "验收标准", "引用证据"],
+        "must_terms": ["急停回路", "保险丝", "线束接插件", "禁止带电插拔"],
+        "forbidden_behavior": ["建议带电插拔控制模块"]
+      },
+      "risk_level": "critical",
+      "requires_human_review": true,
+      "tags": ["electrical", "safety", "metadata_filter"]
+    },
+    {
+      "id": "eval-006",
+      "title": "传动系统：链条异响",
+      "query": "传动系统-示例型号 F 低速运行链条区域摩擦异响",
+      "filters": {
+        "device_model": "传动系统-示例型号 F",
+        "component": "链条",
+        "review_status": "approved"
+      },
+      "expected_retrieval": {
+        "must_include": ["doc-008", "case-007", "wf-006"],
+        "must_not_include": ["doc-003", "case-002"],
+        "min_evidence_count": 2
+      },
+      "expected_answer": {
+        "must_sections": ["初步判断", "建议检查步骤", "建议维修步骤", "验收标准", "引用证据"],
+        "must_terms": ["张紧度", "润滑", "防护罩", "复测"],
+        "forbidden_behavior": ["跳过停机和防护罩复位"]
+      },
+      "risk_level": "medium",
+      "tags": ["component", "workflow"]
+    },
+    {
+      "id": "eval-007",
+      "title": "润滑系统：机油压力低",
+      "query": "高负载运行20分钟后机油压力低报警且温度升高",
+      "filters": {
+        "device_model": "发动机-示例型号 D",
+        "review_status": "approved"
+      },
+      "expected_retrieval": {
+        "must_include": ["doc-006", "case-005", "wf-004"],
+        "must_not_include": [],
+        "min_evidence_count": 2
+      },
+      "expected_answer": {
+        "must_sections": ["初步判断", "建议检查步骤", "安全提醒", "验收标准", "引用证据"],
+        "must_terms": ["机油液位", "滤清器", "油道", "机油压力"],
+        "forbidden_behavior": ["给出证据外的规定压力范围"]
+      },
+      "risk_level": "high",
+      "requires_human_review": true,
+      "tags": ["risk", "case", "manual"]
+    },
+    {
+      "id": "eval-008",
+      "title": "待审核隔离：偶发熄火经验不可检索",
+      "query": "热机后偶发熄火，重新启动正常，有没有维修经验？",
+      "filters": {
+        "device_model": "发动机-示例型号 A",
+        "review_status": "approved"
+      },
+      "expected_retrieval": {
+        "must_include": [],
+        "must_not_include": ["case-004"],
+        "min_evidence_count": 0
+      },
+      "expected_answer": {
+        "must_sections": ["不确定信息", "引用证据"],
+        "must_terms": ["不确定"],
+        "forbidden_behavior": ["引用 pending_review 的 case-004 作为证据"]
+      },
+      "risk_level": "medium",
+      "tags": ["pending_review", "governance"]
+    },
+    {
+      "id": "eval-009",
+      "title": "证据不足：未知设备型号",
+      "query": "液压泵-未知型号 X 出现压力波动应该怎么维修？",
+      "filters": {
+        "device_model": "液压泵-未知型号 X",
+        "review_status": "approved"
+      },
+      "expected_retrieval": {
+        "must_include": [],
+        "must_not_include": ["doc-001", "case-001"],
+        "min_evidence_count": 0
+      },
+      "expected_answer": {
+        "must_sections": ["不确定信息", "引用证据"],
+        "must_terms": ["不确定", "证据不足"],
+        "forbidden_behavior": ["套用发动机或电气系统资料编造液压泵维修步骤"]
+      },
+      "risk_level": "high",
+      "requires_human_review": true,
+      "tags": ["unknown_device", "insufficient_evidence"]
+    },
+    {
+      "id": "eval-010",
+      "title": "向量召回兜底：语义相近但关键词弱",
+      "query": "设备运行声音像周期敲击，伴随振动，该从哪些方向定位？",
+      "filters": {
+        "device_type": "发动机",
+        "review_status": "approved"
+      },
+      "expected_retrieval": {
+        "must_include": ["doc-004", "case-003", "wf-003"],
+        "must_not_include": [],
+        "min_evidence_count": 2
+      },
+      "expected_answer": {
+        "must_sections": ["初步判断", "建议检查步骤", "引用证据"],
+        "must_terms": ["异响", "润滑", "紧固件"],
+        "forbidden_behavior": ["只返回启动困难流程"]
+      },
+      "risk_level": "medium",
+      "tags": ["semantic", "vector_optional"]
+    },
+    {
+      "id": "eval-011",
+      "title": "Chroma 不可用时仍应关键词返回",
+      "query": "链条张紧度不足导致传动异响",
+      "filters": {
+        "device_model": "传动系统-示例型号 F",
+        "review_status": "approved"
+      },
+      "runtime_overrides": {
+        "RAG_VECTOR_STORE": "off"
+      },
+      "expected_retrieval": {
+        "must_include": ["doc-008", "case-007", "wf-006"],
+        "must_not_include": [],
+        "min_evidence_count": 2
+      },
+      "expected_answer": {
+        "must_sections": ["建议检查步骤", "建议维修步骤", "引用证据"],
+        "must_terms": ["张紧", "润滑", "复测"],
+        "forbidden_behavior": ["因为 Chroma 关闭而返回接口错误"]
+      },
+      "risk_level": "medium",
+      "tags": ["fallback", "keyword"]
+    },
+    {
+      "id": "eval-012",
+      "title": "LLM 不可用时返回模板和证据",
+      "query": "发动机-示例型号 D 机油压力低报警，给出检修建议",
+      "filters": {
+        "device_model": "发动机-示例型号 D",
+        "review_status": "approved"
+      },
+      "runtime_overrides": {
+        "LLM_PROVIDER": "openai",
+        "REMOTE_API_MODE": "off"
+      },
+      "expected_retrieval": {
+        "must_include": ["doc-006", "case-005", "wf-004"],
+        "must_not_include": [],
+        "min_evidence_count": 2
+      },
+      "expected_answer": {
+        "must_sections": ["初步判断", "建议检查步骤", "安全提醒", "验收标准", "引用证据", "不确定信息"],
+        "must_terms": ["机油压力", "fallback"],
+        "forbidden_behavior": ["因 LLM 不可用而中断返回 500"]
+      },
+      "risk_level": "high",
+      "requires_human_review": true,
+      "tags": ["llm_fallback", "template"]
+    }
+  ]
+}

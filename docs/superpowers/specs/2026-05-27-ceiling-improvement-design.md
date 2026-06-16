@@ -99,7 +99,7 @@
 | # | 改进项 | 具体做法 | 工作量 |
 |---|--------|---------|--------|
 | A1 | LoongArch 前端部署 | FastAPI StaticFiles 挂载 `frontend/dist`，验证 Kylin V11 浏览器访问 `/` | 0.5 天 |
-| A2 | 真实 embedding 接入 | 用已验证的 Qwen OpenAI-compatible 路径接 embedding API（`text-embedding-v3` 或 `bge-m3`），替换 `vector_store.py` 哈希实现，保留哈希作为 fallback | 1 天 |
+| A2 | 真实 embedding 接入 | 用已验证的 OpenAI-compatible 路径接 embedding API（当前配置使用 `text-embedding-3-small`；国产化可评估 `bge-m3`），替换 `vector_store.py` 哈希实现，保留哈希作为 fallback | 1 天 |
 | A3 | 真实多模态端到端 | 上传一张故障照片 → 真实 OpenAI/Anthropic multimodal API 分析 → 生成知识片段 → 入库 → 检索命中 → RAG 引用。至少一条完整通路 | 1 天 |
 
 **小计**：3 项，2.5 天。完成后到 9.0（扣 1 分：缺少 OCR 和跨模态匹配）。

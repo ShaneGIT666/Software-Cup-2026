@@ -23,7 +23,6 @@
 | Node.js | 20 LTS 或更高 |
 | Python | 3.10 或更高 |
 | Git | 2.40 或更高 |
-| SQLite | 3.x |
 
 当前前端构建工具固定使用 Vite 7.3.3。Vite 8 在当前 Windows 环境下曾出现 HTML 构建路径异常，因此暂不升级。
 
@@ -35,7 +34,11 @@
 APP_ENV=development
 APP_PORT=8000
 FRONTEND_PORT=5173
-DATABASE_URL=sqlite:///./data/app.db
+SERVE_FRONTEND=auto
+FRONTEND_DIST_DIR=../frontend/dist
+APP_EXAMPLES_DIR=./data/examples
+APP_UPLOAD_DIR=./data/uploads
+APP_KNOWLEDGE_DIR=./data/knowledge
 LLM_PROVIDER=mock
 LLM_API_KEY=
 LLM_BASE_URL=
@@ -46,10 +49,11 @@ ANTHROPIC_API_KEY=
 ANTHROPIC_BASE_URL=https://api.anthropic.com/v1
 ANTHROPIC_MODEL=claude-3-5-haiku-latest
 LLM_TIMEOUT_SECONDS=20
-UPLOAD_DIR=./data/uploads
-APP_EXAMPLES_DIR=./data/examples
-APP_UPLOAD_DIR=./data/uploads
-APP_KNOWLEDGE_DIR=./data/knowledge
+RAG_VECTOR_STORE=chroma
+APP_CHROMA_DIR=./data/knowledge/chroma
+RAG_EMBEDDING_PROVIDER=hash
+OCR_PROVIDER=mock
+MINERU_ENABLED=true
 ```
 
 原则：
@@ -111,7 +115,7 @@ http://127.0.0.1:8000/api/health
 | 系统包依赖 | 是否依赖特殊系统库 |
 | Python 包兼容性 | 是否可在 LoongArch 编译或安装 |
 | Node 包兼容性 | 是否包含原生模块 |
-| 数据库部署 | SQLite/PostgreSQL/MySQL 在目标环境的可用性 |
+| 数据持久化 | 当前 JSON 文件存储和后续 SQLite/服务型数据库迁移在目标环境的可用性 |
 | 模型部署 | 本地模型是否有 LoongArch 可运行版本 |
 
 ## 6. 开发机自检清单

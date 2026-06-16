@@ -17,7 +17,7 @@ dev restart
 
 启动后默认访问 `http://127.0.0.1:5173/`，后端健康检查为 `http://127.0.0.1:8000/api/health`。
 
-更新时间：2026-05-27
+更新时间：2026-06-16
 用途：所有后续 Coding Agent 在没有对话上下文时的第一阅读入口。
 规则：如果本文与其他历史文档冲突，以本文和 `docs/project-management/current-handoff.md` 为准。
 文档规范：后续所有文档必须在不依赖聊天记录或隐含上下文的情况下，让 agent 和开发者清晰了解当前开发进度、软件功能、验证状态、风险边界和下一步任务；若变更 API、数据状态、部署方式、演示路径、风险口径或任务优先级，必须同步更新本文和 `current-handoff.md`。
@@ -148,7 +148,7 @@ RAG_EMBEDDING_PROVIDER=hash
 ```env
 RAG_VECTOR_STORE=chroma
 RAG_EMBEDDING_PROVIDER=openai
-OPENAI_EMBEDDING_MODEL=text-embedding-v3
+OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 ```
 
 OCR 可选增强：
@@ -168,7 +168,7 @@ OCR_LANG=ch
 4. 不要提交 `.env`、官方 PDF、`data/uploads/`、`data/knowledge/`、`frontend/dist/`、`node_modules/`、`.venv/`。
 5. 真实多模态 API 只做小样本验收，不承诺所有 OpenAI-compatible 网关都支持图片/PDF。
 6. 真实 OCR 是可选增强，不是默认生产级能力；RapidOCR、PaddleOCR、Docling、MinerU 等依赖在 LoongArch/Kylin 上必须单独验收。
-7. LoongArch 后端已验证；前端完整访问需按 FastAPI 静态托管方案在 VM 上复验。
+7. LoongArch 后端最小依赖和 Docker 一体化链路已有验证记录；最终环境仍需保留 FastAPI 静态托管前端访问和增强依赖关闭/降级的复验证据。
 
 ## 8. 接手流程
 

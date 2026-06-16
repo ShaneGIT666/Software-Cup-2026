@@ -36,9 +36,14 @@ uvicorn[standard]==0.34.0
 python-multipart==0.0.20
 pytest==8.3.4
 httpx==0.28.1
+chromadb>=0.5.0,<2.0.0
 ```
 
-可选依赖（PDF 解析）：`pypdf`
+可选增强依赖：
+
+- PDF fallback 文本解析：`pypdf`
+- OCR：`backend/requirements-ocr.txt`
+- MinerU 文档解析：`backend/requirements-mineru.txt`
 
 #### Node.js 依赖（frontend/package.json）
 
@@ -68,7 +73,7 @@ conda create -n maintenance-copilot python=3.10 -y
 conda activate maintenance-copilot
 cd backend
 pip install -r requirements.txt
-pip install pypdf  # 可选：PDF 解析支持
+pip install pypdf  # 可选：PDF fallback 文本解析支持
 ```
 
 #### 方式二：使用系统 Python + venv
@@ -101,9 +106,16 @@ cp .env.example .env
 APP_ENV=development
 APP_PORT=8000
 FRONTEND_PORT=5173
-DATABASE_URL=sqlite:///./data/app.db
-UPLOAD_DIR=./data/uploads
+SERVE_FRONTEND=auto
+FRONTEND_DIST_DIR=../frontend/dist
+APP_EXAMPLES_DIR=./data/examples
+APP_UPLOAD_DIR=./data/uploads
+APP_KNOWLEDGE_DIR=./data/knowledge
 LLM_PROVIDER=mock
+RAG_VECTOR_STORE=chroma
+APP_CHROMA_DIR=./data/knowledge/chroma
+OCR_PROVIDER=mock
+MINERU_ENABLED=true
 ```
 
 #### 接入大模型（可选）
@@ -284,13 +296,13 @@ pip install -r requirements.txt
 1. **pypdf**：纯 Python 实现，无原生依赖，可在 LoongArch 上直接安装使用
 2. **Python 3.10+**：需确认银河麒麟软件源中有对应版本，或从源码编译
 3. **Node.js**：需确认 LoongArch 架构的 Node.js 二进制包可用，或从源码编译
-4. **向量数据库（Chroma/Qdrant）**：二阶段规划，需验证在 LoongArch 上的安装和运行
+4. **向量数据库（Chroma/Qdrant）**：Chroma 已作为可选增强接入，LoongArch 最小部署可关闭；Qdrant 属于后续服务化升级选项
 5. **大模型推理**：LoongArch 上运行本地大模型（llama.cpp/Ollama）需专项评估
 
 ### 5.4 PDF 解析问题
 
-- **状态显示 "needs_parser"**：安装 pypdf（`pip install pypdf`）
-- **状态显示 "needs_ocr"**：PDF 为扫描件（图片型），需 OCR 支持（二阶段规划）
+- **状态显示 "needs_parser"**：Office 文档在 MinerU 不可用时会降级为 mock parser；需要真实解析时安装 `backend/requirements-mineru.txt`
+- **PDF 文本为空或需要图文理解**：优先检查 MinerU/OCR/多模态 provider 状态；系统会保留 fallback，不阻塞上传
 
 ## 6. 附录
 

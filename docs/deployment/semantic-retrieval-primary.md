@@ -15,8 +15,8 @@ EMBEDDING_TIMEOUT_SECONDS=20
 说明：
 
 - `RAG_VECTOR_STORE=chroma`：启用 Chroma collection；只有 `review_status=approved` 的资料知识片段会同步，`pending_review` 不进入正式索引。
-- `RAG_EMBEDDING_PROVIDER=openai`：通过 OpenAI-compatible `/embeddings` 接口生成真实语义向量。
-- `text-embedding-3-small` 是当前官方确认可用的 OpenAI embedding 模型名；不要写 `text-embedding-v4`。
+- `RAG_EMBEDDING_PROVIDER=openai`：通过 OpenAI-compatible `/embeddings` 接口生成真实语义向量，实际复用 `OPENAI_API_KEY` 和 `OPENAI_BASE_URL`。
+- `text-embedding-3-small` 只对应 OpenAI 官方接口默认示例；DashScope/Qwen、SiliconFlow 或其他兼容网关必须填写该 provider 自己的 embedding 模型名，不能把它当作通用旧名或别名。
 - 如果未配置 Key、`REMOTE_API_MODE=off`、embedding 服务失败或 Chroma 初始化失败，系统会自动回退到 hash embedding 或关键词检索，接口不崩。
 
 ## 云端模型示例

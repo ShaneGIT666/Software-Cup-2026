@@ -87,7 +87,7 @@ RAG_EMBEDDING_PROVIDER=hash
 ```env
 RAG_VECTOR_STORE=chroma
 RAG_EMBEDDING_PROVIDER=openai
-OPENAI_EMBEDDING_MODEL=text-embedding-v3
+OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 OPENAI_EMBEDDING_API_STYLE=openai_compatible
 ```
 

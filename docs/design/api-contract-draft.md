@@ -124,7 +124,7 @@ POST /api/search
 1. `sourceType` 当前支持 `manual`、`case` 和 `document`。
 2. `document` 表示由资料入库接口解析生成的本地知识片段。
 3. `matchedTerms`、`reason` 和 `scoreBreakdown` 用于展示命中原因，支撑后续 RAG 引用解释。
-4. 当前排序仍是 MVP 级关键词方案，不引入向量库；排序依据为字段权重、来源类型基础权重和连续短语命中加分。
+4. 当前排序为关键词/字段权重 + 可选 Chroma 向量召回的轻量混合方案；尚未抽象为完整的 normalization、metadata filter、RRF、rerank、evidence pack 流程。
 
 ## 4. 故障诊断建议
 
