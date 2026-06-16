@@ -6,6 +6,7 @@ from fastapi import HTTPException
 
 from ..schemas import SearchRequest
 from .filters import apply_metadata_filter
+from .fusion import fuse_hits_rrf
 from .keyword_retriever import retrieve_keyword_hits
 from .models import QueryContext, RetrievalHit
 from .vector_retriever import retrieve_vector_hits
@@ -52,14 +53,8 @@ def build_search_summary(results: list[dict[str, object]], query_tokens: list[st
     )
 
 
-def merge_current_behavior(keyword_hits: list[RetrievalHit], vector_hits: list[RetrievalHit], top_k: int) -> list[RetrievalHit]:
-    known_document_ids = {hit.id for hit in keyword_hits if hit.source_type == "document"}
-    vector_hits = [hit for hit in vector_hits if hit.id not in known_document_ids]
-    return sorted(
-        keyword_hits + vector_hits,
-        key=lambda item: (item.score_breakdown["score"], item.confidence),
-        reverse=True,
-    )[:top_k]
+def merge_results(keyword_hits: list[RetrievalHit], vector_hits: list[RetrievalHit], top_k: int) -> list[RetrievalHit]:
+    return fuse_hits_rrf(keyword_hits, vector_hits, top_k)
 
 
 def search_knowledge(request: SearchRequest) -> dict[str, object]:
@@ -69,7 +64,7 @@ def search_knowledge(request: SearchRequest) -> dict[str, object]:
 
     keyword_hits = apply_metadata_filter(context, retrieve_keyword_hits(context))
     vector_hits = apply_metadata_filter(context, retrieve_vector_hits(context))
-    final_hits = merge_current_behavior(keyword_hits, vector_hits, request.topK)
+    final_hits = merge_results(keyword_hits, vector_hits, request.topK)
     results = [hit.to_search_result() for hit in final_hits]
 
     return {
