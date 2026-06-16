@@ -418,17 +418,17 @@ POST /api/knowledge/documents
 说明：
 
 1. 使用 `multipart/form-data`。
-2. MVP 阶段支持 `pdf`、`txt` 和 `md`。
+2. 当前支持 `pdf`、`txt`、`md`、`docx`、`pptx`、`xlsx`、`jpg`、`jpeg`、`png` 和 `webp`。
 3. 单文件大小上限为 `20MB`。
 4. 空文件、无扩展名、扩展名不在白名单、扩展名与 MIME 类型明显不匹配时返回 `400`。
-5. 资料入库不同于现场材料上传：入库资料会解析为知识片段，并进入 `/api/search` 检索范围。
+5. 资料入库不同于现场材料上传：入库资料会解析为知识片段，但自动解析结果默认进入 `pending_review`，审核通过前不进入 `/api/search`、RAG citations 或 Chroma 同步。
 6. 开发和测试环境可通过 `APP_KNOWLEDGE_DIR` 覆盖资料库目录，避免污染真实数据。
 
 请求字段：
 
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `file` | file | 是 | PDF/TXT/Markdown 资料 |
+| `file` | file | 是 | PDF/TXT/Markdown/Office 文档或图片资料 |
 | `source_name` | string | 否 | 资料来源名称，例如“摩托车检修手册” |
 
 响应：
@@ -442,8 +442,9 @@ POST /api/knowledge/documents
     "fileType": "text/markdown",
     "suffix": "md",
     "sourceName": "摩托车检修手册",
-    "status": "indexed",
+    "status": "pending_review",
     "chunkCount": 3,
+    "pendingReviewCount": 3,
     "parser": "plain-text",
     "uploadedAt": "2026-05-21T00:00:00Z",
     "url": "/knowledge/files/kdoc-001.md",
@@ -453,6 +454,7 @@ POST /api/knowledge/documents
         "title": "motorcycle-manual",
         "sourceName": "摩托车检修手册",
         "page": null,
+        "review_status": "pending_review",
         "snippet": "摩托车发动机无法启动时，应检查火花塞、高压包和燃油供给。"
       }
     ]
@@ -465,9 +467,10 @@ POST /api/knowledge/documents
 
 | 状态 | 含义 |
 | --- | --- |
-| `indexed` | 已解析并生成知识片段 |
+| `pending_review` | 已解析并生成知识片段，等待人工审核；未审核前不参与正式检索/RAG/Chroma |
+| `indexed` | 兼容旧字段，表示已审核后进入正式检索范围 |
 | `needs_parser` | PDF 解析器未安装或当前环境暂不支持解析 |
-| `needs_ocr` | PDF 可能为扫描件，后续需要 OCR |
+| `needs_multimodal_analysis` | PDF/图片没有可信文本片段，需要后续多模态/OCR 分析 |
 | `empty` | 文本文件无可解析内容 |
 
 列表接口：
@@ -503,8 +506,9 @@ GET /api/knowledge/documents/{documentId}
   "data": {
     "id": "kdoc-001",
     "fileName": "motorcycle-manual.md",
-    "status": "indexed",
+    "status": "pending_review",
     "chunkCount": 3,
+    "pendingReviewCount": 3,
     "chunkTotal": 3,
     "chunks": []
   },
@@ -559,7 +563,7 @@ DELETE /api/knowledge/documents/{documentId}
 开源方案引用：
 
 1. 当前 MVP 自研轻量入库接口和 JSON 存储，避免引入重依赖破坏现有演示闭环。
-2. 后续文档解析优先评估 Docling 与 MinerU，OCR 优先评估 PaddleOCR，RAG 框架优先评估 LlamaIndex 或 LangChain。
+2. 当前文档解析已优先接入 `parser_router -> mineru_adapter`，PDF 在 MinerU 不可用时 fallback 到 pypdf；DOCX/PPTX/XLSX 在 MinerU 不可用时 fallback 到 mock parser，不生成可信 chunks。
 3. 相关开源方案来源记录在 `docs/research/open-source-architecture-research.md`，实现前必须复核许可证、依赖体积和 Windows/国产化环境兼容性。
 ## 11. 多模态资料分析
 
@@ -568,7 +572,7 @@ POST /api/knowledge/documents/{documentId}/analyze
 ```
 
 说明：
-1. 对已上传的 PDF 或图片资料执行多模态分析，并将分析结果转为可检索知识片段。
+1. 对已上传的 PDF 或图片资料执行多模态分析，并将分析结果转为 `pending_review` 知识片段。
 2. 默认使用 `mock` provider，保证无网络、无 API Key 时仍可演示。
 3. 可选 provider 为 `mock`、`openai`、`anthropic`；不传时读取 `MULTIMODAL_PROVIDER`，仍未配置则使用 `mock`。
 4. OpenAI provider 参考 Responses API 的 PDF/图片输入能力；Anthropic provider 参考 Claude PDF support 与 Vision Messages API。
@@ -588,8 +592,9 @@ POST /api/knowledge/documents/{documentId}/analyze
   "success": true,
   "data": {
     "id": "kdoc-001",
-    "status": "analyzed",
+    "status": "pending_review",
     "chunkCount": 3,
+    "pendingReviewCount": 3,
     "parser": "multimodal-mock",
     "analysis": {
       "summary": "资料多模态分析摘要",
@@ -614,7 +619,7 @@ POST /api/knowledge/documents/{documentId}/analyze
 | --- | --- |
 | `needs_multimodal_analysis` | PDF 或图片需要多模态/视觉分析后才能生成知识片段 |
 | `analyzing` | 分析进行中 |
-| `analyzed` | 多模态分析完成，并已生成可检索知识片段 |
+| `pending_review` | 分析完成并生成待审核知识片段；审核通过前不参与正式检索/RAG/Chroma |
 
 ## 12. 轻量知识关系网络
 
@@ -744,7 +749,7 @@ pip install -r backend/requirements-rag.txt
 
 行为约定：
 
-1. 资料入库或多模态分析生成 `document` chunks 后，后端会尝试同步到 Chroma collection。
+1. 资料入库或多模态分析生成 `document` chunks 后默认不会同步 Chroma；只有 `review_status=approved` 的片段才会进入 Chroma collection。
 2. `/api/search` 会先执行现有关键词检索，再合并 Chroma 向量召回结果；是否是真实语义 embedding 由 `scoreBreakdown.embeddingProvider` 标记。
 3. Chroma 召回结果仍使用 `sourceType=document`，并保留 `documentId`、`chunkId`、`snippet` 和 `scoreBreakdown`。
 4. `scoreBreakdown.vectorDistance` 表示 Chroma 返回的向量距离，距离越小越相似。

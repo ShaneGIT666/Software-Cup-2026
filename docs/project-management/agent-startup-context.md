@@ -30,23 +30,24 @@ dev restart
 
 1. LoongArch / 银河麒麟 V11 后端最小依赖验证已完成；后端测试子集 `39 passed`，`/api/health` 和 `/api/providers/status` 正常。
 2. 目标 VM 无 npm/git，因此前端采用 Windows 本地构建 `frontend/dist`，再由 FastAPI 静态托管的方案。
-3. Windows 本地主线后端测试最新结果为 `85 passed in 14.26s`。
+3. Windows 本地主线后端全量测试最新结果为 `92 passed in 21.25s`。
 4. 前端生产构建已通过；存在 Vite chunk size warning，不阻塞。
 5. Qwen / DashScope OpenAI-compatible 文本 RAG 已完成真实 API 小样本验收，返回 `fallback=false` 且保留 citations。
 6. Chroma 是可选向量索引增强；hash embedding 是断网和无 Key 场景的 fallback/占位，不是生产级语义 embedding。
 7. 真实多模态 API 新增小样本验收接口，但默认演示仍可使用 mock 兜底。
-8. OCR 已新增可选 provider 层：默认 `OCR_PROVIDER=mock`，可选 `rapidocr` 或 `tesseract`；OCR 文本会并入资料分析 chunks，进入检索、RAG citations 和知识关系网络。真实 OCR 依赖需单独安装 `backend/requirements-ocr.txt` 并记录 LoongArch/Kylin 兼容性。
+8. OCR 已新增可选 provider 层：默认 `OCR_PROVIDER=mock`，可选 `rapidocr` 或 `tesseract`；OCR/多模态文本会并入资料分析 chunks，但默认 `review_status=pending_review`，审核通过后才进入检索、RAG citations、Chroma 和知识关系网络。真实 OCR 依赖需单独安装 `backend/requirements-ocr.txt` 并记录 LoongArch/Kylin 兼容性。
 
 ## 3. 核心闭环
 
 ```text
 输入设备型号和故障现象
--> 检索手册、历史案例、入库资料和可选 Chroma 召回
+-> 检索手册、历史案例、已审核入库资料和可选 Chroma 召回
 -> 查看命中原因、来源、排序分和 citations
 -> 生成 RAG 辅助建议
 -> 查看标准化作业流程
 -> 上传维修手册、现场图片或经验资料
--> 多模态 mock/真实 provider 与可选 OCR 分析资料并生成知识片段
+-> parser_router/MinerU/OCR/多模态分析资料并生成 pending_review 知识片段
+-> 审核通过后进入正式检索/RAG/Chroma
 -> 提交维修案例
 -> 审核通过后再次检索命中新案例
 ```

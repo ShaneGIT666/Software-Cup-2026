@@ -8,7 +8,7 @@
 
 | 项目 | 当前状态 |
 | --- | --- |
-| 后端自动化测试 | `85 passed`，覆盖动态诊断、可选 OCR、原子写和 Chroma 降级测试 |
+| 后端自动化测试 | `92 passed in 21.25s`，覆盖 pending_review 审核门槛、资料入库、RAG、Chroma 降级等链路 |
 | 前端生产构建 | `npm.cmd run build` 通过；Vite chunk size warning 不阻塞演示 |
 | LoongArch / 银河麒麟 | 后端最小依赖链路已验证；本轮按要求暂不继续做 VM 复验 |
 | 前端目标环境托管 | 已支持 FastAPI 静态托管 `frontend/dist`，适配无 npm/nginx 的演示环境 |
@@ -51,7 +51,7 @@
 | 检索方案 | 关键词检索 + 来源引用起步，第二阶段接 Chroma |
 | 向量库 | Chroma MVP，Qdrant 二阶段 |
 | 模型接入 | OpenAI-compatible Adapter，默认 Mock 模式 |
-| 文档解析 | Markdown/JSON/PDF 文本起步；OCR 可选接 RapidOCR/Tesseract，后续评估 PaddleOCR、MinerU、Docling |
+| 文档解析 | `parser_router -> mineru_adapter` 优先处理 PDF/DOCX/PPTX/XLSX；PDF 可 fallback 到 pypdf，Office 文档未装 MinerU 时 fallback 到 mock parser |
 | 部署 | 本地脚本 MVP，Docker Compose 二阶段 |
 
 完整调研结论见：`docs/research/open-source-architecture-research.md`
@@ -194,11 +194,11 @@ powershell -ExecutionPolicy Bypass -File .\scripts\stop-dev.ps1
 2. FastAPI 后端 API，覆盖检索、诊断、RAG、资料入库、多模态分析、知识关系网络、案例提交和审核。
 3. 本地 JSON 样例数据与原子写入持久化，保留轻量架构和比赛现场兜底能力。
 4. 检索、流程查看、资料上传/入库、RAG citations、案例提交、案例审核、审核后再检索的 MVP 闭环。
-5. 资料入库支持 `pdf/txt/md/jpg/jpeg/png/webp`，文本型 PDF 可解析为知识片段，图片/扫描类资料可走多模态分析入口。
+5. 资料入库支持 `pdf/txt/md/docx/pptx/xlsx/jpg/jpeg/png/webp`；解析或多模态分析生成的片段默认 `pending_review`，审核通过前不进入正式检索、RAG citations 或 Chroma。
 6. RAG provider 支持 `mock/openai/anthropic`，已完成 Qwen / DashScope OpenAI-compatible 文本 RAG 小样本验收。
 7. Chroma 可选向量索引已接入，默认关闭；`hash` embedding 是 fallback，占位不冒充真实语义 embedding。
 8. FastAPI 可选静态托管 `frontend/dist`，用于无 npm/nginx 的目标环境演示。
-9. 后端 `85 passed`，前端生产构建通过；Playwright 冒烟测试文件已提交，依赖需联网安装后执行。
+9. 后端全量测试 `92 passed in 21.25s`；前端生产构建通过；Playwright 冒烟测试文件已提交，依赖需联网安装后执行。
 10. Coding Agent 动态交接入口：`docs/project-management/agent-startup-context.md`。
 
 下一步建议：
@@ -234,6 +234,6 @@ MINERU_API_URL=
 
 ```text
 mineru, version 3.2.3
-backend API: 70 passed
+backend tests: 92 passed in 21.25s
 frontend build: passed
 ```

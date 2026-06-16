@@ -256,7 +256,7 @@ App.vue (状态中心)
 输入: SearchRequest { deviceModel, faultText, inputType, topK }
 流程:
   1. tokens() — 中文分词，按标点切分查询关键词
-  2. 遍历 manuals / approved cases / document chunks 三类数据
+  2. 遍历 manuals / approved cases / approved document chunks 三类数据
   3. score_item() — 对每条数据计算加权匹配分：
      - 字段权重: title(5) > deviceModel/tags(4) > content(2) + 来源基础分(3/2/2)
      - 短语加分: 连续短语命中 +4
@@ -346,14 +346,15 @@ uploadKnowledgeDocument(file, source_name)
   ├── Step 2: 文件保存
   │     写入 data/knowledge/files/kdoc-{uuid8}.{suffix}
   │
-  ├── Step 3: 文本提取
-  │     extract_pages()
-  │     ├── PDF → pypdf (PdfReader 逐页提取)
-  │     │     ├── 有文本 → status: "indexed"
-  │     │     ├── pypdf 未安装 → status: "needs_parser"
-  │     │     └── 无文本(扫描件) → status: "needs_ocr"
+  ├── Step 3: parser_router 解析
+  │     parse_document(file_path, suffix, content)
+  │     ├── PDF/DOCX/PPTX/XLSX → 优先 mineru_adapter
+  │     │     ├── MinerU 可用 → status: "parsed"
+  │     │     ├── PDF 且 MinerU 不可用 → fallback 到 pypdf
+  │     │     └── Office 文档且 MinerU 不可用 → mock-parser / needs_parser
+  │     ├── JPG/JPEG/PNG/WebP → needs_multimodal_analysis
   │     └── TXT/Markdown → decode_text() (尝试 utf-8 → gb18030 → latin1)
-  │           ├── 有内容 → status: "indexed"
+  │           ├── 有内容 → status: "parsed"
   │           └── 无内容 → status: "empty"
   │
   ├── Step 4: 文本分块
@@ -365,8 +366,11 @@ uploadKnowledgeDocument(file, source_name)
   │
   └── Step 6: 持久化
         documents.json ← 资料元数据
-        document-chunks.json ← 知识片段
+        document-chunks.json ← review_status=pending_review 的知识片段
+        parsed/{document_id}/raw_parse_result.json、parsed.md、assets/ ← 解析产物
 ```
+
+说明：自动解析、OCR 和多模态分析产生的知识片段默认不进入正式检索/RAG/Chroma。只有 `review_status=approved` 的 document chunks 会被 `services.search_knowledge()` 和 `vector_store.sync_chunks()` 使用。
 
 ### 3.3 检索排序引擎
 

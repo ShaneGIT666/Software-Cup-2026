@@ -10,7 +10,7 @@
 
 最近确认事实：
 
-1. Windows 本地后端完整测试最新结果：`85 passed in 14.26s`。
+1. Windows 本地后端完整测试最新结果：`92 passed in 21.25s`。
 2. 前端 `npm.cmd run build` 通过，存在 Vite chunk size warning，不阻塞。
 3. Qwen / DashScope OpenAI-compatible 文本 RAG 小样本真实 API 验收通过，`fallback=false`，citations 保留。
 4. LoongArch / 银河麒麟 V11 后端最小依赖测试子集通过：`39 passed`。
@@ -22,7 +22,7 @@
 
 ```powershell
 .\backend\.venv\Scripts\python.exe -m pytest tests/ -q
-# 85 passed in 14.26s
+# 92 passed in 21.25s
 ```
 
 前端：
@@ -72,8 +72,8 @@ npm run test:e2e
 | T-BE-017 | 动态诊断 | `/api/diagnosis` 复用检索/RAG citations，不再返回固定硬编码结果 |
 | T-BE-018 | JSON 原子写 | `save_cases()` 等写入先写临时文件再 `os.replace()` |
 | T-BE-019 | Chroma 降级 | Chroma 初始化失败或查询失败时返回空召回，不影响主链路 |
-| T-BE-020 | 官方 PDF | 官方摩托车维修手册入库、检索、RAG、删除、Chroma 流程 |
-| T-BE-021 | OCR 可选增强 | mock OCR 文本可生成 document chunks，并被检索和 RAG citations 复用 |
+| T-BE-020 | 官方 PDF | 官方摩托车维修手册入库、pending_review 审核门槛、审核后检索/RAG/删除/Chroma 流程 |
+| T-BE-021 | OCR 可选增强 | mock OCR 文本可生成 pending_review document chunks，审核通过后被检索和 RAG citations 复用 |
 | T-BE-022 | OCR fallback | `rapidocr` 等真实 provider 缺失或失败时降级 mock OCR，不影响多模态分析 |
 
 ## 4. LoongArch / 银河麒麟验证

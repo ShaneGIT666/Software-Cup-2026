@@ -24,6 +24,33 @@ def make_client(tmp_path, monkeypatch) -> TestClient:
     return TestClient(app)
 
 
+def approve_document_chunks(document_id: str) -> None:
+    """Test helper that simulates review approval for uploaded knowledge."""
+    chunks = knowledge.load_document_chunks()
+    now = knowledge.utc_now()
+    approved_chunks: list[dict[str, Any]] = []
+    for chunk in chunks:
+        if chunk.get("documentId") != document_id:
+            continue
+        chunk["review_status"] = "approved"
+        chunk["updated_at"] = now
+        chunk["updatedAt"] = now
+        approved_chunks.append(chunk)
+    knowledge.save_document_chunks(chunks)
+
+    documents = knowledge.load_documents()
+    for document in documents:
+        if document.get("id") == document_id:
+            document["status"] = "indexed"
+            document["pendingReviewCount"] = 0
+            document["approvedCount"] = len(approved_chunks)
+            document["reviewedAt"] = now
+    knowledge.save_documents(documents)
+
+    knowledge.delete_vector_document(document_id)
+    knowledge.sync_chunks(approved_chunks)
+
+
 # ---------------------------------------------------------------------------
 # pypdf 解析能力验证
 # ---------------------------------------------------------------------------
@@ -84,7 +111,8 @@ def test_ingest_motorcycle_manual_pdf(tmp_path, monkeypatch) -> None:
     assert data["suffix"] == "pdf"
     assert data["chunkCount"] > 0, f"PDF 应生成至少 1 个 chunk，实际 {data['chunkCount']}"
     assert data["parser"] == "pypdf", f"解析器应为 pypdf，实际 {data['parser']}"
-    assert data["status"] == "indexed"
+    assert data["status"] == "pending_review"
+    assert data["pendingReviewCount"] == data["chunkCount"]
 
 
 def test_ingest_motorcycle_manual_produces_searchable_chunks(tmp_path, monkeypatch) -> None:
@@ -109,6 +137,7 @@ def test_ingest_motorcycle_manual_produces_searchable_chunks(tmp_path, monkeypat
         assert chunk["documentId"] == doc_id
         assert chunk["sourceType"] == "document"
         assert chunk["sourceName"] == "摩托车发动机维修手册"
+        assert chunk["review_status"] == "pending_review"
         assert len(chunk["content"]) > 0
         assert len(chunk["snippet"]) > 0
 
@@ -140,11 +169,13 @@ def test_search_hits_ingested_manual_keywords(tmp_path, monkeypatch) -> None:
     with MANUAL_PATH.open("rb") as f:
         pdf_bytes = f.read()
 
-    client.post(
+    upload_resp = client.post(
         "/api/knowledge/documents",
         files={"file": ("摩托车发动机维修手册.pdf", pdf_bytes, "application/pdf")},
         data={"source_name": "摩托车发动机维修手册"},
     )
+    doc_id = upload_resp.json()["data"]["id"]
+    approve_document_chunks(doc_id)
 
     search_resp = client.post(
         "/api/search",
@@ -175,11 +206,13 @@ def test_search_multiple_keyword_combinations(tmp_path, monkeypatch) -> None:
     with MANUAL_PATH.open("rb") as f:
         pdf_bytes = f.read()
 
-    client.post(
+    upload_resp = client.post(
         "/api/knowledge/documents",
         files={"file": ("摩托车发动机维修手册.pdf", pdf_bytes, "application/pdf")},
         data={"source_name": "摩托车发动机维修手册"},
     )
+    doc_id = upload_resp.json()["data"]["id"]
+    approve_document_chunks(doc_id)
 
     queries = [
         ("摩托车", "火花塞"),
@@ -215,6 +248,7 @@ def test_rag_answer_uses_manual_pdf_citations(tmp_path, monkeypatch) -> None:
         data={"source_name": "摩托车发动机维修手册"},
     )
     doc_id = upload_resp.json()["data"]["id"]
+    approve_document_chunks(doc_id)
 
     rag_resp = client.post(
         "/api/rag/answer",
@@ -278,11 +312,13 @@ def test_knowledge_graph_with_manual_pdf(tmp_path, monkeypatch) -> None:
     with MANUAL_PATH.open("rb") as f:
         pdf_bytes = f.read()
 
-    client.post(
+    upload_resp = client.post(
         "/api/knowledge/documents",
         files={"file": ("摩托车发动机维修手册.pdf", pdf_bytes, "application/pdf")},
         data={"source_name": "摩托车发动机维修手册"},
     )
+    doc_id = upload_resp.json()["data"]["id"]
+    approve_document_chunks(doc_id)
 
     graph_resp = client.post(
         "/api/knowledge/graph",
@@ -329,8 +365,9 @@ def test_multimodal_analyze_motorcycle_manual_pdf(tmp_path, monkeypatch) -> None
 
     assert analyze_resp.status_code == 200
     analyzed = analyze_resp.json()["data"]
-    assert analyzed["status"] == "analyzed"
+    assert analyzed["status"] == "pending_review"
     assert analyzed["chunkCount"] > 0
+    assert analyzed["pendingReviewCount"] == analyzed["chunkCount"]
 
     analysis = analyzed["analysis"]
     assert analysis["provider"] == "mock"
@@ -357,6 +394,7 @@ def test_multimodal_analyzed_chunks_are_searchable(tmp_path, monkeypatch) -> Non
 
     # 多模态分析
     client.post(f"/api/knowledge/documents/{doc_id}/analyze", json={"provider": "mock"})
+    approve_document_chunks(doc_id)
 
     # 删除旧的 pypdf chunks 后的搜索（注：analyze 后 pypdf chunks 被替换为 multimodal chunks）
     search_resp = client.post(
@@ -389,6 +427,10 @@ def test_end_to_end_manual_workflow(tmp_path, monkeypatch) -> None:
     assert upload_resp.status_code == 200
     doc_id = upload_resp.json()["data"]["id"]
     assert upload_resp.json()["data"]["chunkCount"] > 0
+    assert upload_resp.json()["data"]["status"] == "pending_review"
+
+    # Simulate review approval before formal retrieval/RAG.
+    approve_document_chunks(doc_id)
 
     # Step 2: 检索摩托车发动机故障
     search_resp = client.post(
@@ -535,6 +577,7 @@ def test_delete_manual_document_removes_from_search(tmp_path, monkeypatch) -> No
         data={"source_name": "摩托车发动机维修手册"},
     )
     doc_id = upload_resp.json()["data"]["id"]
+    approve_document_chunks(doc_id)
 
     # 删除前可检索
     before_resp = client.post(
@@ -599,11 +642,13 @@ def test_search_with_chroma_enabled_merges_vector_results(tmp_path, monkeypatch)
     with MANUAL_PATH.open("rb") as f:
         pdf_bytes = f.read()
 
-    client.post(
+    upload_resp = client.post(
         "/api/knowledge/documents",
         files={"file": ("摩托车发动机维修手册.pdf", pdf_bytes, "application/pdf")},
         data={"source_name": "摩托车发动机维修手册"},
     )
+    doc_id = upload_resp.json()["data"]["id"]
+    approve_document_chunks(doc_id)
 
     search_resp = client.post(
         "/api/search",
@@ -630,6 +675,7 @@ def test_rag_citations_preserve_document_id_with_chroma(tmp_path, monkeypatch) -
         data={"source_name": "摩托车发动机维修手册"},
     )
     doc_id = upload_resp.json()["data"]["id"]
+    approve_document_chunks(doc_id)
 
     rag_resp = client.post(
         "/api/rag/answer",
