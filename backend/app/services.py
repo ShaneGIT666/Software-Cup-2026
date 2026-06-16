@@ -8,6 +8,7 @@ from fastapi import HTTPException
 
 from . import vector_store
 from .data_store import load_cases, load_document_chunks, load_seed_data, save_cases
+from .retrieval.pipeline import search_knowledge as run_retrieval_pipeline
 from .schemas import CaseCreateRequest, CaseReviewRequest, SearchRequest
 
 
@@ -157,120 +158,7 @@ def find_workflow(workflow_id: str) -> dict[str, Any]:
 
 
 def search_knowledge(request: SearchRequest) -> dict[str, Any]:
-    data = load_seed_data()
-    query_tokens = tokens(request.deviceModel, request.faultText)
-    if not query_tokens:
-        raise HTTPException(status_code=400, detail="设备型号和故障现象不能同时为空")
-
-    manual_results = []
-    for manual in data["manuals"]:
-        field_weights = {"title": 5, "deviceModel": 4, "tags": 4, "content": 2}
-        scoring = score_item(query_tokens, manual, field_weights, source_weight=3)
-        if scoring["score"]:
-            manual_results.append(
-                {
-                    "id": manual["id"],
-                    "title": manual["title"],
-                    "sourceType": "manual",
-                    "sourceName": manual["sourceName"],
-                    "confidence": confidence_from_score(scoring["score"], 0.95),
-                    "snippet": manual["content"][:120],
-                    "workflowId": manual.get("workflowId"),
-                    "chapter": manual.get("chapter"),
-                    "page": manual.get("page"),
-                    "matchedTerms": scoring["matchedTerms"],
-                    "reason": reason_text("命中手册字段", scoring["matchedTerms"], manual),
-                    "scoreBreakdown": score_breakdown(scoring, "manual"),
-                }
-            )
-
-    case_results = []
-    for repair_case in data["cases"]:
-        if repair_case.get("status") != "approved":
-            continue
-        field_weights = {"faultTitle": 5, "faultText": 4, "tags": 4, "possibleCauses": 3, "solution": 2}
-        scoring = score_item(query_tokens, repair_case, field_weights, source_weight=2)
-        if scoring["score"]:
-            case_results.append(
-                {
-                    "id": repair_case["id"],
-                    "title": repair_case["faultTitle"],
-                    "sourceType": "case",
-                    "sourceName": "历史维修案例库",
-                    "confidence": confidence_from_score(scoring["score"], 0.94),
-                    "snippet": repair_case["solution"],
-                    "workflowId": repair_case.get("workflowId"),
-                    "matchedTerms": scoring["matchedTerms"],
-                    "reason": reason_text("命中历史案例", scoring["matchedTerms"], repair_case),
-                    "scoreBreakdown": score_breakdown(scoring, "case"),
-                }
-            )
-
-    document_results = []
-    for chunk in load_document_chunks():
-        if not chunk_is_approved(chunk):
-            continue
-        field_weights = {"title": 4, "sourceName": 3, "keywords": 4, "content": 2}
-        scoring = score_item(query_tokens, chunk, field_weights, source_weight=2)
-        if scoring["score"]:
-            document_results.append(
-                {
-                    "id": chunk["id"],
-                    "title": chunk["title"],
-                    "sourceType": "document",
-                    "sourceName": chunk["sourceName"],
-                    "confidence": confidence_from_score(scoring["score"], 0.93),
-                    "snippet": chunk["snippet"],
-                    "workflowId": None,
-                    "chapter": None,
-                    "page": chunk.get("page"),
-                    "documentId": chunk.get("documentId"),
-                    "chunkId": chunk["id"],
-                    "matchedTerms": scoring["matchedTerms"],
-                    "reason": reason_text("命中入库资料片段", scoring["matchedTerms"], chunk),
-                    "scoreBreakdown": score_breakdown(scoring, "document"),
-                }
-            )
-
-    known_document_ids = {item["id"] for item in document_results}
-    vector_results = []
-    vector_query = " ".join([request.deviceModel, request.faultText]).strip()
-    for vector_match in vector_store.search_similar_chunks(vector_query, request.topK):
-        if vector_match["id"] in known_document_ids:
-            continue
-        embedding_provider = vector_match.get("embeddingProvider", "hash")
-        breakdown = vector_score_breakdown(vector_match.get("distance", 1.0), embedding_provider)
-        recall_label = "真实 embedding 向量召回" if embedding_provider == "openai" else "hash fallback 向量召回"
-        vector_results.append(
-            {
-                "id": vector_match["id"],
-                "title": vector_match["title"],
-                "sourceType": "document",
-                "sourceName": vector_match["sourceName"],
-                "confidence": confidence_from_score(breakdown["score"], 0.9),
-                "snippet": vector_match["snippet"],
-                "workflowId": None,
-                "chapter": None,
-                "page": vector_match.get("page"),
-                "documentId": vector_match.get("documentId"),
-                "chunkId": vector_match.get("chunkId"),
-                "matchedTerms": [embedding_provider],
-                "reason": f"Chroma {recall_label}，距离 {breakdown['vectorDistance']}",
-                "scoreBreakdown": breakdown,
-            }
-        )
-
-    results = sorted(
-        manual_results + case_results + document_results + vector_results,
-        key=lambda item: (item["scoreBreakdown"]["score"], item["confidence"]),
-        reverse=True,
-    )[: request.topK]
-
-    return {
-        "queryId": f"q-{uuid4().hex[:8]}",
-        "summary": build_search_summary(results, query_tokens),
-        "results": results,
-    }
+    return run_retrieval_pipeline(request)
 
 
 def create_repair_case(request: CaseCreateRequest) -> dict[str, str]:
