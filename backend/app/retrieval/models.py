@@ -58,6 +58,7 @@ class RetrievalHit:
         result: dict[str, Any] = {
             "id": self.id,
             "title": self.title,
+            "sourceId": self.source_id,
             "sourceType": self.source_type,
             "sourceName": self.source_name,
             "confidence": self.confidence,
@@ -65,10 +66,20 @@ class RetrievalHit:
             "workflowId": self.workflow_id,
             "chapter": self.chapter,
             "page": self.page,
+            "section": self.section,
             "matchedTerms": self.matched_terms,
             "reason": self.reason,
             "scoreBreakdown": self.score_breakdown,
+            "reviewStatus": self.review_status,
         }
+        if self.device_type:
+            result["deviceType"] = self.device_type
+        if self.device_model:
+            result["deviceModel"] = self.device_model
+        if self.component:
+            result["component"] = self.component
+        if self.fault_type:
+            result["faultType"] = self.fault_type
         if self.document_id:
             result["documentId"] = self.document_id
         if self.chunk_id:

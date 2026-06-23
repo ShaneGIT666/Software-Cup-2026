@@ -7,6 +7,7 @@ from typing import Any
 
 import httpx
 
+from .evidence_pack import build_evidence_pack, build_structured_rag_output, format_structured_answer
 from .provider_policy import configured_llm_provider, record_fallback, remote_api_disabled
 
 
@@ -76,8 +77,13 @@ def citation_from_result(result: dict[str, Any]) -> dict[str, Any]:
         "confidence": result["confidence"],
         "page": result.get("page"),
         "chapter": result.get("chapter"),
+        "section": result.get("section"),
+        "sourceId": result.get("sourceId"),
         "documentId": result.get("documentId"),
         "chunkId": result.get("chunkId"),
+        "sourceDocId": result.get("documentId") or result.get("sourceDocId") or result.get("sourceId") or result.get("id"),
+        "reviewStatus": result.get("reviewStatus", "approved"),
+        "riskLevel": result.get("riskLevel") or result.get("scoreBreakdown", {}).get("riskLevel"),
         "reason": result.get("reason", ""),
         "scoreBreakdown": result.get("scoreBreakdown", {}),
     }
@@ -111,6 +117,8 @@ def mock_rag_answer(
     provider = configured_provider(requested_provider)
     compressed_contexts, context_chars = compress_contexts(contexts)
     citations = [citation_from_result(item) for item in compressed_contexts]
+    evidence_pack = build_evidence_pack(citations)
+    structured_answer = build_structured_rag_output(device_model, fault_text, evidence_pack)
     source_names = list(dict.fromkeys(item["sourceName"] for item in citations))[:3]
 
     graph_note = ""
@@ -136,8 +144,12 @@ def mock_rag_answer(
         recommended_actions = ["补充更具体的故障描述。", "上传相关检修资料并完成入库。"]
 
     return {
-        "answer": answer,
-        "recommendedActions": recommended_actions,
+        "answer": format_structured_answer(structured_answer),
+        "rawAnswer": "",
+        "structuredAnswer": structured_answer,
+        "recommendedActions": structured_answer.get("inspectionSteps", []) + structured_answer.get("repairSteps", []),
+        "evidencePack": evidence_pack,
+        "riskReviewRequired": structured_answer.get("riskReviewRequired", False),
         "citations": citations,
         "provider": "mock",
         "requestedProvider": provider,
@@ -241,6 +253,7 @@ def real_rag_answer(
     prompt = build_context_prompt(device_model, fault_text, compressed_contexts, graph_context)
     timeout = float(os.getenv("LLM_TIMEOUT_SECONDS", "20"))
     citations = [citation_from_result(item) for item in compressed_contexts]
+    evidence_pack = build_evidence_pack(citations)
     model = provider_model(provider)
     api_style = provider_api_style(provider)
     recommended_actions = [
@@ -307,9 +320,14 @@ def real_rag_answer(
     if not answer:
         raise RuntimeError("模型返回内容为空")
 
+    structured_answer = build_structured_rag_output(device_model, fault_text, evidence_pack)
     return {
-        "answer": answer,
-        "recommendedActions": recommended_actions,
+        "answer": format_structured_answer(structured_answer),
+        "rawAnswer": answer,
+        "structuredAnswer": structured_answer,
+        "recommendedActions": structured_answer.get("inspectionSteps", []) + structured_answer.get("repairSteps", []),
+        "evidencePack": evidence_pack,
+        "riskReviewRequired": structured_answer.get("riskReviewRequired", False),
         "citations": citations,
         "provider": provider,
         "requestedProvider": provider,

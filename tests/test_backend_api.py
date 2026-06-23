@@ -214,7 +214,11 @@ def test_rag_answer_returns_mock_response_with_citations(tmp_path, monkeypatch) 
     assert payload["data"]["fallback"] is True
     assert payload["data"]["citations"]
     assert payload["data"]["citations"][0]["scoreBreakdown"]["score"] > 0
-    assert "基于已检索到" in payload["data"]["answer"]
+    assert "【初步判断】" in payload["data"]["answer"]
+    assert "【引用证据】" in payload["data"]["answer"]
+    assert payload["data"]["evidencePack"]["evidenceCount"] == len(payload["data"]["citations"])
+    assert payload["data"]["structuredAnswer"]["citations"]
+    assert payload["data"]["structuredAnswer"]["uncertainInformation"]
 
 
 def test_diagnosis_reuses_search_and_rag_citations(tmp_path, monkeypatch) -> None:
@@ -317,7 +321,8 @@ def test_rag_answer_uses_openai_provider_when_configured(tmp_path, monkeypatch) 
     payload = response.json()["data"]
     assert payload["provider"] == "openai"
     assert payload["fallback"] is False
-    assert payload["answer"] == "这是 OpenAI provider 返回的检修建议。"
+    assert payload["rawAnswer"] == "这是 OpenAI provider 返回的检修建议。"
+    assert "【初步判断】" in payload["answer"]
 
 
 def test_rag_answer_uses_openai_compatible_chat_completions(tmp_path, monkeypatch) -> None:
@@ -354,7 +359,8 @@ def test_rag_answer_uses_openai_compatible_chat_completions(tmp_path, monkeypatc
     payload = response.json()["data"]
     assert payload["provider"] == "openai"
     assert payload["fallback"] is False
-    assert payload["answer"] == "这是兼容 OpenAI Chat Completions 的模型返回。"
+    assert payload["rawAnswer"] == "这是兼容 OpenAI Chat Completions 的模型返回。"
+    assert "【建议检查步骤】" in payload["answer"]
     assert payload["model"] == "compatible-model"
     assert payload["apiStyle"] == "chat_completions"
     assert payload["contextCount"] > 0
@@ -511,7 +517,8 @@ def test_rag_answer_uses_anthropic_provider_when_configured(tmp_path, monkeypatc
     payload = response.json()["data"]
     assert payload["provider"] == "anthropic"
     assert payload["fallback"] is False
-    assert payload["answer"] == "这是 Anthropic provider 返回的检修建议。"
+    assert payload["rawAnswer"] == "这是 Anthropic provider 返回的检修建议。"
+    assert "【安全提醒】" in payload["answer"]
 
 
 def test_rag_answer_uses_environment_provider_when_request_omits_provider(tmp_path, monkeypatch) -> None:
@@ -533,7 +540,8 @@ def test_rag_answer_uses_environment_provider_when_request_omits_provider(tmp_pa
     payload = response.json()["data"]
     assert payload["provider"] == "openai"
     assert payload["fallback"] is False
-    assert payload["answer"] == "环境变量 provider 生效。"
+    assert payload["rawAnswer"] == "环境变量 provider 生效。"
+    assert "【验收标准】" in payload["answer"]
 
 
 def test_rag_answer_rejects_empty_query(tmp_path, monkeypatch) -> None:
