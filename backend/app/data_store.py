@@ -32,10 +32,28 @@ def chroma_dir() -> Path:
     return Path(configured) if configured else knowledge_dir() / "chroma"
 
 
+def _backup_path(path: Path) -> Path:
+    return path.with_name(f"{path.name}.bak")
+
+
+def _load_primary_json_value(path: Path) -> Any:
+    with path.open("r", encoding="utf-8") as file:
+        return json.load(file)
+
+
+def _load_json_value(path: Path) -> Any:
+    try:
+        return _load_primary_json_value(path)
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        backup = _backup_path(path)
+        if backup.exists():
+            return _load_primary_json_value(backup)
+        raise
+
+
 def _read_json(name: str) -> list[dict[str, Any]]:
     path = examples_dir() / name
-    with path.open("r", encoding="utf-8") as file:
-        data = json.load(file)
+    data = _load_json_value(path)
     if not isinstance(data, list):
         raise ValueError(f"{path} must contain a JSON array")
     return data
@@ -50,8 +68,7 @@ def _read_knowledge_json(name: str) -> list[dict[str, Any]]:
     path = knowledge_dir() / name
     if not path.exists():
         return []
-    with path.open("r", encoding="utf-8") as file:
-        data = json.load(file)
+    data = _load_json_value(path)
     if not isinstance(data, list):
         raise ValueError(f"{path} must contain a JSON array")
     return data
@@ -61,8 +78,7 @@ def _read_knowledge_object(name: str) -> dict[str, Any]:
     path = knowledge_dir() / name
     if not path.exists():
         return {}
-    with path.open("r", encoding="utf-8") as file:
-        data = json.load(file)
+    data = _load_json_value(path)
     if not isinstance(data, dict):
         raise ValueError(f"{path} must contain a JSON object")
     return data
@@ -86,6 +102,16 @@ def _atomic_write_json(path: Path, data: list[dict[str, Any]]) -> None:
 
 def _atomic_write_json_value(path: Path, data: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        try:
+            _load_primary_json_value(path)
+        except (json.JSONDecodeError, UnicodeDecodeError, ValueError):
+            pass
+        else:
+            backup_temp_path = path.with_name(f"{path.name}.{uuid4().hex}.bak.tmp")
+            backup_temp_path.write_bytes(path.read_bytes())
+            os.replace(backup_temp_path, _backup_path(path))
+
     temp_path = path.with_name(f"{path.name}.{uuid4().hex}.tmp")
     temp_path.write_text(
         json.dumps(data, ensure_ascii=False, indent=2) + "\n",

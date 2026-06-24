@@ -23,6 +23,7 @@ __pycache__/
 .dev-runtime/
 data/uploads/
 data/knowledge/
+data/examples/*.json.bak
 data/evaluation/reports/rag-run-*
 data/evaluation/reports/tmp-*
 

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Any
 
 from backend.app import data_store, vector_store
@@ -59,3 +61,37 @@ def test_default_embedding_model_is_openai_specific(monkeypatch) -> None:
     monkeypatch.delenv("OPENAI_EMBEDDING_MODEL", raising=False)
 
     assert vector_store.embedding_model() == "text-embedding-3-small"
+
+
+def test_env_example_matches_runtime_configuration_contract() -> None:
+    env_example = Path(".env.example").read_text(encoding="utf-8")
+
+    assert "APP_EXAMPLES_DIR=" in env_example
+    assert "APP_UPLOAD_DIR=" in env_example
+    assert "APP_KNOWLEDGE_DIR=" in env_example
+    assert "DATABASE_URL=" not in env_example
+    assert "\nUPLOAD_DIR=" not in env_example
+    assert "RAG_EMBEDDING_PROVIDER=openai" in env_example
+    assert "text-embedding-3-small is the OpenAI default only" in env_example
+    assert "OpenAI-compatible providers must set their own embedding model" in env_example
+
+
+def test_json_store_recovers_from_last_backup(monkeypatch, tmp_path) -> None:
+    knowledge = tmp_path / "knowledge"
+    monkeypatch.setenv("APP_KNOWLEDGE_DIR", str(knowledge))
+
+    data_store.save_documents([{"id": "first-good"}])
+    data_store.save_documents([{"id": "second-good"}])
+
+    documents_path = knowledge / "documents.json"
+    backup_path = knowledge / "documents.json.bak"
+    assert backup_path.exists()
+    assert json.loads(backup_path.read_text(encoding="utf-8")) == [{"id": "first-good"}]
+
+    documents_path.write_text("{not-valid-json", encoding="utf-8")
+
+    assert data_store.load_documents() == [{"id": "first-good"}]
+
+    data_store.save_documents([{"id": "third-good"}])
+    assert data_store.load_documents() == [{"id": "third-good"}]
+    assert json.loads(backup_path.read_text(encoding="utf-8")) == [{"id": "first-good"}]
