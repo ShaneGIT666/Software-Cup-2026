@@ -468,12 +468,15 @@ export interface KnowledgeReviewEvent {
   objectId: string;
   documentId?: string;
   chunkId?: string;
+  revisionId?: string;
   action: "approve" | "reject" | string;
   beforeStatus: string;
   afterStatus: string;
   reason: string;
   reviewer: string;
   reviewTime: string;
+  before?: Record<string, unknown>;
+  after?: Record<string, unknown>;
 }
 
 export interface KnowledgeChunkReviewPayload {

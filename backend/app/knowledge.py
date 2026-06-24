@@ -573,6 +573,8 @@ def transition_knowledge_chunk_status(
         "reason": reason,
         "reviewer": reviewer,
         "reviewTime": review_time,
+        "before": previous,
+        "after": updated,
     }
     if replacement_chunk_id:
         event["replacementChunkId"] = replacement_chunk_id
@@ -688,6 +690,27 @@ def revise_knowledge_chunk(document_id: str, request: KnowledgeChunkRevisionRequ
     revisions = load_knowledge_revisions()
     revisions.append(revision)
     save_knowledge_revisions(revisions)
+
+    events = load_review_events()
+    events.append(
+        {
+            "id": f"review-{uuid4().hex[:8]}",
+            "objectType": "knowledge_revision",
+            "objectId": revision["id"],
+            "documentId": document_id,
+            "chunkId": request.chunkId,
+            "revisionId": revision["id"],
+            "action": "revise",
+            "beforeStatus": previous.get("review_status", "pending_review"),
+            "afterStatus": updated.get("review_status", "pending_review"),
+            "reason": revision["reason"],
+            "reviewer": revision["reviewer"],
+            "reviewTime": revision["createdAt"],
+            "before": revision["before"],
+            "after": revision["after"],
+        }
+    )
+    save_review_events(events)
 
     document["revisionCount"] = int(document.get("revisionCount") or 0) + 1
     document["latestRevisionAt"] = revision["createdAt"]

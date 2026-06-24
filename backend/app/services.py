@@ -199,6 +199,7 @@ def review_repair_case(case_id: str, request: CaseReviewRequest) -> dict[str, st
         raise HTTPException(status_code=400, detail="拒绝审核必须填写原因")
     for repair_case in cases:
         if repair_case["id"] == case_id:
+            before_snapshot = dict(repair_case)
             previous_status = repair_case.get("status", "pending_review")
             reviewed_at = utc_now()
             reviewer = request.reviewer.strip() or "operator"
@@ -222,6 +223,8 @@ def review_repair_case(case_id: str, request: CaseReviewRequest) -> dict[str, st
                     "reason": reason,
                     "reviewer": reviewer,
                     "reviewTime": reviewed_at,
+                    "before": before_snapshot,
+                    "after": dict(repair_case),
                 }
             )
             save_review_events(events)

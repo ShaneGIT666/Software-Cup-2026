@@ -830,6 +830,11 @@ def test_case_submit_review_and_search_round_trip(tmp_path, monkeypatch) -> None
     saved_case = next(item for item in saved_cases if item["id"] == created["id"])
     assert saved_case["status"] == "approved"
     assert saved_case["reviewedAt"]
+    events = data_store.load_review_events()
+    assert events[-1]["objectType"] == "case"
+    assert events[-1]["before"]["status"] == "pending_review"
+    assert events[-1]["after"]["status"] == "approved"
+    assert events[-1]["after"]["tags"] == ["偶发熄火", "怠速控制", "发动机"]
 
 
 def test_invalid_review_action_is_rejected_without_status_change(tmp_path, monkeypatch) -> None:
@@ -1019,6 +1024,8 @@ def test_knowledge_chunk_review_approve_records_event_and_syncs_chroma(tmp_path,
     events = data_store.load_review_events()
     assert events[-1]["objectType"] == "knowledge_chunk"
     assert events[-1]["afterStatus"] == "approved"
+    assert events[-1]["before"]["review_status"] == "pending_review"
+    assert events[-1]["after"]["review_status"] == "approved"
 
 
 def test_knowledge_chunk_status_deprecate_removes_from_retrieval(tmp_path, monkeypatch) -> None:
@@ -1527,6 +1534,12 @@ def test_knowledge_chunk_revision_updates_chunk_and_revisions(tmp_path, monkeypa
     revisions = revisions_response.json()["data"]
     assert revisions["total"] == 1
     assert revisions["items"][0]["reviewer"] == "technician-a"
+    events = data_store.load_review_events()
+    assert events[-1]["objectType"] == "knowledge_revision"
+    assert events[-1]["revisionId"] == payload["revision"]["id"]
+    assert events[-1]["before"]["content"] == "old spark plug note"
+    assert "火花塞" in events[-1]["after"]["content"]
+    assert events[-1]["reviewer"] == "technician-a"
 
     chunks_response = client.get(f"/api/knowledge/documents/{document['id']}/chunks")
     chunks = chunks_response.json()["data"]["items"]
