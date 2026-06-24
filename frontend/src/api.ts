@@ -86,6 +86,75 @@ export interface ProviderChannelStatus {
   apiStyle?: string;
 }
 
+export interface StatusCountMap {
+  [status: string]: number;
+}
+
+export interface SystemChromaStatus {
+  enabled: boolean;
+  available: boolean;
+  healthy: boolean;
+  status: string;
+  path: string;
+  collectionCount?: number | null;
+  reason?: string;
+}
+
+export interface SystemStatusPayload {
+  generatedAt: string;
+  knowledge: {
+    deviceCount: number;
+    manualCount: number;
+    workflowCount: number;
+    caseCount: number;
+    documentCount: number;
+    chunkCount: number;
+    approvedChunkCount: number;
+    retrievableSourceCount: number;
+    pendingReviewCount: number;
+    chunkStatusCounts: StatusCountMap;
+    caseStatusCounts: StatusCountMap;
+    documentStatusCounts: StatusCountMap;
+    revisionCount: number;
+  };
+  indexing: {
+    latestIndexTime?: string | null;
+    latestKnownIndexActivityAt?: string | null;
+    unavailableReason?: string;
+    chroma: SystemChromaStatus;
+  };
+  parsing: {
+    mineru: {
+      enabled: boolean;
+      available: boolean;
+      status: string;
+      timeoutSeconds: number;
+      fallbackEnabled: boolean;
+    };
+    latestTask?: {
+      documentId: string;
+      fileName: string;
+      status: string;
+      parser: string;
+      parserFallback: boolean;
+      parserFallbackReason?: string;
+      uploadedAt?: string;
+      analyzedAt?: string;
+      chunkCount: number;
+      pendingReviewCount: number;
+    } | null;
+    parserFallbackCount: number;
+  };
+  fallback: {
+    enabled: boolean;
+    parserFallbackCount: number;
+    chromaFallbackEnabled: boolean;
+    llmFallbackEnabled: boolean;
+    ocrFallbackEnabled: boolean;
+  };
+  warnings: string[];
+}
+
 export interface ProviderStatusPayload {
   remoteApiMode: "auto" | "off" | string;
   offlineFallback: boolean;
@@ -93,6 +162,12 @@ export interface ProviderStatusPayload {
   multimodal: ProviderChannelStatus;
   embedding?: ProviderChannelStatus;
   ocr?: ProviderChannelStatus;
+  reranker?: ProviderChannelStatus & {
+    supported?: boolean;
+    enabled?: boolean;
+    fallbackProvider?: string;
+  };
+  system?: SystemStatusPayload;
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {

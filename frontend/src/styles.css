@@ -144,6 +144,68 @@ h2 {
   font-weight: 650;
 }
 
+.status-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  margin-top: 8px;
+  background: var(--line);
+}
+
+.status-metrics div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 9px 10px;
+  background: var(--surface-soft);
+}
+
+.status-metrics b {
+  color: var(--text-strong);
+  font-size: 18px;
+  line-height: 1;
+  font-weight: 760;
+  font-variant-numeric: tabular-nums;
+}
+
+.status-metrics span {
+  color: var(--text-main);
+  font-size: 12px;
+}
+
+.status-metrics small {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-signals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.status-signals span {
+  max-width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px 8px;
+  overflow: hidden;
+  background: var(--surface-soft);
+  color: var(--text-main);
+  font-size: 11px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .status-panel.is-cloud {
   border-color: oklch(0.74 0.09 165);
 }

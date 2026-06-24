@@ -63,6 +63,7 @@ def record_fallback(kind: str, reason: str) -> None:
 
 def provider_status() -> dict[str, Any]:
     from .ocr_adapter import ocr_status
+    from .system_status import build_system_status
 
     llm_provider = configured_llm_provider(None)
     multimodal_provider = configured_multimodal_provider(None)
@@ -121,4 +122,5 @@ def provider_status() -> dict[str, Any]:
             "fallbackProvider": "none",
             "lastFallbackReason": LAST_FALLBACK["reranker"],
         },
+        "system": build_system_status(),
     }

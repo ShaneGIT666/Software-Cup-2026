@@ -79,6 +79,56 @@ const providerDetailLabel = computed(() => {
   return `RAG ${llm.effectiveProvider} · 多模态 ${multimodal.effectiveProvider} · OCR ${ocrProvider} · 向量 ${embeddingProvider}`;
 });
 
+const systemStatus = computed(() => providerStatus.value?.system ?? null);
+
+const systemMetricItems = computed(() => {
+  const system = systemStatus.value;
+  if (!system) {
+    return [];
+  }
+  return [
+    {
+      label: "知识片段",
+      value: system.knowledge.chunkCount,
+      detail: `${system.knowledge.approvedChunkCount} 已审核`
+    },
+    {
+      label: "待审核",
+      value: system.knowledge.pendingReviewCount,
+      detail: "资料/片段/案例"
+    },
+    {
+      label: "可检索源",
+      value: system.knowledge.retrievableSourceCount,
+      detail: "手册+案例+片段"
+    },
+    {
+      label: "修正记录",
+      value: system.knowledge.revisionCount,
+      detail: "人工修正"
+    }
+  ];
+});
+
+const systemSignalItems = computed(() => {
+  const system = systemStatus.value;
+  if (!system) {
+    return [];
+  }
+  const latestTask = system.parsing.latestTask;
+  const latestTaskLabel = latestTask
+    ? `${latestTask.fileName || latestTask.documentId} · ${latestTask.status || "unknown"}`
+    : "暂无解析任务";
+  const latestIndexLabel =
+    system.indexing.latestIndexTime ?? system.indexing.latestKnownIndexActivityAt ?? "未记录";
+  return [
+    `MinerU ${system.parsing.mineru.status}`,
+    `Chroma ${system.indexing.chroma.status}`,
+    `最近解析 ${latestTaskLabel}`,
+    `最近索引 ${latestIndexLabel}`
+  ];
+});
+
 const providerToneClass = computed(() => ({
   "is-offline": providerStatus.value?.offlineFallback,
   "is-cloud": providerStatus.value && providerStatus.value.llm.effectiveProvider !== "mock",
@@ -216,6 +266,16 @@ runSearch();
       <aside class="status-panel" :class="providerToneClass">
         <span>{{ providerModeLabel }}</span>
         <strong>{{ providerDetailLabel }}</strong>
+        <div v-if="systemMetricItems.length" class="status-metrics" aria-label="系统状态摘要">
+          <div v-for="item in systemMetricItems" :key="item.label">
+            <b>{{ item.value }}</b>
+            <span>{{ item.label }}</span>
+            <small>{{ item.detail }}</small>
+          </div>
+        </div>
+        <div v-if="systemSignalItems.length" class="status-signals">
+          <span v-for="item in systemSignalItems" :key="item">{{ item }}</span>
+        </div>
       </aside>
     </header>
 

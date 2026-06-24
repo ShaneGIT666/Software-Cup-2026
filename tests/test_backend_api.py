@@ -91,6 +91,77 @@ def test_provider_status_reports_reranker_provider(tmp_path, monkeypatch) -> Non
     assert reranker["effectiveProvider"] == "heuristic"
 
 
+def test_provider_status_includes_system_observability(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("MINERU_ENABLED", "false")
+    client = make_client(tmp_path, monkeypatch)
+    data_store.save_documents(
+        [
+            {
+                "id": "kdoc-status-001",
+                "fileName": "status-manual.pdf",
+                "fileType": "application/pdf",
+                "suffix": "pdf",
+                "sourceName": "状态测试手册",
+                "status": "pending_review",
+                "chunkCount": 2,
+                "pendingReviewCount": 1,
+                "parser": "mineru",
+                "parserFallback": True,
+                "parserFallbackReason": "test fallback",
+                "uploadedAt": "2026-06-20T01:00:00Z",
+                "url": "/knowledge/files/kdoc-status-001.pdf",
+            }
+        ]
+    )
+    data_store.save_document_chunks(
+        [
+            {
+                "id": "kdoc-status-001-chunk-001",
+                "documentId": "kdoc-status-001",
+                "content": "approved content",
+                "snippet": "approved content",
+                "review_status": "approved",
+                "updated_at": "2026-06-20T02:00:00Z",
+            },
+            {
+                "id": "kdoc-status-001-chunk-002",
+                "documentId": "kdoc-status-001",
+                "content": "pending content",
+                "snippet": "pending content",
+                "review_status": "pending_review",
+                "updated_at": "2026-06-20T03:00:00Z",
+            },
+        ]
+    )
+    data_store.save_knowledge_revisions(
+        [
+            {
+                "id": "krev-status-001",
+                "documentId": "kdoc-status-001",
+                "chunkId": "kdoc-status-001-chunk-001",
+                "createdAt": "2026-06-20T04:00:00Z",
+            }
+        ]
+    )
+
+    response = client.get("/api/providers/status")
+
+    assert response.status_code == 200
+    system = response.json()["data"]["system"]
+    assert system["knowledge"]["documentCount"] == 1
+    assert system["knowledge"]["chunkCount"] == 2
+    assert system["knowledge"]["approvedChunkCount"] == 1
+    assert system["knowledge"]["chunkStatusCounts"]["pending_review"] == 1
+    assert system["knowledge"]["revisionCount"] == 1
+    assert system["parsing"]["mineru"]["enabled"] is False
+    assert system["parsing"]["latestTask"]["documentId"] == "kdoc-status-001"
+    assert system["parsing"]["parserFallbackCount"] == 1
+    assert "status" in system["indexing"]["chroma"]
+    assert system["indexing"]["latestIndexTime"] is None
+    assert system["indexing"]["latestKnownIndexActivityAt"] == "2026-06-20T02:00:00Z"
+    assert system["indexing"]["unavailableReason"]
+
+
 def test_provider_status_keeps_local_multimodal_available_when_offline(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("REMOTE_API_MODE", "off")
     monkeypatch.setenv("MULTIMODAL_PROVIDER", "local")
