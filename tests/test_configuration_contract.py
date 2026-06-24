@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 from pathlib import Path
 from typing import Any
@@ -95,3 +96,46 @@ def test_json_store_recovers_from_last_backup(monkeypatch, tmp_path) -> None:
     data_store.save_documents([{"id": "third-good"}])
     assert data_store.load_documents() == [{"id": "third-good"}]
     assert json.loads(backup_path.read_text(encoding="utf-8")) == [{"id": "first-good"}]
+
+
+def load_json_store_maintenance_module() -> Any:
+    module_path = Path("scripts/json_store_maintenance.py")
+    spec = importlib.util.spec_from_file_location("json_store_maintenance", module_path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_json_store_maintenance_reports_recoverable_and_corrupted_files(tmp_path) -> None:
+    maintenance = load_json_store_maintenance_module()
+    examples = tmp_path / "data" / "examples"
+    examples.mkdir(parents=True)
+    (examples / "good.json").write_text('[{"id": "ok"}]\n', encoding="utf-8")
+    (examples / "recoverable.json").write_text("{broken", encoding="utf-8")
+    (examples / "recoverable.json.bak").write_text('[{"id": "backup"}]\n', encoding="utf-8")
+    (examples / "corrupted.json").write_text("{broken", encoding="utf-8")
+    (examples / "corrupted.json.bak").write_text("{also-broken", encoding="utf-8")
+
+    report = maintenance.scan_json_store(tmp_path, repair=False)
+
+    statuses = {item["path"].replace("\\", "/"): item["status"] for item in report["items"]}
+    assert report["success"] is False
+    assert statuses["data/examples/good.json"] == "ok"
+    assert "recoverable" in statuses.values()
+    assert "corrupted" in statuses.values()
+
+
+def test_json_store_maintenance_repairs_from_valid_backup(tmp_path) -> None:
+    maintenance = load_json_store_maintenance_module()
+    examples = tmp_path / "data" / "examples"
+    examples.mkdir(parents=True)
+    target = examples / "recoverable.json"
+    target.write_text("{broken", encoding="utf-8")
+    (examples / "recoverable.json.bak").write_text('[{"id": "backup"}]\n', encoding="utf-8")
+
+    report = maintenance.scan_json_store(tmp_path, repair=True)
+
+    assert report["success"] is True
+    assert report["repairedCount"] == 1
+    assert json.loads(target.read_text(encoding="utf-8")) == [{"id": "backup"}]
