@@ -11,12 +11,12 @@
 ```text
 branch: main
 remote: origin/main
-ahead: 13 commits
-head: ef66ad2 feat: add safety rule engine
-working tree: clean before this audit document
+ahead: 23 commits
+head: c4f3320 test: add json store maintenance check
+working tree: clean before this audit refresh
 ```
 
-最近 10 轮关键提交：
+最近 20 轮关键提交：
 
 | 轮次 | Commit | 内容 |
 | --- | --- | --- |
@@ -30,18 +30,24 @@ working tree: clean before this audit document
 | 8 | `918208e` | 前端 evidence cards |
 | 9 | `32ee9e2` | Corrective RAG 证据质量控制 |
 | 10 | `ef66ad2` | 安全规则引擎 |
+| 11 | `e49b30a` | 全局收口审计 |
+| 12 | `e129098` | 系统状态观测增强 |
+| 13 | `5fc6d96` | 统一审核工作台最小闭环 |
+| 14 | `c06bf79` | 知识片段完整状态机 |
+| 15 | `cfd7d7c` | JSON 存储备份恢复与配置一致性测试 |
+| 16 | `984754a` | 准生产 readiness 检查脚本 |
+| 17 | `4459455` | 异步知识解析任务 |
+| 18 | `5818924` | 审核事件 before/after 增强 |
+| 19 | `028e7e8` | 审核事件只读查询 API |
+| 20 | `c4f3320` | JSON 存储巡检/修复脚本 |
 
-第十轮提交前已验证：
+第二十轮提交前已验证：
 
 ```text
-backend full tests: 124 passed in 21.89s
-frontend build: passed, only existing Vite chunk size warning
-rag baseline keyword:
-  Hit@1/3/5 = 0.9 / 0.9 / 0.9
-  Recall@5 = 0.7333
-  MRR = 0.9
-  forbidden violations = 0
-  approved-only violations = 0
+backend full tests: 139 passed in 22.94s
+frontend build: passed, only existing VueUse pure-annotation and Vite chunk-size warnings
+production readiness check: passed
+json store maintenance check: passed, 4 JSON files healthy
 git diff --check: passed
 ```
 
@@ -53,8 +59,8 @@ git diff --check: passed
 | PC Web 可视化界面 | 已有 Vue Web 控制台，覆盖检索、RAG、资料、流程、图谱、案例、审核、证据卡、安全提示 | `frontend/src/*`、FastAPI 静态托管 | 已满足原型展示；仍需最终视觉和演示路径 QA |
 | 多模态知识检索 | 支持文本、设备型号、故障现象、图片/PDF 多模态分析、OCR provider、MinerU 文档解析、Chroma 可选向量召回 | `knowledge.py`、`parser_router.py`、`mineru_adapter.py`、`ocr_adapter.py`、`multimodal_adapter.py`、`retrieval/` | 准生产原型级。真实 OCR/视觉模型和跨模态语义质量仍是增强项，不能按生产稳定能力过度承诺 |
 | 标准化作业指引 | 支持 workflow 查询、RAG 结构化输出、evidence pack、Corrective RAG、安全规则复核提示 | `/api/workflows/{id}`、`evidence_pack.py`、`corrective_rag.py`、`safety_rules.py` | 已从普通回答升级为“检索证据 + 步骤 + 风险复核”的作业辅助链路 |
-| 知识沉淀与更新 | 案例 pending_review/approved/rejected 闭环；资料入库默认 pending_review；知识片段可人工修正并生成 revision；approved 才进检索/Chroma | `services.py`、`knowledge.py`、`vector_store.py` | 核心隔离规则成立；统一资料片段 approve/reject 工作台仍未补齐 |
-| 生产级部署约束 | 有 Windows 本地开发、Docker/LoongArch/Kylin 文档和最小验证记录 | `docs/deployment/*`、`Dockerfile`、脚本 | 基础可部署性已验证；增强依赖 MinerU/OCR/Chroma 在 LoongArch/Kylin 上仍需单独验证 |
+| 知识沉淀与更新 | 案例、资料片段、人工修正均有 pending_review/approved/rejected 或 revision 记录；知识片段支持 draft/pending_review/approved/rejected/deprecated/replaced；approved 才进检索/Chroma | `services.py`、`knowledge.py`、`review_workbench.py`、`vector_store.py` | 核心隔离规则成立；审计事件已具备 before/after 追踪和只读查询 API |
+| 生产级部署约束 | 有 Windows 本地开发、Docker/LoongArch/Kylin 文档、准生产 readiness 脚本和 JSON 存储维护脚本 | `docs/deployment/*`、`Dockerfile`、`scripts/*readiness*`、`scripts/json_store_maintenance.py` | 基础可部署性和离线链路已验证；增强依赖 MinerU/OCR/Chroma 在 LoongArch/Kylin 上仍需单独验证 |
 
 ## 3. 当前主链路闭环
 
@@ -76,7 +82,7 @@ POST /api/knowledge/documents
 
 1. 自动解析结果不会直接进入正式 RAG 检索。
 2. `pending_review` 隔离在检索和 Chroma 同步层均有代码约束。
-3. 当前资料片段支持查看、修正和 revision；缺少统一的资料片段 approve/reject API 和审核日志。
+3. 当前资料片段支持查看、修正、approve/reject、完整状态机、revision 和审核事件。
 
 ### 3.2 检索与证据
 
@@ -141,7 +147,7 @@ POST /api/cases
 
 审计结论：
 
-案例级审核闭环已成立。审核字段仍偏轻量，缺少统一 reviewer/action/review_time 审核事件表，不适合直接宣称生产审计追踪完备。
+案例级审核闭环已成立。审核事件会记录 reviewer、action、reviewTime、reason、before/after；但它仍是轻量 JSON 审计流水，不等同于企业级不可篡改审计系统。
 
 ## 4. 仍需谨慎表述的能力边界
 
@@ -149,38 +155,38 @@ POST /api/cases
 2. OCR provider 已接入，但 RapidOCR/Tesseract/MinerU 等增强依赖需要在目标国产化环境逐项复验。
 3. Chroma 与真实 embedding 已作为可选增强接入；hash embedding 是 fallback，不代表生产语义 embedding 质量。
 4. 轻量知识图谱是关系展示和辅助上下文，不是完整图数据库或 GraphRAG 平台。
-5. 当前资料片段没有统一 approve/reject 工作台，只有 pending_review 可见、人工修正 revision 和 approved-only 检索隔离。
-6. 当前系统状态页以 provider 状态为主，知识库统计、最近解析任务、最近索引时间等运维信息仍需补齐。
-7. JSON 文件持久化适合比赛原型和低并发演示；生产级场景建议迁移 SQLite/PostgreSQL 或加入文件锁与备份恢复。
+5. 当前统一审核工作台覆盖案例和知识片段，OCR/多模态结果通过知识片段形态进入审核；更细粒度的“原始 OCR 段落级审核”仍可增强。
+6. 当前系统状态页已有 provider、知识库统计、解析任务、Chroma、MinerU 和 fallback 观测；生产环境还应补充权限、告警和历史趋势。
+7. JSON 文件持久化已增加 `.bak` 备份、损坏回退和巡检/修复脚本；生产级高并发仍建议迁移 SQLite/PostgreSQL 或增加跨进程锁。
 
 ## 5. 剩余缺口优先级
 
 ### P0: 赛题闭环补齐
 
-1. 统一审核工作台：把资料解析结果、OCR 结果、多模态分析结果、知识片段、维修案例、人工修正放入统一审核列表。
-2. 系统状态页增强：展示 LLM、Embedding、OCR、MinerU、Chroma、知识片段数量、状态计数、最近索引时间、最近解析任务和 fallback。
-3. 资料片段状态机补全：`draft / pending_review / approved / rejected / deprecated / replaced` 需要统一 API 和前端操作。
+1. 当前 P0 主闭环已补齐：上传解析、pending_review、审核、approved-only 检索、结构化 RAG、证据引用、案例回流、状态页和 readiness 检查均可运行。
+2. 演示前仍需逐项复验真实 provider：MinerU、OCR、多模态模型、Chroma、云端 LLM 和 embedding。
+3. 若时间允许，可把审核事件流水加入前端可视化页；目前已有只读 API，未做专门 UI。
 
 ### P1: 准生产韧性
 
-1. 解析任务异步化：大 PDF、MinerU 和多模态分析不应长期占用同步请求。
-2. 审核日志事件化：记录 reviewer、review_time、action、reason、before/after revision。
-3. 存储层加固：从 JSON 文件迁移到 SQLite/PostgreSQL，或至少增加文件锁、备份和恢复脚本。
-4. 配置一致性验证：把 `.env.example`、`provider_policy`、实际读取字段做成持续测试。
+1. 目标国产化环境复验：LoongArch/Kylin 上逐项验证 Python、Node、OCR、MinerU、Chroma、前后端启动脚本。
+2. 存储层进一步加固：如需更接近生产，迁移 SQLite/PostgreSQL，并增加用户权限和审计防篡改策略。
+3. 异步任务增强：当前解析任务有 BackgroundTasks 和状态查询，后续可升级为持久队列、重试、取消和进度百分比。
+4. 配置一致性验证：已覆盖关键 APP_* 和 embedding provider 字段，后续可扩展到部署脚本和 Docker compose。
 
 ### P2: 效果与答辩材料
 
-1. 将 RAG 评测集从 12 条扩充到 80-150 条，并按设备型号、故障码、安全规则、证据不足、pending_review 隔离分类统计。
+1. 将 RAG 评测集从当前模板扩充到 80-150 条，并按设备型号、故障码、安全规则、证据不足、pending_review 隔离分类统计。
 2. 对 RRF、reranker、Corrective RAG、安全规则分别保存前后指标。
 3. 完成最终演示脚本、PPT、视频脚本、部署复验记录。
 
 ## 6. 建议下一轮开发顺序
 
-1. 第十二轮：完善系统状态页和 `/api/providers/status` 附带的知识库统计字段。
-2. 第十三轮：统一审核工作台最小闭环，先支持资料片段 approve/reject/reason/reviewer/review_time。
-3. 第十四轮：资料片段完整状态机和 revision 审核事件。
-4. 第十五轮：存储层加固和配置一致性测试。
-5. 第十六轮：LoongArch/Kylin 上的增强依赖复验记录。
+1. LoongArch/Kylin 目标环境复验记录：把真实安装、启动、readiness、MinerU/OCR/Chroma 状态整理成可提交文档。
+2. 扩充 RAG 评测集：从模板样例扩展到 30-50 条开发集，再扩展到 80-150 条答辩集。
+3. 前端审计流水页：基于 `/api/review/events` 增加只读审核历史视图。
+4. 异步任务增强：增加重试、失败原因展示、取消和进度字段。
+5. 部署交付材料：演示脚本、PPT、视频脚本和最终复验记录。
 
 ## 7. 当前可对外讨论口径
 
@@ -189,7 +195,7 @@ POST /api/cases
 1. 项目已经具备上传、解析、待审核、检索、证据引用、RAG 建议、作业流程、案例回流和安全复核的闭环。
 2. 系统支持本地兜底和 OpenAI-compatible 云端大模型服务，具备 PC Web 可视化界面。
 3. 检索已从单一关键词升级为关键词、向量、metadata、RRF、reranker fallback 和 evidence pack 的轻量 pipeline。
-4. 自动解析和模型输出默认不直接污染正式知识库，必须通过审核或人工修正后才能进入正式检索。
+4. 自动解析和模型输出默认不直接污染正式知识库，必须通过审核或人工修正后才能进入正式检索；审核事件可追溯 before/after。
 5. 当前定位是准生产级比赛原型，不是已经完成所有生产审计、并发、权限和工业安全认证的商用系统。
 
 不要说：
@@ -197,4 +203,4 @@ POST /api/cases
 1. 真实 OCR、真实视觉诊断、MinerU、Chroma、云端模型在所有国产化环境都已稳定可用。
 2. 轻量知识图谱等同于完整图数据库或成熟 GraphRAG。
 3. 12 条评测样例足以证明最终检索效果。
-4. 当前资料片段已经拥有完整统一审核工作台。
+4. 当前系统已经达到商用级权限、并发、审计防篡改和工业安全认证要求。
