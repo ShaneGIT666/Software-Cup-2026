@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { Bot, Quote } from "@lucide/vue";
-import type { RagAnswerPayload } from "../api";
+import { computed } from "vue";
+import { Bot, CheckCircle2, ClipboardList, FileText, Quote, ShieldAlert, TriangleAlert } from "@lucide/vue";
+import type { EvidenceItem, EvidenceTrace, RagAnswerPayload } from "../api";
 
-defineProps<{
+const props = defineProps<{
   ragAnswer: RagAnswerPayload | null;
   loading: boolean;
 }>();
@@ -19,6 +20,81 @@ function sourceLabel(sourceType: string) {
   };
   return labels[sourceType] ?? sourceType;
 }
+
+const structuredAnswer = computed(() => props.ragAnswer?.structuredAnswer ?? null);
+
+const evidenceItems = computed<EvidenceItem[]>(() => {
+  if (props.ragAnswer?.evidencePack?.items?.length) {
+    return props.ragAnswer.evidencePack.items;
+  }
+
+  return (props.ragAnswer?.citations ?? []).map((citation, index) => ({
+    evidenceId: `E${index + 1}`,
+    resultId: citation.id,
+    title: citation.title,
+    sourceType: citation.sourceType,
+    sourceName: citation.sourceName,
+    sourceDocId: citation.sourceDocId ?? citation.documentId ?? citation.sourceId ?? citation.id,
+    documentId: citation.documentId ?? null,
+    chunkId: citation.chunkId ?? null,
+    version: citation.scoreBreakdown?.version ?? null,
+    page: citation.page ?? null,
+    section: citation.section ?? citation.chapter ?? null,
+    chapter: citation.chapter ?? null,
+    snippet: citation.snippet,
+    reason: citation.reason ?? "",
+    confidence: citation.confidence,
+    reviewStatus: citation.reviewStatus ?? "approved",
+    riskLevel: citation.riskLevel ?? citation.scoreBreakdown?.riskLevel ?? "unknown",
+    score: citation.scoreBreakdown?.score ?? null,
+    trace: {
+      evidenceId: `E${index + 1}`,
+      chunkId: citation.chunkId ?? null,
+      sourceDocId: citation.sourceDocId ?? citation.documentId ?? citation.sourceId ?? citation.id,
+      page: citation.page ?? null,
+      section: citation.section ?? citation.chapter ?? null
+    }
+  }));
+});
+
+const evidenceSummary = computed(() => {
+  const pack = props.ragAnswer?.evidencePack;
+  if (!pack) {
+    return `${evidenceItems.value.length} 条引用证据`;
+  }
+  const status = pack.approvedOnly ? "仅 approved" : "含待复核";
+  const risk = pack.riskReviewRequired ? "需人工复核" : "未标记高风险";
+  return `${pack.evidenceCount} 条证据 / ${status} / ${risk}`;
+});
+
+function traceText(trace: EvidenceTrace) {
+  const parts = [trace.evidenceId];
+  if (trace.sourceDocId) {
+    parts.push(`source_doc_id=${trace.sourceDocId}`);
+  }
+  if (trace.chunkId) {
+    parts.push(`chunk_id=${trace.chunkId}`);
+  }
+  if (trace.page !== undefined && trace.page !== null) {
+    parts.push(`page=${trace.page}`);
+  }
+  if (trace.section) {
+    parts.push(`section=${trace.section}`);
+  }
+  return parts.join(" · ");
+}
+
+function evidenceMeta(item: EvidenceItem) {
+  const meta = [
+    item.sourceDocId ? `source_doc_id ${item.sourceDocId}` : "",
+    item.chunkId ? `chunk ${item.chunkId}` : "",
+    item.version ? `v${item.version}` : "",
+    item.page ? `p.${item.page}` : "",
+    item.section ? item.section : "",
+    item.score !== undefined && item.score !== null ? `排序分 ${item.score}` : ""
+  ];
+  return meta.filter(Boolean).join(" / ");
+}
 </script>
 
 <template>
@@ -28,7 +104,7 @@ function sourceLabel(sourceType: string) {
       <span>RAG 辅助建议 / AI Copilot</span>
     </div>
     <p class="panel-note">
-      基于当前检索证据生成带引用的检修建议。网络或 Key 不可用时会使用本地兜底结果，保证演示不中断。
+      基于当前检索证据生成检修建议，保留 chunk、来源、页码和不确定信息，便于现场复核。
     </p>
 
     <div class="action-row">
@@ -48,32 +124,86 @@ function sourceLabel(sourceType: string) {
     <div v-if="loading" class="loading-hint processing-card">
       <span>正在组织检索上下文、引用来源和检修建议...</span>
     </div>
+
     <article v-else-if="ragAnswer" class="rag-answer">
-      <p>{{ ragAnswer.answer }}</p>
-      <div class="rag-actions">
-        <strong>建议动作</strong>
-        <ul>
-          <li v-for="action in ragAnswer.recommendedActions" :key="action">{{ action }}</li>
-        </ul>
+      <div v-if="ragAnswer.riskReviewRequired" class="risk-banner">
+        <ShieldAlert :size="17" />
+        <span>包含 high / critical 风险证据，执行前必须人工复核。</span>
       </div>
-      <div class="citation-list">
-        <strong>
-          <Quote :size="15" />
-          引用来源
-        </strong>
-        <div v-for="citation in ragAnswer.citations" :key="citation.id" class="citation-card">
-          <span class="source-pill">{{ sourceLabel(citation.sourceType) }}</span>
-          <strong>{{ citation.title }}</strong>
-          <small>
-            {{ citation.sourceName }}
-            {{ citation.scoreBreakdown ? ` / 排序分 ${citation.scoreBreakdown.score}` : "" }}
-            {{ citation.page ? ` / p.${citation.page}` : "" }}
-          </small>
-          <p>{{ citation.snippet }}</p>
+
+      <div v-if="structuredAnswer" class="structured-answer">
+        <section class="structured-section is-full">
+          <h3><ClipboardList :size="16" /> 初步判断</h3>
+          <p>{{ structuredAnswer.preliminaryJudgment }}</p>
+        </section>
+
+        <section class="structured-section">
+          <h3><FileText :size="16" /> 建议检查步骤</h3>
+          <ol>
+            <li v-for="step in structuredAnswer.inspectionSteps" :key="step">{{ step }}</li>
+          </ol>
+        </section>
+
+        <section class="structured-section">
+          <h3><CheckCircle2 :size="16" /> 建议维修步骤</h3>
+          <ol>
+            <li v-for="step in structuredAnswer.repairSteps" :key="step">{{ step }}</li>
+          </ol>
+        </section>
+
+        <section class="structured-section">
+          <h3><ShieldAlert :size="16" /> 安全提醒</h3>
+          <ul>
+            <li v-for="warning in structuredAnswer.safetyWarnings" :key="warning">{{ warning }}</li>
+          </ul>
+        </section>
+
+        <section class="structured-section">
+          <h3><CheckCircle2 :size="16" /> 验收标准</h3>
+          <ul>
+            <li v-for="criteria in structuredAnswer.acceptanceCriteria" :key="criteria">{{ criteria }}</li>
+          </ul>
+        </section>
+
+        <section class="structured-section is-full uncertainty-section">
+          <h3><TriangleAlert :size="16" /> 不确定信息</h3>
+          <ul>
+            <li v-for="item in structuredAnswer.uncertainInformation" :key="item">{{ item }}</li>
+          </ul>
+        </section>
+      </div>
+
+      <pre v-else class="rag-answer-text">{{ ragAnswer.answer }}</pre>
+
+      <div class="evidence-list">
+        <div class="evidence-list-header">
+          <strong>
+            <Quote :size="15" />
+            引用证据
+          </strong>
+          <span>{{ evidenceSummary }}</span>
         </div>
+        <article v-for="item in evidenceItems" :key="item.evidenceId" class="evidence-card">
+          <div class="evidence-card-header">
+            <span class="source-pill">{{ sourceLabel(item.sourceType) }}</span>
+            <strong>{{ item.evidenceId }} · {{ item.title }}</strong>
+            <el-tag size="small" :type="item.reviewStatus === 'approved' ? 'success' : 'warning'">
+              {{ item.reviewStatus }}
+            </el-tag>
+          </div>
+          <small>{{ item.sourceName }}{{ evidenceMeta(item) ? ` / ${evidenceMeta(item)}` : "" }}</small>
+          <p>{{ item.snippet }}</p>
+          <span class="trace-line">{{ traceText(item.trace) }}</span>
+        </article>
       </div>
+
+      <details v-if="ragAnswer.rawAnswer" class="raw-answer">
+        <summary>查看模型原文</summary>
+        <p>{{ ragAnswer.rawAnswer }}</p>
+      </details>
       <small v-if="ragAnswer.fallbackReason" class="fallback-note">{{ ragAnswer.fallbackReason }}</small>
     </article>
+
     <div v-else class="empty-hint">
       <span>先完成检索或资料入库，再生成带引用的辅助建议。</span>
     </div>

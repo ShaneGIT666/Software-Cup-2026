@@ -7,15 +7,22 @@ export interface ApiResponse<T> {
 export interface SearchResult {
   id: string;
   title: string;
+  sourceId?: string;
   sourceType: "manual" | "case" | "document";
   sourceName: string;
   confidence: number;
   snippet: string;
   workflowId?: string;
   chapter?: string;
+  section?: string | null;
   page?: number;
   documentId?: string;
   chunkId?: string;
+  reviewStatus?: string;
+  deviceType?: string;
+  deviceModel?: string;
+  component?: string;
+  faultType?: string;
   matchedTerms?: string[];
   reason?: string;
   scoreBreakdown?: SearchScoreBreakdown;
@@ -36,6 +43,8 @@ export interface SearchScoreBreakdown {
   fieldMatches: SearchFieldMatch[];
   vectorDistance?: number;
   embeddingProvider?: "hash" | "openai" | string;
+  version?: string | number | null;
+  riskLevel?: "low" | "medium" | "high" | "critical" | string;
 }
 
 export interface SearchPayload {
@@ -351,22 +360,82 @@ export function analyzeKnowledgeDocument(documentId: string, provider?: "mock" |
 export interface RagCitation {
   id: string;
   title: string;
+  sourceId?: string;
+  sourceDocId?: string;
   sourceType: "manual" | "case" | "document";
   sourceName: string;
   snippet: string;
   confidence: number;
   page?: number | null;
+  section?: string | null;
   chapter?: string | null;
   documentId?: string;
   chunkId?: string;
+  reviewStatus?: string;
+  riskLevel?: string | null;
   reason?: string;
   scoreBreakdown?: SearchScoreBreakdown;
+}
+
+export interface EvidenceTrace {
+  evidenceId: string;
+  chunkId?: string | null;
+  sourceDocId?: string | null;
+  page?: number | null;
+  section?: string | null;
+}
+
+export interface EvidenceItem {
+  evidenceId: string;
+  resultId: string;
+  title: string;
+  sourceType: "manual" | "case" | "document" | string;
+  sourceName: string;
+  sourceDocId?: string | null;
+  documentId?: string | null;
+  chunkId?: string | null;
+  version?: string | number | null;
+  page?: number | null;
+  section?: string | null;
+  chapter?: string | null;
+  snippet: string;
+  reason: string;
+  confidence: number;
+  reviewStatus: string;
+  riskLevel: string;
+  score?: number | null;
+  trace: EvidenceTrace;
+}
+
+export interface EvidencePack {
+  evidenceCount: number;
+  items: EvidenceItem[];
+  citationTrace: EvidenceTrace[];
+  sourceDocIds: string[];
+  approvedOnly: boolean;
+  riskReviewRequired: boolean;
+  uncertaintyReasons: string[];
+}
+
+export interface StructuredRagOutput {
+  preliminaryJudgment: string;
+  inspectionSteps: string[];
+  repairSteps: string[];
+  safetyWarnings: string[];
+  acceptanceCriteria: string[];
+  citations: EvidenceTrace[];
+  uncertainInformation: string[];
+  riskReviewRequired: boolean;
 }
 
 export interface RagAnswerPayload {
   queryId: string;
   summary: string;
   answer: string;
+  rawAnswer?: string;
+  structuredAnswer?: StructuredRagOutput;
+  evidencePack?: EvidencePack;
+  riskReviewRequired?: boolean;
   recommendedActions: string[];
   citations: RagCitation[];
   provider: string;
