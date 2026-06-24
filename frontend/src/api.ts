@@ -302,12 +302,20 @@ export function fetchReviewItems(status = "pending_review") {
 
 export interface KnowledgeChunkPreview {
   id: string;
+  chunk_id?: string;
   title: string;
   sourceName: string;
   page?: number | null;
+  section?: string | null;
   snippet: string;
   content?: string;
   keywords?: string[];
+  review_status?: "draft" | "pending_review" | "approved" | "rejected" | "deprecated" | "replaced" | string;
+  reviewer?: string;
+  review_time?: string;
+  review_action?: string;
+  review_reason?: string;
+  replaced_by?: string;
   manuallyCorrected?: boolean;
   updatedAt?: string;
   revisionTags?: string[];
@@ -487,6 +495,22 @@ export function reviewKnowledgeChunk(
   }
 ) {
   return request<KnowledgeChunkReviewPayload>(`/api/knowledge/documents/${documentId}/chunks/${chunkId}/review`, {
+    method: "PATCH",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function updateKnowledgeChunkStatus(
+  documentId: string,
+  chunkId: string,
+  payload: {
+    status: "draft" | "pending_review" | "approved" | "rejected" | "deprecated" | "replaced";
+    reason?: string;
+    reviewer?: string;
+    replacementChunkId?: string | null;
+  }
+) {
+  return request<KnowledgeChunkReviewPayload>(`/api/knowledge/documents/${documentId}/chunks/${chunkId}/status`, {
     method: "PATCH",
     body: JSON.stringify(payload)
   });

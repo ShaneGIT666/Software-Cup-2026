@@ -22,7 +22,7 @@ from .data_store import (
 )
 from .multimodal_adapter import analyze_multimodal_document
 from .parser_router import parse_document, save_parse_artifacts
-from .schemas import KnowledgeChunkReviewRequest, KnowledgeChunkRevisionRequest
+from .schemas import KnowledgeChunkReviewRequest, KnowledgeChunkRevisionRequest, KnowledgeChunkStatusRequest
 from .vector_store import delete_document as delete_vector_document
 from .vector_store import sync_chunks
 
@@ -372,27 +372,39 @@ def list_knowledge_revisions(document_id: str) -> dict[str, Any]:
 
 
 def update_document_review_summary(document: dict[str, Any], chunks: list[dict[str, Any]]) -> None:
-    pending_count = sum(1 for chunk in chunks if chunk.get("review_status", "approved") == "pending_review")
-    approved_count = sum(1 for chunk in chunks if chunk.get("review_status", "approved") == "approved")
-    rejected_count = sum(1 for chunk in chunks if chunk.get("review_status", "approved") == "rejected")
+    status_counts: dict[str, int] = {}
+    for chunk in chunks:
+        status = str(chunk.get("review_status", "approved"))
+        status_counts[status] = status_counts.get(status, 0) + 1
+    pending_count = status_counts.get("pending_review", 0)
+    approved_count = status_counts.get("approved", 0)
     document["chunkCount"] = len(chunks)
     document["pendingReviewCount"] = pending_count
     if pending_count:
         document["status"] = "pending_review"
     elif approved_count:
         document["status"] = "indexed"
-    elif rejected_count and rejected_count == len(chunks):
-        document["status"] = "rejected"
+    elif chunks:
+        for status in ("rejected", "deprecated", "replaced", "draft"):
+            if status_counts.get(status, 0) == len(chunks):
+                document["status"] = status
+                break
 
 
-def review_knowledge_chunk(
+def transition_knowledge_chunk_status(
     document_id: str,
     chunk_id: str,
-    request: KnowledgeChunkReviewRequest,
+    next_status: str,
+    reason: str,
+    reviewer: str,
+    action: str,
+    replacement_chunk_id: str | None = None,
 ) -> dict[str, Any]:
-    reason = request.reason.strip()
-    if request.action == "reject" and not reason:
-        raise HTTPException(status_code=400, detail="拒绝审核必须填写原因")
+    reason = reason.strip()
+    if next_status in {"rejected", "deprecated", "replaced"} and not reason:
+        raise HTTPException(status_code=400, detail="拒绝、废弃或替换知识片段必须填写原因")
+    if next_status == "replaced" and not (replacement_chunk_id or "").strip():
+        raise HTTPException(status_code=400, detail="替换知识片段必须填写 replacementChunkId")
 
     documents = load_documents()
     document = next((item for item in documents if item.get("id") == document_id), None)
@@ -411,19 +423,25 @@ def review_knowledge_chunk(
     if chunk_index is None:
         raise HTTPException(status_code=404, detail="knowledge chunk not found")
 
+    if next_status == "replaced" and not any(chunk.get("id") == replacement_chunk_id for chunk in chunks):
+        raise HTTPException(status_code=404, detail="replacement knowledge chunk not found")
+
     previous = dict(chunks[chunk_index])
     review_time = utc_now()
-    reviewer = request.reviewer.strip() or "operator"
-    next_status = "approved" if request.action == "approve" else "rejected"
+    reviewer = reviewer.strip() or "operator"
 
     updated = dict(previous)
     updated["review_status"] = next_status
     updated["reviewer"] = reviewer
     updated["review_time"] = review_time
-    updated["review_action"] = request.action
+    updated["review_action"] = action
     updated["review_reason"] = reason
     updated["updated_at"] = review_time
     updated["updatedAt"] = review_time
+    if next_status == "replaced":
+        updated["replaced_by"] = replacement_chunk_id
+    else:
+        updated.pop("replaced_by", None)
     chunks[chunk_index] = updated
     save_document_chunks(chunks)
 
@@ -431,7 +449,7 @@ def review_knowledge_chunk(
     update_document_review_summary(document, document_chunks)
     document["reviewer"] = reviewer
     document["review_time"] = review_time
-    document["review_action"] = request.action
+    document["review_action"] = action
     save_documents(documents)
 
     delete_vector_document(document_id)
@@ -443,18 +461,52 @@ def review_knowledge_chunk(
         "objectId": chunk_id,
         "documentId": document_id,
         "chunkId": chunk_id,
-        "action": request.action,
+        "action": action,
         "beforeStatus": previous.get("review_status", "pending_review"),
         "afterStatus": next_status,
         "reason": reason,
         "reviewer": reviewer,
         "reviewTime": review_time,
     }
+    if replacement_chunk_id:
+        event["replacementChunkId"] = replacement_chunk_id
     events = load_review_events()
     events.append(event)
     save_review_events(events)
 
     return {"document": document, "chunk": updated, "reviewEvent": event}
+
+
+def set_knowledge_chunk_status(
+    document_id: str,
+    chunk_id: str,
+    request: KnowledgeChunkStatusRequest,
+) -> dict[str, Any]:
+    return transition_knowledge_chunk_status(
+        document_id=document_id,
+        chunk_id=chunk_id,
+        next_status=request.status,
+        reason=request.reason,
+        reviewer=request.reviewer,
+        action=f"set_{request.status}",
+        replacement_chunk_id=request.replacementChunkId,
+    )
+
+
+def review_knowledge_chunk(
+    document_id: str,
+    chunk_id: str,
+    request: KnowledgeChunkReviewRequest,
+) -> dict[str, Any]:
+    next_status = "approved" if request.action == "approve" else "rejected"
+    return transition_knowledge_chunk_status(
+        document_id=document_id,
+        chunk_id=chunk_id,
+        next_status=next_status,
+        reason=request.reason,
+        reviewer=request.reviewer,
+        action=request.action,
+    )
 
 
 def revise_knowledge_chunk(document_id: str, request: KnowledgeChunkRevisionRequest) -> dict[str, Any]:

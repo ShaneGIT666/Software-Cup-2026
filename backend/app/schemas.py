@@ -79,3 +79,10 @@ class KnowledgeChunkReviewRequest(BaseModel):
     action: Literal["approve", "reject"]
     reason: str = ""
     reviewer: str = "operator"
+
+
+class KnowledgeChunkStatusRequest(BaseModel):
+    status: Literal["draft", "pending_review", "approved", "rejected", "deprecated", "replaced"]
+    reason: str = ""
+    reviewer: str = "operator"
+    replacementChunkId: str | None = None

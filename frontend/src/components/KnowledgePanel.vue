@@ -8,6 +8,7 @@ import {
   fetchKnowledgeDocumentRevisions,
   fetchKnowledgeDocuments,
   reviseKnowledgeChunk,
+  updateKnowledgeChunkStatus,
   uploadKnowledgeDocument,
   type KnowledgeChunkPreview,
   type KnowledgeDocument,
@@ -24,6 +25,7 @@ const lastUploaded = ref<KnowledgeDocument | null>(null);
 const revisionDialogVisible = ref(false);
 const revisionLoading = ref(false);
 const revisionSaving = ref(false);
+const statusSaving = ref(false);
 const selectedDocument = ref<KnowledgeDocument | null>(null);
 const selectedChunkId = ref("");
 const documentChunks = ref<KnowledgeChunkPreview[]>([]);
@@ -36,6 +38,12 @@ const revisionForm = ref({
   tags: "",
   reason: "",
   reviewer: "operator"
+});
+const lifecycleForm = ref({
+  status: "pending_review" as "draft" | "pending_review" | "approved" | "rejected" | "deprecated" | "replaced",
+  reason: "",
+  reviewer: "operator",
+  replacementChunkId: ""
 });
 
 function statusText(status: string) {
@@ -127,6 +135,12 @@ function fillRevisionForm(chunk: KnowledgeChunkPreview | undefined, document: Kn
     reason: "",
     reviewer: "operator"
   };
+  lifecycleForm.value = {
+    status: (chunk?.review_status as typeof lifecycleForm.value.status) ?? "pending_review",
+    reason: chunk?.review_reason ?? "",
+    reviewer: chunk?.reviewer ?? "operator",
+    replacementChunkId: chunk?.replaced_by ?? ""
+  };
 }
 
 async function openRevisionDialog(document: KnowledgeDocument) {
@@ -182,6 +196,37 @@ async function saveRevision() {
     ElMessage.error(error instanceof Error ? error.message : "知识片段修正失败");
   } finally {
     revisionSaving.value = false;
+  }
+}
+
+async function saveChunkStatus() {
+  if (!selectedDocument.value || !selectedChunkId.value) {
+    ElMessage.warning("请选择需要维护状态的知识片段");
+    return;
+  }
+  if (["rejected", "deprecated", "replaced"].includes(lifecycleForm.value.status) && !lifecycleForm.value.reason.trim()) {
+    ElMessage.warning("拒绝、废弃或替换片段必须填写原因");
+    return;
+  }
+  if (lifecycleForm.value.status === "replaced" && !lifecycleForm.value.replacementChunkId.trim()) {
+    ElMessage.warning("替换片段必须填写 replacementChunkId");
+    return;
+  }
+  statusSaving.value = true;
+  try {
+    await updateKnowledgeChunkStatus(selectedDocument.value.id, selectedChunkId.value, {
+      status: lifecycleForm.value.status,
+      reason: lifecycleForm.value.reason,
+      reviewer: lifecycleForm.value.reviewer,
+      replacementChunkId: lifecycleForm.value.replacementChunkId || null
+    });
+    ElMessage.success("知识片段状态已更新并同步检索索引");
+    await openRevisionDialog(selectedDocument.value);
+    await loadDocuments();
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : "知识片段状态更新失败");
+  } finally {
+    statusSaving.value = false;
   }
 }
 
@@ -307,6 +352,40 @@ defineExpose({ loadDocuments });
             <el-input v-model="revisionForm.reason" placeholder="例如：一线技师确认模型输出需修正" />
           </el-form-item>
         </el-form>
+
+        <section class="chunk-lifecycle-panel">
+          <div class="revision-history-title">
+            <History :size="14" />
+            <span>片段状态维护</span>
+          </div>
+          <div class="revision-grid">
+            <el-form-item label="目标状态">
+              <el-select v-model="lifecycleForm.status" class="revision-select">
+                <el-option label="草稿 draft" value="draft" />
+                <el-option label="待审核 pending_review" value="pending_review" />
+                <el-option label="已审核 approved" value="approved" />
+                <el-option label="已拒绝 rejected" value="rejected" />
+                <el-option label="已废弃 deprecated" value="deprecated" />
+                <el-option label="已替换 replaced" value="replaced" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="审核人">
+              <el-input v-model="lifecycleForm.reviewer" />
+            </el-form-item>
+          </div>
+          <el-form-item v-if="lifecycleForm.status === 'replaced'" label="替换片段 ID">
+            <el-input v-model="lifecycleForm.replacementChunkId" placeholder="例如：kdoc-xxxx-chunk-002" />
+          </el-form-item>
+          <el-form-item label="状态原因">
+            <el-input
+              v-model="lifecycleForm.reason"
+              type="textarea"
+              :rows="2"
+              placeholder="拒绝、废弃或替换时必须填写原因"
+            />
+          </el-form-item>
+          <el-button type="warning" plain :loading="statusSaving" @click="saveChunkStatus">保存状态</el-button>
+        </section>
 
         <section v-if="documentRevisions.length" class="revision-history">
           <div class="revision-history-title">

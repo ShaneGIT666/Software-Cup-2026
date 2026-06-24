@@ -23,6 +23,7 @@ from .knowledge import (
     list_knowledge_revisions,
     review_knowledge_chunk,
     revise_knowledge_chunk,
+    set_knowledge_chunk_status,
 )
 from .knowledge_graph import build_global_knowledge_graph, build_knowledge_graph, knowledge_graph_overview
 from .provider_policy import provider_status
@@ -36,6 +37,7 @@ from .schemas import (
     DiagnosisRequest,
     KnowledgeChunkReviewRequest,
     KnowledgeChunkRevisionRequest,
+    KnowledgeChunkStatusRequest,
     LlmValidateRequest,
     MultimodalAnalyzeRequest,
     MultimodalValidateRequest,
@@ -281,6 +283,11 @@ def revise_document_chunk(document_id: str, chunk_id: str, request: KnowledgeChu
 @app.patch("/api/knowledge/documents/{document_id}/chunks/{chunk_id}/review", response_model=ApiResponse)
 def review_document_chunk(document_id: str, chunk_id: str, request: KnowledgeChunkReviewRequest) -> ApiResponse:
     return ApiResponse(data=review_knowledge_chunk(document_id, chunk_id, request), message="知识片段审核完成")
+
+
+@app.patch("/api/knowledge/documents/{document_id}/chunks/{chunk_id}/status", response_model=ApiResponse)
+def update_document_chunk_status(document_id: str, chunk_id: str, request: KnowledgeChunkStatusRequest) -> ApiResponse:
+    return ApiResponse(data=set_knowledge_chunk_status(document_id, chunk_id, request), message="知识片段状态已更新")
 
 
 @app.post("/api/knowledge/documents/{document_id}/analyze", response_model=ApiResponse)

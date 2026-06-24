@@ -908,6 +908,62 @@ def save_pending_review_chunk() -> None:
     )
 
 
+def save_approved_lifecycle_chunks() -> None:
+    data_store.save_documents(
+        [
+            {
+                "id": "kdoc-life-001",
+                "fileName": "lifecycle-manual.md",
+                "fileType": "text/markdown",
+                "suffix": "md",
+                "sourceName": "生命周期测试资料",
+                "status": "indexed",
+                "chunkCount": 2,
+                "pendingReviewCount": 0,
+                "parser": "plain-text",
+                "parserFallback": False,
+                "parserFallbackReason": "",
+                "uploadedAt": "2026-06-22T01:00:00Z",
+                "url": "/knowledge/files/kdoc-life-001.md",
+            }
+        ]
+    )
+    data_store.save_document_chunks(
+        [
+            {
+                "id": "kdoc-life-001-chunk-001",
+                "chunk_id": "kdoc-life-001-chunk-001",
+                "documentId": "kdoc-life-001",
+                "source_doc_id": "kdoc-life-001",
+                "title": "生命周期原始片段",
+                "sourceType": "document",
+                "sourceName": "生命周期测试资料",
+                "content": "生命周期专用检索词 alpha beta gamma。",
+                "snippet": "生命周期专用检索词 alpha beta gamma。",
+                "keywords": ["生命周期", "alpha", "beta", "gamma"],
+                "review_status": "approved",
+                "created_at": "2026-06-22T01:00:00Z",
+                "updated_at": "2026-06-22T01:00:00Z",
+            },
+            {
+                "id": "kdoc-life-001-chunk-002",
+                "chunk_id": "kdoc-life-001-chunk-002",
+                "documentId": "kdoc-life-001",
+                "source_doc_id": "kdoc-life-001",
+                "title": "生命周期替换片段",
+                "sourceType": "document",
+                "sourceName": "生命周期测试资料",
+                "content": "替换后的生命周期专用检索词 delta epsilon。",
+                "snippet": "替换后的生命周期专用检索词 delta epsilon。",
+                "keywords": ["生命周期", "delta", "epsilon"],
+                "review_status": "approved",
+                "created_at": "2026-06-22T01:00:00Z",
+                "updated_at": "2026-06-22T01:00:00Z",
+            },
+        ]
+    )
+
+
 def test_review_items_include_pending_cases_and_knowledge_chunks(tmp_path, monkeypatch) -> None:
     client = make_client(tmp_path, monkeypatch)
     save_pending_review_chunk()
@@ -963,6 +1019,61 @@ def test_knowledge_chunk_review_approve_records_event_and_syncs_chroma(tmp_path,
     events = data_store.load_review_events()
     assert events[-1]["objectType"] == "knowledge_chunk"
     assert events[-1]["afterStatus"] == "approved"
+
+
+def test_knowledge_chunk_status_deprecate_removes_from_retrieval(tmp_path, monkeypatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    save_approved_lifecycle_chunks()
+    monkeypatch.setattr(knowledge, "delete_vector_document", lambda document_id: None)
+    monkeypatch.setattr(knowledge, "sync_chunks", lambda chunks: None)
+
+    before = client.post(
+        "/api/search",
+        json={"deviceModel": "", "faultText": "alpha beta gamma", "inputType": "text", "topK": 5},
+    )
+    assert any(item.get("chunkId") == "kdoc-life-001-chunk-001" for item in before.json()["data"]["results"])
+
+    response = client.patch(
+        "/api/knowledge/documents/kdoc-life-001/chunks/kdoc-life-001-chunk-001/status",
+        json={"status": "deprecated", "reason": "内容过期", "reviewer": "qa"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["chunk"]["review_status"] == "deprecated"
+    assert data["reviewEvent"]["action"] == "set_deprecated"
+    after = client.post(
+        "/api/search",
+        json={"deviceModel": "", "faultText": "alpha beta gamma", "inputType": "text", "topK": 5},
+    )
+    assert not any(item.get("chunkId") == "kdoc-life-001-chunk-001" for item in after.json()["data"]["results"])
+
+
+def test_knowledge_chunk_status_replaced_requires_replacement_chunk(tmp_path, monkeypatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    save_approved_lifecycle_chunks()
+
+    missing = client.patch(
+        "/api/knowledge/documents/kdoc-life-001/chunks/kdoc-life-001-chunk-001/status",
+        json={"status": "replaced", "reason": "使用新片段", "reviewer": "qa"},
+    )
+    assert missing.status_code == 400
+
+    response = client.patch(
+        "/api/knowledge/documents/kdoc-life-001/chunks/kdoc-life-001-chunk-001/status",
+        json={
+            "status": "replaced",
+            "reason": "使用新片段",
+            "reviewer": "qa",
+            "replacementChunkId": "kdoc-life-001-chunk-002",
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["chunk"]["review_status"] == "replaced"
+    assert data["chunk"]["replaced_by"] == "kdoc-life-001-chunk-002"
+    assert data["reviewEvent"]["replacementChunkId"] == "kdoc-life-001-chunk-002"
 
 
 def test_knowledge_document_upload_creates_pending_review_chunks_and_parse_artifacts(tmp_path, monkeypatch) -> None:

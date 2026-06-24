@@ -630,11 +630,16 @@ h2 {
   gap: 12px;
 }
 
+.chunk-lifecycle-panel,
 .revision-history {
   display: grid;
   gap: 8px;
   border-top: 1px solid var(--line);
   padding-top: 12px;
+}
+
+.chunk-lifecycle-panel .el-button {
+  justify-self: start;
 }
 
 .revision-history article {
