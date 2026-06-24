@@ -1,6 +1,7 @@
 param(
     [switch]$SkipBackendTests,
     [switch]$SkipFrontendBuild,
+    [switch]$SkipReadinessCheck,
     [switch]$CheckRunningServices
 )
 
@@ -32,6 +33,11 @@ if (-not $SkipFrontendBuild) {
     finally {
         Pop-Location
     }
+}
+
+if (-not $SkipReadinessCheck) {
+    Write-Step "Production readiness check"
+    powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "run-production-readiness-check.ps1")
 }
 
 if ($CheckRunningServices) {
