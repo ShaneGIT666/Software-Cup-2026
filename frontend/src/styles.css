@@ -665,6 +665,81 @@ h2 {
   gap: 6px;
 }
 
+.safety-rules-panel {
+  display: grid;
+  gap: 10px;
+  border: 1px solid oklch(0.76 0.1 55);
+  border-radius: var(--radius-sm);
+  padding: 11px 12px;
+  background: oklch(0.978 0.018 65);
+}
+
+.safety-rules-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.safety-rules-header svg {
+  flex: 0 0 auto;
+  color: var(--warning);
+}
+
+.safety-rules-header strong {
+  color: var(--text-strong);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.safety-rules-header span,
+.safety-checklist span {
+  border: 1px solid oklch(0.82 0.055 65);
+  border-radius: var(--radius-sm);
+  padding: 3px 7px;
+  background: var(--surface);
+  color: oklch(0.36 0.085 55);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.safety-finding-list {
+  display: grid;
+  gap: 7px;
+}
+
+.safety-finding {
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 9px 10px;
+  background: var(--surface);
+}
+
+.safety-finding strong {
+  color: var(--text-strong);
+  font-size: 13px;
+}
+
+.safety-finding small {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.safety-finding p {
+  margin: 0;
+  color: var(--text-main);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.safety-checklist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .structured-answer {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

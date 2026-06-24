@@ -7,6 +7,7 @@ from .corrective_rag import apply_corrective_rag, assess_corrective_rag
 from .knowledge_graph import build_knowledge_graph
 from .llm_adapter import generate_rag_answer, real_rag_answer
 from .provider_policy import configured_llm_provider, remote_api_disabled
+from .safety_rules import apply_safety_rules, evaluate_safety_rules
 from .schemas import DiagnosisRequest, LlmValidateRequest, RagAnswerRequest, SearchRequest
 from .services import search_knowledge
 
@@ -64,6 +65,13 @@ def answer_with_rag(request: RagAnswerRequest) -> dict[str, Any]:
     )
     corrective_decision = assess_corrective_rag(request.deviceModel, request.faultText, search_payload["results"])
     rag_payload = apply_corrective_rag(rag_payload, corrective_decision)
+    safety_report = evaluate_safety_rules(
+        request.deviceModel,
+        request.faultText,
+        rag_payload.get("evidencePack", {}),
+        rag_payload.get("structuredAnswer", {}),
+    )
+    rag_payload = apply_safety_rules(rag_payload, safety_report)
     return {
         "queryId": search_payload["queryId"],
         "summary": search_payload["summary"],
@@ -91,6 +99,13 @@ def diagnose_with_rag(request: DiagnosisRequest) -> dict[str, Any]:
     )
     corrective_decision = assess_corrective_rag(request.deviceModel, request.faultText, contexts)
     rag_payload = apply_corrective_rag(rag_payload, corrective_decision)
+    safety_report = evaluate_safety_rules(
+        request.deviceModel,
+        request.faultText,
+        rag_payload.get("evidencePack", {}),
+        rag_payload.get("structuredAnswer", {}),
+    )
+    rag_payload = apply_safety_rules(rag_payload, safety_report)
     citations = rag_payload.get("citations", [])
     selected_citations = [
         item for item in citations if not request.evidenceIds or item.get("id") in request.evidenceIds
@@ -119,6 +134,7 @@ def diagnose_with_rag(request: DiagnosisRequest) -> dict[str, Any]:
         "structuredAnswer": rag_payload.get("structuredAnswer", {}),
         "evidencePack": rag_payload.get("evidencePack", {}),
         "correctiveRag": rag_payload.get("correctiveRag", {}),
+        "safetyRules": rag_payload.get("safetyRules", {}),
         "riskReviewRequired": rag_payload.get("riskReviewRequired", False),
         "provider": rag_payload.get("provider", "mock"),
         "model": rag_payload.get("model", "mock"),

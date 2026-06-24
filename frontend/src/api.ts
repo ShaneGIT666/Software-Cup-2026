@@ -440,6 +440,25 @@ export interface CorrectiveRagDecision {
   manualReviewRequired: boolean;
 }
 
+export interface SafetyRuleFinding {
+  ruleId: string;
+  severity: "info" | "warning" | "high" | "critical" | string;
+  title: string;
+  message: string;
+  matchedTerms: string[];
+  requiredActions: string[];
+  evidenceIds: string[];
+}
+
+export interface SafetyRuleReport {
+  enabled: boolean;
+  highestSeverity: "info" | "warning" | "high" | "critical" | string;
+  manualReviewRequired: boolean;
+  blocking: boolean;
+  findings: SafetyRuleFinding[];
+  checklist: string[];
+}
+
 export interface RagAnswerPayload {
   queryId: string;
   summary: string;
@@ -448,6 +467,7 @@ export interface RagAnswerPayload {
   structuredAnswer?: StructuredRagOutput;
   evidencePack?: EvidencePack;
   correctiveRag?: CorrectiveRagDecision;
+  safetyRules?: SafetyRuleReport;
   riskReviewRequired?: boolean;
   recommendedActions: string[];
   citations: RagCitation[];

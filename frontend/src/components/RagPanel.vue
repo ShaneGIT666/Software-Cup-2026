@@ -23,6 +23,7 @@ function sourceLabel(sourceType: string) {
 
 const structuredAnswer = computed(() => props.ragAnswer?.structuredAnswer ?? null);
 const correctiveRag = computed(() => props.ragAnswer?.correctiveRag ?? null);
+const safetyRules = computed(() => props.ragAnswer?.safetyRules ?? null);
 
 const evidenceItems = computed<EvidenceItem[]>(() => {
   if (props.ragAnswer?.evidencePack?.items?.length) {
@@ -105,6 +106,16 @@ function correctiveActionLabel(action: string) {
   };
   return labels[action] ?? action;
 }
+
+function severityLabel(severity: string) {
+  const labels: Record<string, string> = {
+    info: "提示",
+    warning: "注意",
+    high: "高风险",
+    critical: "关键风险"
+  };
+  return labels[severity] ?? severity;
+}
 </script>
 
 <template>
@@ -152,6 +163,25 @@ function correctiveActionLabel(action: string) {
         </ul>
         <div v-if="correctiveRag.suggestedQueries.length" class="query-suggestion-list">
           <span v-for="query in correctiveRag.suggestedQueries" :key="query">{{ query }}</span>
+        </div>
+      </div>
+
+      <div v-if="safetyRules && safetyRules.findings.length" class="safety-rules-panel">
+        <div class="safety-rules-header">
+          <ShieldAlert :size="17" />
+          <strong>安全规则：{{ severityLabel(safetyRules.highestSeverity) }}</strong>
+          <span v-if="safetyRules.blocking">阻断复核</span>
+          <span v-else-if="safetyRules.manualReviewRequired">人工复核</span>
+        </div>
+        <div class="safety-finding-list">
+          <article v-for="finding in safetyRules.findings" :key="finding.ruleId" class="safety-finding">
+            <strong>{{ finding.title }}</strong>
+            <small>{{ finding.ruleId }} / {{ severityLabel(finding.severity) }}</small>
+            <p>{{ finding.message }}</p>
+          </article>
+        </div>
+        <div v-if="safetyRules.checklist.length" class="safety-checklist">
+          <span v-for="item in safetyRules.checklist" :key="item">{{ item }}</span>
         </div>
       </div>
 

@@ -221,6 +221,8 @@ def test_rag_answer_returns_mock_response_with_citations(tmp_path, monkeypatch) 
     assert payload["data"]["structuredAnswer"]["uncertainInformation"]
     assert payload["data"]["correctiveRag"]["enabled"] is True
     assert payload["data"]["correctiveRag"]["action"] in {"answer", "answer_with_caution", "needs_more_evidence"}
+    assert payload["data"]["safetyRules"]["enabled"] is True
+    assert "findings" in payload["data"]["safetyRules"]
 
 
 def test_diagnosis_reuses_search_and_rag_citations(tmp_path, monkeypatch) -> None:
