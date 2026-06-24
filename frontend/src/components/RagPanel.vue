@@ -22,6 +22,7 @@ function sourceLabel(sourceType: string) {
 }
 
 const structuredAnswer = computed(() => props.ragAnswer?.structuredAnswer ?? null);
+const correctiveRag = computed(() => props.ragAnswer?.correctiveRag ?? null);
 
 const evidenceItems = computed<EvidenceItem[]>(() => {
   if (props.ragAnswer?.evidencePack?.items?.length) {
@@ -95,6 +96,15 @@ function evidenceMeta(item: EvidenceItem) {
   ];
   return meta.filter(Boolean).join(" / ");
 }
+
+function correctiveActionLabel(action: string) {
+  const labels: Record<string, string> = {
+    answer: "证据充分",
+    answer_with_caution: "谨慎回答",
+    needs_more_evidence: "需要补充证据"
+  };
+  return labels[action] ?? action;
+}
 </script>
 
 <template>
@@ -129,6 +139,20 @@ function evidenceMeta(item: EvidenceItem) {
       <div v-if="ragAnswer.riskReviewRequired" class="risk-banner">
         <ShieldAlert :size="17" />
         <span>包含 high / critical 风险证据，执行前必须人工复核。</span>
+      </div>
+
+      <div v-if="correctiveRag && correctiveRag.action !== 'answer'" class="corrective-panel">
+        <div class="corrective-panel-header">
+          <TriangleAlert :size="17" />
+          <strong>Corrective RAG：{{ correctiveActionLabel(correctiveRag.action) }}</strong>
+          <span>质量分 {{ Math.round(correctiveRag.qualityScore * 100) }}%</span>
+        </div>
+        <ul v-if="correctiveRag.reasons.length">
+          <li v-for="reason in correctiveRag.reasons" :key="reason">{{ reason }}</li>
+        </ul>
+        <div v-if="correctiveRag.suggestedQueries.length" class="query-suggestion-list">
+          <span v-for="query in correctiveRag.suggestedQueries" :key="query">{{ query }}</span>
+        </div>
       </div>
 
       <div v-if="structuredAnswer" class="structured-answer">

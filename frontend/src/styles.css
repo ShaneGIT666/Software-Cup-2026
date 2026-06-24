@@ -611,6 +611,60 @@ h2 {
   color: var(--warning);
 }
 
+.corrective-panel {
+  display: grid;
+  gap: 9px;
+  border: 1px solid oklch(0.78 0.07 210);
+  border-radius: var(--radius-sm);
+  padding: 11px 12px;
+  background: oklch(0.975 0.014 210);
+}
+
+.corrective-panel-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.corrective-panel-header svg {
+  flex: 0 0 auto;
+  color: var(--info);
+}
+
+.corrective-panel-header strong {
+  color: var(--text-strong);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.corrective-panel-header span,
+.query-suggestion-list span {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 3px 7px;
+  background: var(--surface);
+  color: var(--text-main);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.corrective-panel ul {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text-main);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.query-suggestion-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .structured-answer {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

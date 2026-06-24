@@ -428,6 +428,18 @@ export interface StructuredRagOutput {
   riskReviewRequired: boolean;
 }
 
+export interface CorrectiveRagDecision {
+  enabled: boolean;
+  action: "answer" | "answer_with_caution" | "needs_more_evidence" | string;
+  qualityScore: number;
+  evidenceCount: number;
+  reasons: string[];
+  missingFields: string[];
+  suggestedQueries: string[];
+  retryRecommended: boolean;
+  manualReviewRequired: boolean;
+}
+
 export interface RagAnswerPayload {
   queryId: string;
   summary: string;
@@ -435,6 +447,7 @@ export interface RagAnswerPayload {
   rawAnswer?: string;
   structuredAnswer?: StructuredRagOutput;
   evidencePack?: EvidencePack;
+  correctiveRag?: CorrectiveRagDecision;
   riskReviewRequired?: boolean;
   recommendedActions: string[];
   citations: RagCitation[];
