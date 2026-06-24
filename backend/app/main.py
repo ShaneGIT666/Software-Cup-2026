@@ -21,17 +21,20 @@ from .knowledge import (
     list_knowledge_document_chunks,
     list_knowledge_documents,
     list_knowledge_revisions,
+    review_knowledge_chunk,
     revise_knowledge_chunk,
 )
 from .knowledge_graph import build_global_knowledge_graph, build_knowledge_graph, knowledge_graph_overview
 from .provider_policy import provider_status
 from .rag import answer_with_rag, diagnose_with_rag, validate_llm_provider
+from .review_workbench import list_review_items
 from .multimodal_adapter import validate_multimodal_provider
 from .schemas import (
     ApiResponse,
     CaseCreateRequest,
     CaseReviewRequest,
     DiagnosisRequest,
+    KnowledgeChunkReviewRequest,
     KnowledgeChunkRevisionRequest,
     LlmValidateRequest,
     MultimodalAnalyzeRequest,
@@ -193,6 +196,11 @@ def review_case(case_id: str, request: CaseReviewRequest) -> ApiResponse:
     return ApiResponse(data=review_repair_case(case_id, request), message="审核完成")
 
 
+@app.get("/api/review/items", response_model=ApiResponse)
+def get_review_items(status: str = "pending_review", item_type: str = "all") -> ApiResponse:
+    return ApiResponse(data=list_review_items(status, item_type))
+
+
 @app.post("/api/uploads", response_model=ApiResponse)
 async def upload_file(file: UploadFile = File(...)) -> ApiResponse:
     suffix = Path(file.filename or "").suffix.lower().lstrip(".")
@@ -268,6 +276,11 @@ def get_knowledge_document_revisions(document_id: str) -> ApiResponse:
 def revise_document_chunk(document_id: str, chunk_id: str, request: KnowledgeChunkRevisionRequest) -> ApiResponse:
     request.chunkId = chunk_id
     return ApiResponse(data=revise_knowledge_chunk(document_id, request), message="知识片段修正已保存")
+
+
+@app.patch("/api/knowledge/documents/{document_id}/chunks/{chunk_id}/review", response_model=ApiResponse)
+def review_document_chunk(document_id: str, chunk_id: str, request: KnowledgeChunkReviewRequest) -> ApiResponse:
+    return ApiResponse(data=review_knowledge_chunk(document_id, chunk_id, request), message="知识片段审核完成")
 
 
 @app.post("/api/knowledge/documents/{document_id}/analyze", response_model=ApiResponse)

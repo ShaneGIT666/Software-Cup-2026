@@ -11,6 +11,7 @@ from .data_store import (
     load_document_chunks,
     load_documents,
     load_knowledge_revisions,
+    load_review_events,
     load_seed_data,
 )
 from .mineru_adapter import mineru_available, mineru_enabled, mineru_timeout_seconds
@@ -198,6 +199,7 @@ def build_system_status() -> dict[str, Any]:
     documents = safe_load_list(load_documents, "knowledge documents", warnings)
     chunks = safe_load_list(load_document_chunks, "knowledge chunks", warnings)
     revisions = safe_load_list(load_knowledge_revisions, "knowledge revisions", warnings)
+    review_events = safe_load_list(load_review_events, "review events", warnings)
     cases = safe_load_list(load_cases, "repair cases", warnings) or seed_data.get("cases", [])
 
     chunk_status_counts = count_statuses(chunks, "review_status")
@@ -226,6 +228,7 @@ def build_system_status() -> dict[str, Any]:
             "caseStatusCounts": case_status_counts,
             "documentStatusCounts": document_status_counts,
             "revisionCount": len(revisions),
+            "reviewEventCount": len(review_events),
         },
         "indexing": {
             **index_activity(documents, chunks),

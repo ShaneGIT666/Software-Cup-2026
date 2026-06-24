@@ -7,7 +7,7 @@ from uuid import uuid4
 from fastapi import HTTPException
 
 from . import vector_store
-from .data_store import load_cases, load_document_chunks, load_seed_data, save_cases
+from .data_store import load_cases, load_document_chunks, load_review_events, load_seed_data, save_cases, save_review_events
 from .retrieval.pipeline import search_knowledge as run_retrieval_pipeline
 from .schemas import CaseCreateRequest, CaseReviewRequest, SearchRequest
 
@@ -194,12 +194,36 @@ def list_repair_cases(status: str | None = None) -> dict[str, Any]:
 def review_repair_case(case_id: str, request: CaseReviewRequest) -> dict[str, str]:
     cases = load_cases()
     status = "approved" if request.action == "approve" else "rejected"
+    reason = request.reviewNote.strip()
+    if request.action == "reject" and not reason:
+        raise HTTPException(status_code=400, detail="拒绝审核必须填写原因")
     for repair_case in cases:
         if repair_case["id"] == case_id:
+            previous_status = repair_case.get("status", "pending_review")
+            reviewed_at = utc_now()
+            reviewer = request.reviewer.strip() or "operator"
             repair_case["status"] = status
-            repair_case["reviewedAt"] = utc_now()
+            repair_case["reviewedAt"] = reviewed_at
+            repair_case["reviewer"] = reviewer
+            repair_case["reviewAction"] = request.action
+            repair_case["reviewNote"] = reason
             if request.normalizedTags:
                 repair_case["tags"] = request.normalizedTags
             save_cases(cases)
+            events = load_review_events()
+            events.append(
+                {
+                    "id": f"review-{uuid4().hex[:8]}",
+                    "objectType": "case",
+                    "objectId": case_id,
+                    "action": request.action,
+                    "beforeStatus": previous_status,
+                    "afterStatus": status,
+                    "reason": reason,
+                    "reviewer": reviewer,
+                    "reviewTime": reviewed_at,
+                }
+            )
+            save_review_events(events)
             return {"id": case_id, "status": status}
     raise HTTPException(status_code=404, detail="案例不存在")

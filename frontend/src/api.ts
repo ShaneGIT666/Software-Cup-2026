@@ -116,6 +116,7 @@ export interface SystemStatusPayload {
     caseStatusCounts: StatusCountMap;
     documentStatusCounts: StatusCountMap;
     revisionCount: number;
+    reviewEventCount?: number;
   };
   indexing: {
     latestIndexTime?: string | null;
@@ -261,11 +262,42 @@ export function fetchCases(status?: string) {
   return request<CaseListPayload>(`/api/cases${query}`);
 }
 
-export function reviewCase(caseId: string, action: "approve" | "reject", reviewNote?: string) {
+export function reviewCase(caseId: string, action: "approve" | "reject", reviewNote?: string, reviewer = "operator") {
   return request<{ id: string; status: string }>(`/api/cases/${caseId}/review`, {
     method: "PATCH",
-    body: JSON.stringify({ action, reviewNote: reviewNote ?? "" })
+    body: JSON.stringify({ action, reviewNote: reviewNote ?? "", reviewer })
   });
+}
+
+export interface ReviewItem {
+  id: string;
+  objectType: "case" | "knowledge_chunk" | string;
+  objectId: string;
+  status: string;
+  title: string;
+  sourceName: string;
+  deviceModel?: string;
+  content: string;
+  summary?: string;
+  createdAt?: string;
+  reviewer?: string;
+  reviewTime?: string;
+  tags?: string[];
+  caseId?: string;
+  documentId?: string;
+  chunkId?: string;
+  fileName?: string;
+  page?: number | null;
+  section?: string;
+}
+
+export interface ReviewItemListPayload {
+  items: ReviewItem[];
+  total: number;
+}
+
+export function fetchReviewItems(status = "pending_review") {
+  return request<ReviewItemListPayload>(`/api/review/items?status=${encodeURIComponent(status)}`);
 }
 
 export interface KnowledgeChunkPreview {
@@ -382,6 +414,26 @@ export interface KnowledgeRevisionPayload {
   revision: KnowledgeRevision;
 }
 
+export interface KnowledgeReviewEvent {
+  id: string;
+  objectType: string;
+  objectId: string;
+  documentId?: string;
+  chunkId?: string;
+  action: "approve" | "reject" | string;
+  beforeStatus: string;
+  afterStatus: string;
+  reason: string;
+  reviewer: string;
+  reviewTime: string;
+}
+
+export interface KnowledgeChunkReviewPayload {
+  document: KnowledgeDocument;
+  chunk: KnowledgeChunkPreview;
+  reviewEvent: KnowledgeReviewEvent;
+}
+
 export function uploadKnowledgeDocument(file: File, sourceName?: string) {
   const formData = new FormData();
   formData.append("file", file);
@@ -420,6 +472,21 @@ export function reviseKnowledgeChunk(
   }
 ) {
   return request<KnowledgeRevisionPayload>(`/api/knowledge/documents/${documentId}/chunks/${chunkId}`, {
+    method: "PATCH",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function reviewKnowledgeChunk(
+  documentId: string,
+  chunkId: string,
+  payload: {
+    action: "approve" | "reject";
+    reason?: string;
+    reviewer?: string;
+  }
+) {
+  return request<KnowledgeChunkReviewPayload>(`/api/knowledge/documents/${documentId}/chunks/${chunkId}/review`, {
     method: "PATCH",
     body: JSON.stringify(payload)
   });

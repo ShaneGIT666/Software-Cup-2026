@@ -60,6 +60,7 @@ class CaseCreateRequest(BaseModel):
 class CaseReviewRequest(BaseModel):
     action: Literal["approve", "reject"]
     reviewNote: str = ""
+    reviewer: str = "operator"
     normalizedTags: list[str] = Field(default_factory=list)
 
 
@@ -70,5 +71,11 @@ class KnowledgeChunkRevisionRequest(BaseModel):
     sourceName: str | None = None
     page: int | None = None
     tags: list[str] = Field(default_factory=list)
+    reason: str = ""
+    reviewer: str = "operator"
+
+
+class KnowledgeChunkReviewRequest(BaseModel):
+    action: Literal["approve", "reject"]
     reason: str = ""
     reviewer: str = "operator"

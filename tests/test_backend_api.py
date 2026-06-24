@@ -853,6 +853,118 @@ def test_invalid_review_action_is_rejected_without_status_change(tmp_path, monke
     assert any(item["id"] == pending_case["id"] for item in after_items)
 
 
+def test_case_review_reject_requires_reason(tmp_path, monkeypatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    pending_case = client.get("/api/cases?status=pending_review").json()["data"]["items"][0]
+
+    response = client.patch(
+        f"/api/cases/{pending_case['id']}/review",
+        json={"action": "reject", "reviewNote": ""},
+    )
+
+    assert response.status_code == 400
+    after_items = client.get("/api/cases?status=pending_review").json()["data"]["items"]
+    assert any(item["id"] == pending_case["id"] for item in after_items)
+
+
+def save_pending_review_chunk() -> None:
+    data_store.save_documents(
+        [
+            {
+                "id": "kdoc-review-001",
+                "fileName": "review-manual.pdf",
+                "fileType": "application/pdf",
+                "suffix": "pdf",
+                "sourceName": "审核测试资料",
+                "status": "pending_review",
+                "chunkCount": 1,
+                "pendingReviewCount": 1,
+                "parser": "mock-parser",
+                "parserFallback": True,
+                "parserFallbackReason": "test",
+                "uploadedAt": "2026-06-21T01:00:00Z",
+                "url": "/knowledge/files/kdoc-review-001.pdf",
+            }
+        ]
+    )
+    data_store.save_document_chunks(
+        [
+            {
+                "id": "kdoc-review-001-chunk-001",
+                "chunk_id": "kdoc-review-001-chunk-001",
+                "documentId": "kdoc-review-001",
+                "source_doc_id": "kdoc-review-001",
+                "title": "审核测试片段",
+                "sourceType": "document",
+                "sourceName": "审核测试资料",
+                "content": "待审核检修片段，包含断电和验收步骤。",
+                "snippet": "待审核检修片段，包含断电和验收步骤。",
+                "keywords": ["断电", "验收"],
+                "review_status": "pending_review",
+                "created_at": "2026-06-21T01:00:00Z",
+                "updated_at": "2026-06-21T01:00:00Z",
+            }
+        ]
+    )
+
+
+def test_review_items_include_pending_cases_and_knowledge_chunks(tmp_path, monkeypatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    save_pending_review_chunk()
+
+    response = client.get("/api/review/items?status=pending_review")
+
+    assert response.status_code == 200
+    items = response.json()["data"]["items"]
+    assert any(item["objectType"] == "case" for item in items)
+    chunk_item = next(item for item in items if item["objectType"] == "knowledge_chunk")
+    assert chunk_item["documentId"] == "kdoc-review-001"
+    assert chunk_item["chunkId"] == "kdoc-review-001-chunk-001"
+    assert chunk_item["status"] == "pending_review"
+
+
+def test_knowledge_chunk_review_reject_requires_reason(tmp_path, monkeypatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    save_pending_review_chunk()
+
+    response = client.patch(
+        "/api/knowledge/documents/kdoc-review-001/chunks/kdoc-review-001-chunk-001/review",
+        json={"action": "reject", "reason": "", "reviewer": "qa"},
+    )
+
+    assert response.status_code == 400
+    chunks = data_store.load_document_chunks()
+    assert chunks[0]["review_status"] == "pending_review"
+
+
+def test_knowledge_chunk_review_approve_records_event_and_syncs_chroma(tmp_path, monkeypatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    save_pending_review_chunk()
+    deleted: list[str] = []
+    sync_calls: list[list[dict[str, Any]]] = []
+    monkeypatch.setattr(knowledge, "delete_vector_document", lambda document_id: deleted.append(document_id))
+    monkeypatch.setattr(knowledge, "sync_chunks", lambda chunks: sync_calls.append(chunks))
+
+    response = client.patch(
+        "/api/knowledge/documents/kdoc-review-001/chunks/kdoc-review-001-chunk-001/review",
+        json={"action": "approve", "reason": "来源可信", "reviewer": "qa"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["chunk"]["review_status"] == "approved"
+    assert data["chunk"]["reviewer"] == "qa"
+    assert data["chunk"]["review_action"] == "approve"
+    assert data["document"]["status"] == "indexed"
+    assert data["reviewEvent"]["action"] == "approve"
+    assert data["reviewEvent"]["reviewer"] == "qa"
+    assert deleted == ["kdoc-review-001"]
+    assert sync_calls and sync_calls[-1][0]["review_status"] == "approved"
+    events = data_store.load_review_events()
+    assert events[-1]["objectType"] == "knowledge_chunk"
+    assert events[-1]["afterStatus"] == "approved"
+
+
 def test_knowledge_document_upload_creates_pending_review_chunks_and_parse_artifacts(tmp_path, monkeypatch) -> None:
     client = make_client(tmp_path, monkeypatch)
 

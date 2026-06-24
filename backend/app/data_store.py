@@ -135,6 +135,14 @@ def save_knowledge_revisions(revisions: list[dict[str, Any]]) -> None:
     _write_knowledge_json("knowledge-revisions.json", revisions)
 
 
+def load_review_events() -> list[dict[str, Any]]:
+    return _read_knowledge_json("review-events.json")
+
+
+def save_review_events(events: list[dict[str, Any]]) -> None:
+    _write_knowledge_json("review-events.json", events)
+
+
 def load_knowledge_graph_cache() -> dict[str, Any]:
     return _read_knowledge_object("knowledge-graph.json")
 

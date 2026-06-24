@@ -14,13 +14,15 @@ from .data_store import (
     load_document_chunks,
     load_documents,
     load_knowledge_revisions,
+    load_review_events,
     save_document_chunks,
     save_documents,
     save_knowledge_revisions,
+    save_review_events,
 )
 from .multimodal_adapter import analyze_multimodal_document
 from .parser_router import parse_document, save_parse_artifacts
-from .schemas import KnowledgeChunkRevisionRequest
+from .schemas import KnowledgeChunkReviewRequest, KnowledgeChunkRevisionRequest
 from .vector_store import delete_document as delete_vector_document
 from .vector_store import sync_chunks
 
@@ -367,6 +369,92 @@ def list_knowledge_revisions(document_id: str) -> dict[str, Any]:
     revisions = [item for item in load_knowledge_revisions() if item.get("documentId") == document_id]
     revisions = sorted(revisions, key=lambda item: item.get("createdAt", ""), reverse=True)
     return {"items": revisions, "total": len(revisions)}
+
+
+def update_document_review_summary(document: dict[str, Any], chunks: list[dict[str, Any]]) -> None:
+    pending_count = sum(1 for chunk in chunks if chunk.get("review_status", "approved") == "pending_review")
+    approved_count = sum(1 for chunk in chunks if chunk.get("review_status", "approved") == "approved")
+    rejected_count = sum(1 for chunk in chunks if chunk.get("review_status", "approved") == "rejected")
+    document["chunkCount"] = len(chunks)
+    document["pendingReviewCount"] = pending_count
+    if pending_count:
+        document["status"] = "pending_review"
+    elif approved_count:
+        document["status"] = "indexed"
+    elif rejected_count and rejected_count == len(chunks):
+        document["status"] = "rejected"
+
+
+def review_knowledge_chunk(
+    document_id: str,
+    chunk_id: str,
+    request: KnowledgeChunkReviewRequest,
+) -> dict[str, Any]:
+    reason = request.reason.strip()
+    if request.action == "reject" and not reason:
+        raise HTTPException(status_code=400, detail="拒绝审核必须填写原因")
+
+    documents = load_documents()
+    document = next((item for item in documents if item.get("id") == document_id), None)
+    if document is None:
+        raise HTTPException(status_code=404, detail="knowledge document not found")
+
+    chunks = load_document_chunks()
+    chunk_index = next(
+        (
+            index
+            for index, chunk in enumerate(chunks)
+            if chunk.get("documentId") == document_id and chunk.get("id") == chunk_id
+        ),
+        None,
+    )
+    if chunk_index is None:
+        raise HTTPException(status_code=404, detail="knowledge chunk not found")
+
+    previous = dict(chunks[chunk_index])
+    review_time = utc_now()
+    reviewer = request.reviewer.strip() or "operator"
+    next_status = "approved" if request.action == "approve" else "rejected"
+
+    updated = dict(previous)
+    updated["review_status"] = next_status
+    updated["reviewer"] = reviewer
+    updated["review_time"] = review_time
+    updated["review_action"] = request.action
+    updated["review_reason"] = reason
+    updated["updated_at"] = review_time
+    updated["updatedAt"] = review_time
+    chunks[chunk_index] = updated
+    save_document_chunks(chunks)
+
+    document_chunks = [chunk for chunk in chunks if chunk.get("documentId") == document_id]
+    update_document_review_summary(document, document_chunks)
+    document["reviewer"] = reviewer
+    document["review_time"] = review_time
+    document["review_action"] = request.action
+    save_documents(documents)
+
+    delete_vector_document(document_id)
+    sync_chunks(document_chunks)
+
+    event = {
+        "id": f"review-{uuid4().hex[:8]}",
+        "objectType": "knowledge_chunk",
+        "objectId": chunk_id,
+        "documentId": document_id,
+        "chunkId": chunk_id,
+        "action": request.action,
+        "beforeStatus": previous.get("review_status", "pending_review"),
+        "afterStatus": next_status,
+        "reason": reason,
+        "reviewer": reviewer,
+        "reviewTime": review_time,
+    }
+    events = load_review_events()
+    events.append(event)
+    save_review_events(events)
+
+    return {"document": document, "chunk": updated, "reviewEvent": event}
 
 
 def revise_knowledge_chunk(document_id: str, request: KnowledgeChunkRevisionRequest) -> dict[str, Any]:
