@@ -872,6 +872,30 @@ def test_case_review_reject_requires_reason(tmp_path, monkeypatch) -> None:
     assert any(item["id"] == pending_case["id"] for item in after_items)
 
 
+def test_review_events_api_filters_audit_log(tmp_path, monkeypatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    pending_case = client.get("/api/cases?status=pending_review").json()["data"]["items"][0]
+    review_response = client.patch(
+        f"/api/cases/{pending_case['id']}/review",
+        json={"action": "approve", "reviewNote": "审计流水测试", "reviewer": "auditor"},
+    )
+    assert review_response.status_code == 200
+
+    response = client.get(
+        f"/api/review/events?object_type=case&object_id={pending_case['id']}&action=approve&limit=1"
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["total"] == 1
+    assert data["limit"] == 1
+    assert data["items"][0]["objectType"] == "case"
+    assert data["items"][0]["objectId"] == pending_case["id"]
+    assert data["items"][0]["reviewer"] == "auditor"
+    assert data["items"][0]["before"]["status"] == "pending_review"
+    assert data["items"][0]["after"]["status"] == "approved"
+
+
 def save_pending_review_chunk() -> None:
     data_store.save_documents(
         [

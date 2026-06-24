@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .data_store import load_cases, load_document_chunks, load_documents
+from .data_store import load_cases, load_document_chunks, load_documents, load_review_events
 
 
 def case_review_item(item: dict[str, Any]) -> dict[str, Any]:
@@ -64,3 +64,22 @@ def list_review_items(status: str = "pending_review", item_type: str = "all") ->
 
     items.sort(key=lambda item: item.get("createdAt", ""), reverse=True)
     return {"items": items, "total": len(items)}
+
+
+def list_review_events(
+    object_type: str | None = None,
+    object_id: str | None = None,
+    action: str | None = None,
+    limit: int = 100,
+) -> dict[str, Any]:
+    events = load_review_events()
+    if object_type:
+        events = [event for event in events if event.get("objectType") == object_type]
+    if object_id:
+        events = [event for event in events if event.get("objectId") == object_id]
+    if action:
+        events = [event for event in events if event.get("action") == action]
+
+    events = sorted(events, key=lambda item: item.get("reviewTime", ""), reverse=True)
+    safe_limit = min(max(limit, 1), 500)
+    return {"items": events[:safe_limit], "total": len(events), "limit": safe_limit}

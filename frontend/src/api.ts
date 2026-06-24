@@ -485,6 +485,12 @@ export interface KnowledgeChunkReviewPayload {
   reviewEvent: KnowledgeReviewEvent;
 }
 
+export interface ReviewEventListPayload {
+  items: KnowledgeReviewEvent[];
+  total: number;
+  limit: number;
+}
+
 export function uploadKnowledgeDocument(file: File, sourceName?: string) {
   const formData = new FormData();
   formData.append("file", file);
@@ -578,6 +584,29 @@ export function updateKnowledgeChunkStatus(
     method: "PATCH",
     body: JSON.stringify(payload)
   });
+}
+
+export function fetchReviewEvents(filters: {
+  objectType?: string;
+  objectId?: string;
+  action?: string;
+  limit?: number;
+} = {}) {
+  const params = new URLSearchParams();
+  if (filters.objectType) {
+    params.set("object_type", filters.objectType);
+  }
+  if (filters.objectId) {
+    params.set("object_id", filters.objectId);
+  }
+  if (filters.action) {
+    params.set("action", filters.action);
+  }
+  if (filters.limit) {
+    params.set("limit", String(filters.limit));
+  }
+  const query = params.toString();
+  return request<ReviewEventListPayload>(`/api/review/events${query ? `?${query}` : ""}`);
 }
 
 export function analyzeKnowledgeDocument(documentId: string, provider?: "mock" | "openai" | "anthropic" | "local") {

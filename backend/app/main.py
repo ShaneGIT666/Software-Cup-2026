@@ -32,7 +32,7 @@ from .knowledge import (
 from .knowledge_graph import build_global_knowledge_graph, build_knowledge_graph, knowledge_graph_overview
 from .provider_policy import provider_status
 from .rag import answer_with_rag, diagnose_with_rag, validate_llm_provider
-from .review_workbench import list_review_items
+from .review_workbench import list_review_events, list_review_items
 from .multimodal_adapter import validate_multimodal_provider
 from .schemas import (
     ApiResponse,
@@ -205,6 +205,16 @@ def review_case(case_id: str, request: CaseReviewRequest) -> ApiResponse:
 @app.get("/api/review/items", response_model=ApiResponse)
 def get_review_items(status: str = "pending_review", item_type: str = "all") -> ApiResponse:
     return ApiResponse(data=list_review_items(status, item_type))
+
+
+@app.get("/api/review/events", response_model=ApiResponse)
+def get_review_events(
+    object_type: str | None = None,
+    object_id: str | None = None,
+    action: str | None = None,
+    limit: int = 100,
+) -> ApiResponse:
+    return ApiResponse(data=list_review_events(object_type, object_id, action, limit))
 
 
 @app.post("/api/uploads", response_model=ApiResponse)
