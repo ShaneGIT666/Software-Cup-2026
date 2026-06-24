@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
@@ -15,12 +15,16 @@ from fastapi.staticfiles import StaticFiles
 from .data_store import PROJECT_ROOT, knowledge_dir, upload_dir
 from .knowledge import (
     analyze_knowledge_document,
+    create_knowledge_parse_task,
     delete_knowledge_document,
+    get_knowledge_parse_task,
     get_knowledge_document,
     ingest_knowledge_document,
     list_knowledge_document_chunks,
     list_knowledge_documents,
     list_knowledge_revisions,
+    list_knowledge_parse_tasks,
+    process_knowledge_parse_task,
     review_knowledge_chunk,
     revise_knowledge_chunk,
     set_knowledge_chunk_status,
@@ -254,9 +258,30 @@ async def upload_knowledge_document(
     )
 
 
+@app.post("/api/knowledge/documents/async", response_model=ApiResponse)
+async def upload_knowledge_document_async(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    source_name: str | None = Form(default=None),
+) -> ApiResponse:
+    task = await create_knowledge_parse_task(file, source_name)
+    background_tasks.add_task(process_knowledge_parse_task, task["id"])
+    return ApiResponse(data=task, message="资料解析任务已提交")
+
+
 @app.get("/api/knowledge/documents", response_model=ApiResponse)
 def get_knowledge_documents() -> ApiResponse:
     return ApiResponse(data=list_knowledge_documents())
+
+
+@app.get("/api/knowledge/parse-tasks", response_model=ApiResponse)
+def get_knowledge_parse_tasks(status: str | None = None) -> ApiResponse:
+    return ApiResponse(data=list_knowledge_parse_tasks(status))
+
+
+@app.get("/api/knowledge/parse-tasks/{task_id}", response_model=ApiResponse)
+def get_knowledge_parse_task_detail(task_id: str) -> ApiResponse:
+    return ApiResponse(data=get_knowledge_parse_task(task_id))
 
 
 @app.get("/api/knowledge/documents/{document_id}", response_model=ApiResponse)

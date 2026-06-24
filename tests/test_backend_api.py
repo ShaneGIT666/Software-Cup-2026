@@ -1142,6 +1142,94 @@ def test_knowledge_document_upload_does_not_sync_pending_chunks_to_vector_store(
     assert synced == []
 
 
+def test_async_knowledge_document_parse_task_ingests_pending_review_document(tmp_path, monkeypatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+
+    response = client.post(
+        "/api/knowledge/documents/async",
+        files={
+            "file": (
+                "async-manual.md",
+                "异步解析资料：制动泵渗漏时，应检查密封圈并执行安全泄压。".encode("utf-8"),
+                "text/markdown",
+            )
+        },
+        data={"source_name": "异步检修手册"},
+    )
+
+    assert response.status_code == 200
+    queued_task = response.json()["data"]
+    assert queued_task["status"] == "queued"
+    assert queued_task["documentId"] is None
+    assert "queuedFile" not in queued_task
+
+    task_response = client.get(f"/api/knowledge/parse-tasks/{queued_task['id']}")
+    assert task_response.status_code == 200
+    task = task_response.json()["data"]
+    assert "queuedFile" not in task
+    assert task["status"] == "completed"
+    assert task["documentId"].startswith("kdoc-")
+    assert task["documentStatus"] == "pending_review"
+    assert task["chunkCount"] == 1
+
+    document_response = client.get(f"/api/knowledge/documents/{task['documentId']}")
+    assert document_response.status_code == 200
+    document = document_response.json()["data"]
+    assert document["sourceName"] == "异步检修手册"
+    assert document["status"] == "pending_review"
+    assert document["chunks"][0]["review_status"] == "pending_review"
+
+    search_response = client.post(
+        "/api/search",
+        json={"deviceModel": "", "faultText": "制动泵渗漏 安全泄压", "inputType": "text", "topK": 5},
+    )
+    results = search_response.json()["data"]["results"]
+    assert not any(item.get("documentId") == task["documentId"] for item in results)
+
+
+def test_async_knowledge_parse_task_records_failure(tmp_path, monkeypatch) -> None:
+    def fail_ingest(*_: Any, **__: Any) -> dict[str, Any]:
+        raise RuntimeError("synthetic parser failure")
+
+    monkeypatch.setattr(knowledge, "ingest_knowledge_document_bytes", fail_ingest)
+    client = make_client(tmp_path, monkeypatch)
+
+    response = client.post(
+        "/api/knowledge/documents/async",
+        files={"file": ("broken.md", b"valid queued bytes", "text/markdown")},
+        data={"source_name": "失败资料"},
+    )
+
+    assert response.status_code == 200
+    task_id = response.json()["data"]["id"]
+
+    task_response = client.get(f"/api/knowledge/parse-tasks/{task_id}")
+    assert task_response.status_code == 200
+    task = task_response.json()["data"]
+    assert task["status"] == "failed"
+    assert "synthetic parser failure" in task["error"]
+    assert task["documentId"] is None
+
+
+def test_provider_status_reports_async_parse_tasks(tmp_path, monkeypatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    response = client.post(
+        "/api/knowledge/documents/async",
+        files={"file": ("async-status.md", b"async status readiness content", "text/markdown")},
+        data={"source_name": "状态资料"},
+    )
+    task_id = response.json()["data"]["id"]
+
+    status_response = client.get("/api/providers/status")
+
+    assert status_response.status_code == 200
+    parsing = status_response.json()["data"]["system"]["parsing"]
+    assert parsing["asyncTaskCount"] == 1
+    assert parsing["asyncTaskStatusCounts"]["completed"] == 1
+    assert parsing["latestAsyncTask"]["taskId"] == task_id
+    assert parsing["latestAsyncTask"]["status"] == "completed"
+
+
 def test_docx_upload_falls_back_to_mock_parser_pending_review(tmp_path, monkeypatch) -> None:
     client = make_client(tmp_path, monkeypatch)
 

@@ -144,6 +144,20 @@ export interface SystemStatusPayload {
       chunkCount: number;
       pendingReviewCount: number;
     } | null;
+    latestAsyncTask?: {
+      taskId: string;
+      type: string;
+      status: string;
+      fileName: string;
+      sourceName: string;
+      documentId?: string | null;
+      createdAt?: string;
+      startedAt?: string;
+      completedAt?: string;
+      error?: string;
+    } | null;
+    asyncTaskCount?: number;
+    asyncTaskStatusCounts?: StatusCountMap;
     parserFallbackCount: number;
   };
   fallback: {
@@ -406,6 +420,32 @@ export interface KnowledgeDocumentListPayload {
   total: number;
 }
 
+export interface KnowledgeParseTask {
+  id: string;
+  type: string;
+  status: "queued" | "running" | "completed" | "failed" | string;
+  fileName: string;
+  fileType: string;
+  suffix: string;
+  sourceName: string;
+  createdAt: string;
+  updatedAt: string;
+  documentId?: string | null;
+  documentStatus?: string;
+  chunkCount?: number;
+  parser?: string;
+  parserFallback?: boolean;
+  parserFallbackReason?: string;
+  startedAt?: string;
+  completedAt?: string;
+  error?: string;
+}
+
+export interface KnowledgeParseTaskListPayload {
+  items: KnowledgeParseTask[];
+  total: number;
+}
+
 export interface KnowledgeChunkListPayload {
   items: KnowledgeChunkPreview[];
   total: number;
@@ -454,8 +494,29 @@ export function uploadKnowledgeDocument(file: File, sourceName?: string) {
   });
 }
 
+export function uploadKnowledgeDocumentAsync(file: File, sourceName?: string) {
+  const formData = new FormData();
+  formData.append("file", file);
+  if (sourceName?.trim()) {
+    formData.append("source_name", sourceName.trim());
+  }
+  return request<KnowledgeParseTask>("/api/knowledge/documents/async", {
+    method: "POST",
+    body: formData
+  });
+}
+
 export function fetchKnowledgeDocuments() {
   return request<KnowledgeDocumentListPayload>("/api/knowledge/documents");
+}
+
+export function fetchKnowledgeParseTasks(status?: string) {
+  const search = status ? `?status=${encodeURIComponent(status)}` : "";
+  return request<KnowledgeParseTaskListPayload>(`/api/knowledge/parse-tasks${search}`);
+}
+
+export function fetchKnowledgeParseTask(taskId: string) {
+  return request<KnowledgeParseTask>(`/api/knowledge/parse-tasks/${taskId}`);
 }
 
 export function fetchKnowledgeDocumentChunks(documentId: string) {

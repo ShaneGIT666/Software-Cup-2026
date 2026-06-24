@@ -84,6 +84,34 @@ def main() -> int:
 
         run_step(checks, "provider_status", provider_status)
 
+        def async_parse_task() -> dict[str, Any]:
+            queued = assert_success(
+                client.post(
+                    "/api/knowledge/documents/async",
+                    files={
+                        "file": (
+                            "readiness-async.md",
+                            b"readiness-async-doc-beta pending review safety checklist",
+                            "text/markdown",
+                        )
+                    },
+                    data={"source_name": "readiness async manual"},
+                ),
+                "submit async parse task",
+            )
+            task = assert_success(client.get(f"/api/knowledge/parse-tasks/{queued['id']}"), "get async parse task")
+            if task.get("status") != "completed":
+                raise AssertionError(f"async parse task should complete in readiness check, got {task.get('status')}")
+            if task.get("documentStatus") != "pending_review":
+                raise AssertionError("async parsed document should enter pending_review")
+            return {
+                "taskId": task.get("id"),
+                "documentId": task.get("documentId"),
+                "documentStatus": task.get("documentStatus"),
+            }
+
+        run_step(checks, "async_parse_task", async_parse_task)
+
         def search_seed() -> dict[str, Any]:
             data = assert_success(
                 client.post(

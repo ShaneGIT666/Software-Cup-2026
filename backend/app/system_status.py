@@ -11,6 +11,7 @@ from .data_store import (
     load_document_chunks,
     load_documents,
     load_knowledge_revisions,
+    load_parse_tasks,
     load_review_events,
     load_seed_data,
 )
@@ -48,6 +49,10 @@ def count_statuses(items: list[dict[str, Any]], key: str, default: str = "approv
     return dict(sorted(counts.items()))
 
 
+def count_values(items: list[dict[str, Any]], key: str) -> dict[str, int]:
+    return dict(sorted(Counter(str(item.get(key) or "unknown") for item in items).items()))
+
+
 def latest_value(values: list[str]) -> str | None:
     clean_values = [value for value in values if value]
     return max(clean_values) if clean_values else None
@@ -79,6 +84,35 @@ def latest_parse_task(documents: list[dict[str, Any]]) -> dict[str, Any] | None:
         "analyzedAt": analysis.get("analyzedAt", ""),
         "chunkCount": int(document.get("chunkCount") or 0),
         "pendingReviewCount": int(document.get("pendingReviewCount") or 0),
+    }
+
+
+def latest_async_parse_task(tasks: list[dict[str, Any]]) -> dict[str, Any] | None:
+    if not tasks:
+        return None
+    task = max(
+        tasks,
+        key=lambda item: latest_value(
+            [
+                str(item.get("completedAt") or ""),
+                str(item.get("startedAt") or ""),
+                str(item.get("updatedAt") or ""),
+                str(item.get("createdAt") or ""),
+            ]
+        )
+        or "",
+    )
+    return {
+        "taskId": task.get("id", ""),
+        "type": task.get("type", ""),
+        "status": task.get("status", ""),
+        "fileName": task.get("fileName", ""),
+        "sourceName": task.get("sourceName", ""),
+        "documentId": task.get("documentId"),
+        "createdAt": task.get("createdAt", ""),
+        "startedAt": task.get("startedAt", ""),
+        "completedAt": task.get("completedAt", ""),
+        "error": task.get("error", ""),
     }
 
 
@@ -200,6 +234,7 @@ def build_system_status() -> dict[str, Any]:
     chunks = safe_load_list(load_document_chunks, "knowledge chunks", warnings)
     revisions = safe_load_list(load_knowledge_revisions, "knowledge revisions", warnings)
     review_events = safe_load_list(load_review_events, "review events", warnings)
+    parse_tasks = safe_load_list(load_parse_tasks, "parse tasks", warnings)
     cases = safe_load_list(load_cases, "repair cases", warnings) or seed_data.get("cases", [])
 
     chunk_status_counts = count_statuses(chunks, "review_status")
@@ -237,6 +272,9 @@ def build_system_status() -> dict[str, Any]:
         "parsing": {
             "mineru": mineru_status(),
             "latestTask": latest_parse_task(documents),
+            "latestAsyncTask": latest_async_parse_task(parse_tasks),
+            "asyncTaskCount": len(parse_tasks),
+            "asyncTaskStatusCounts": count_values(parse_tasks, "status"),
             "parserFallbackCount": parser_fallback_count,
         },
         "fallback": {

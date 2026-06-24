@@ -169,6 +169,14 @@ def save_review_events(events: list[dict[str, Any]]) -> None:
     _write_knowledge_json("review-events.json", events)
 
 
+def load_parse_tasks() -> list[dict[str, Any]]:
+    return _read_knowledge_json("parse-tasks.json")
+
+
+def save_parse_tasks(tasks: list[dict[str, Any]]) -> None:
+    _write_knowledge_json("parse-tasks.json", tasks)
+
+
 def load_knowledge_graph_cache() -> dict[str, Any]:
     return _read_knowledge_object("knowledge-graph.json")
 

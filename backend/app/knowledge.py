@@ -14,10 +14,12 @@ from .data_store import (
     load_document_chunks,
     load_documents,
     load_knowledge_revisions,
+    load_parse_tasks,
     load_review_events,
     save_document_chunks,
     save_documents,
     save_knowledge_revisions,
+    save_parse_tasks,
     save_review_events,
 )
 from .multimodal_adapter import analyze_multimodal_document
@@ -51,28 +53,32 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
-def validate_knowledge_file(file: UploadFile, content: bytes) -> str:
-    suffix = Path(file.filename or "").suffix.lower().lstrip(".")
+def validate_knowledge_file_info(file_name: str | None, content_type: str | None, content: bytes) -> str:
+    suffix = Path(file_name or "").suffix.lower().lstrip(".")
     if not suffix or suffix not in ALLOWED_KNOWLEDGE_TYPES:
-        logger.warning("Rejected knowledge upload with unsupported extension: %s", file.filename)
+        logger.warning("Rejected knowledge upload with unsupported extension: %s", file_name)
         raise HTTPException(status_code=400, detail="资料入库仅支持 pdf、txt、md、jpg、jpeg、png 和 webp 文件")
     if not content:
-        logger.warning("Rejected empty knowledge upload: %s", file.filename)
+        logger.warning("Rejected empty knowledge upload: %s", file_name)
         raise HTTPException(status_code=400, detail="资料文件不能为空")
     if len(content) > MAX_KNOWLEDGE_DOCUMENT_BYTES:
-        logger.warning("Rejected oversized knowledge upload: %s bytes=%s", file.filename, len(content))
+        logger.warning("Rejected oversized knowledge upload: %s bytes=%s", file_name, len(content))
         raise HTTPException(status_code=400, detail="资料文件不能超过 20MB")
 
-    content_type = (file.content_type or "").split(";", 1)[0].lower()
-    if content_type and content_type not in ALLOWED_KNOWLEDGE_TYPES[suffix]:
+    normalized_content_type = (content_type or "").split(";", 1)[0].lower()
+    if normalized_content_type and normalized_content_type not in ALLOWED_KNOWLEDGE_TYPES[suffix]:
         logger.warning(
             "Rejected knowledge upload with MIME mismatch: filename=%s suffix=%s content_type=%s",
-            file.filename,
+            file_name,
             suffix,
-            content_type,
+            normalized_content_type,
         )
         raise HTTPException(status_code=400, detail="资料文件扩展名与 MIME 类型不匹配")
     return suffix
+
+
+def validate_knowledge_file(file: UploadFile, content: bytes) -> str:
+    return validate_knowledge_file_info(file.filename, file.content_type, content)
 
 
 def decode_text(content: bytes) -> str:
@@ -192,11 +198,15 @@ def build_chunk(
     return chunk
 
 
-async def ingest_knowledge_document(file: UploadFile, source_name: str | None = None) -> dict[str, Any]:
-    content = await file.read()
-    suffix = validate_knowledge_file(file, content)
+def ingest_knowledge_document_bytes(
+    content: bytes,
+    file_name: str | None,
+    content_type: str | None,
+    source_name: str | None = None,
+) -> dict[str, Any]:
+    suffix = validate_knowledge_file_info(file_name, content_type, content)
     document_id = f"kdoc-{uuid4().hex[:8]}"
-    file_name = file.filename or f"{document_id}.{suffix}"
+    file_name = file_name or f"{document_id}.{suffix}"
     display_source = source_name or file_name or document_id
     target_dir = knowledge_dir() / "files"
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -227,7 +237,7 @@ async def ingest_knowledge_document(file: UploadFile, source_name: str | None = 
     document = {
         "id": document_id,
         "fileName": file_name,
-        "fileType": file.content_type or "",
+        "fileType": content_type or "",
         "suffix": suffix,
         "sourceName": display_source,
         "status": status,
@@ -250,6 +260,102 @@ async def ingest_knowledge_document(file: UploadFile, source_name: str | None = 
     save_document_chunks(existing_chunks)
 
     return {**document, "chunks": chunks[:3]}
+
+
+async def ingest_knowledge_document(file: UploadFile, source_name: str | None = None) -> dict[str, Any]:
+    content = await file.read()
+    return ingest_knowledge_document_bytes(content, file.filename, file.content_type, source_name)
+
+
+def append_parse_task(task: dict[str, Any]) -> dict[str, Any]:
+    tasks = load_parse_tasks()
+    tasks.append(task)
+    save_parse_tasks(tasks)
+    return task
+
+
+def update_parse_task(task_id: str, **updates: Any) -> dict[str, Any]:
+    tasks = load_parse_tasks()
+    for index, task in enumerate(tasks):
+        if task.get("id") == task_id:
+            updated = {**task, **updates, "updatedAt": utc_now()}
+            tasks[index] = updated
+            save_parse_tasks(tasks)
+            return updated
+    raise HTTPException(status_code=404, detail="parse task not found")
+
+
+def parse_task_response(task: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in task.items() if key != "queuedFile"}
+
+
+async def create_knowledge_parse_task(file: UploadFile, source_name: str | None = None) -> dict[str, Any]:
+    content = await file.read()
+    suffix = validate_knowledge_file(file, content)
+    task_id = f"ptask-{uuid4().hex[:8]}"
+    queue_dir = knowledge_dir() / "parse-queue"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+    queued_file = queue_dir / f"{task_id}.{suffix}"
+    queued_file.write_bytes(content)
+    now = utc_now()
+    task = {
+        "id": task_id,
+        "type": "knowledge_document_ingest",
+        "status": "queued",
+        "fileName": file.filename or f"{task_id}.{suffix}",
+        "fileType": file.content_type or "",
+        "suffix": suffix,
+        "sourceName": source_name or file.filename or task_id,
+        "createdAt": now,
+        "updatedAt": now,
+        "queuedFile": str(queued_file),
+        "documentId": None,
+        "error": "",
+    }
+    return parse_task_response(append_parse_task(task))
+
+
+def process_knowledge_parse_task(task_id: str) -> None:
+    task = update_parse_task(task_id, status="running", startedAt=utc_now(), error="")
+    queued_file = Path(str(task.get("queuedFile") or ""))
+    try:
+        if not queued_file.exists():
+            raise FileNotFoundError(f"queued file not found: {queued_file}")
+        document = ingest_knowledge_document_bytes(
+            content=queued_file.read_bytes(),
+            file_name=str(task.get("fileName") or queued_file.name),
+            content_type=str(task.get("fileType") or ""),
+            source_name=str(task.get("sourceName") or ""),
+        )
+        update_parse_task(
+            task_id,
+            status="completed",
+            completedAt=utc_now(),
+            documentId=document.get("id"),
+            documentStatus=document.get("status"),
+            chunkCount=document.get("chunkCount", 0),
+            parser=document.get("parser", ""),
+            parserFallback=document.get("parserFallback", False),
+            parserFallbackReason=document.get("parserFallbackReason", ""),
+        )
+    except Exception as exc:  # pragma: no cover - exact parser failures vary by dependency
+        logger.exception("Knowledge parse task failed: %s", task_id)
+        update_parse_task(task_id, status="failed", completedAt=utc_now(), error=str(exc))
+
+
+def list_knowledge_parse_tasks(status: str | None = None) -> dict[str, Any]:
+    tasks = load_parse_tasks()
+    if status:
+        tasks = [task for task in tasks if str(task.get("status")) == status]
+    tasks = sorted(tasks, key=lambda item: item.get("createdAt", ""), reverse=True)
+    return {"items": [parse_task_response(task) for task in tasks], "total": len(tasks)}
+
+
+def get_knowledge_parse_task(task_id: str) -> dict[str, Any]:
+    for task in load_parse_tasks():
+        if task.get("id") == task_id:
+            return parse_task_response(task)
+    raise HTTPException(status_code=404, detail="parse task not found")
 
 
 def build_multimodal_chunks(document: dict[str, Any], analysis: dict[str, Any]) -> list[dict[str, Any]]:
