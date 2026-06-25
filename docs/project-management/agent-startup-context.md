@@ -17,25 +17,26 @@ dev restart
 
 启动后默认访问 `http://127.0.0.1:5173/`，后端健康检查为 `http://127.0.0.1:8000/api/health`。
 
-更新时间：2026-06-16
+更新时间：2026-06-25
 用途：所有后续 Coding Agent 在没有对话上下文时的第一阅读入口。
 规则：如果本文与其他历史文档冲突，以本文和 `docs/project-management/current-handoff.md` 为准。
 文档规范：后续所有文档必须在不依赖聊天记录或隐含上下文的情况下，让 agent 和开发者清晰了解当前开发进度、软件功能、验证状态、风险边界和下一步任务；若变更 API、数据状态、部署方式、演示路径、风险口径或任务优先级，必须同步更新本文和 `current-handoff.md`。
 
 ## 1. 项目一句话
 
-本项目是中国软件杯 A1 赛题“基于多模态大模型技术的设备检修知识检索与作业系统”的比赛作品。当前目标是形成稳定可演示的 MVP：资料入库、检索、RAG 引用、作业流程、知识沉淀、弱网兜底和 LoongArch/Kylin 部署链路。
+本项目是中国软件杯 A1 赛题“基于多模态大模型技术的设备检修知识检索与作业系统”的比赛作品。当前目标是两天内完成比赛交付收口：资料入库、检索、RAG 引用、作业流程、知识沉淀、审核审计、真实模型复验、弱网兜底和 LoongArch/Kylin 部署链路。
 
 ## 2. 最新事实
 
-1. LoongArch / 银河麒麟 V11 后端最小依赖验证已完成；后端测试子集 `39 passed`，`/api/health` 和 `/api/providers/status` 正常。
-2. 目标 VM 无 npm/git，因此前端采用 Windows 本地构建 `frontend/dist`，再由 FastAPI 静态托管的方案。
-3. Windows 本地主线后端全量测试最新结果为 `92 passed in 21.25s`。
-4. 前端生产构建已通过；存在 Vite chunk size warning，不阻塞。
-5. Qwen / DashScope OpenAI-compatible 文本 RAG 已完成真实 API 小样本验收，返回 `fallback=false` 且保留 citations。
-6. Chroma 是可选向量索引增强；hash embedding 是断网和无 Key 场景的 fallback/占位，不是生产级语义 embedding。
-7. 真实多模态 API 新增小样本验收接口，但默认演示仍可使用 mock 兜底。
-8. OCR 已新增可选 provider 层：默认 `OCR_PROVIDER=mock`，可选 `rapidocr` 或 `tesseract`；OCR/多模态文本会并入资料分析 chunks，但默认 `review_status=pending_review`，审核通过后才进入检索、RAG citations、Chroma 和知识关系网络。真实 OCR 依赖需单独安装 `backend/requirements-ocr.txt` 并记录 LoongArch/Kylin 兼容性。
+1. LoongArch / 银河麒麟 V11 后端最小依赖和 Docker 一体化部署均已验证；比赛提供环境需要使用最新提交重新复验并留证。
+2. 目标 VM 无 npm/git 时，前端采用 Windows 本地构建 `frontend/dist`，再由 FastAPI 静态托管。
+3. Windows 本地主线后端全量测试最新结果为 `139 passed in 22.98s`。
+4. 前端生产构建已通过；存在 VueUse pure annotation 和 Vite chunk size warning，不阻塞。
+5. 准生产 readiness 检查和 JSON 存储巡检已通过。
+6. Qwen / DashScope OpenAI-compatible 文本 RAG 历史小样本验收通过；比赛最终模型需用目标环境、最终 `base_url`、模型名和 Key 重新复验。
+7. Chroma 是可选向量索引增强；hash embedding 是断网和无 Key 场景的 fallback/占位，不是生产级语义 embedding。
+8. 真实多模态 API 有小样本验收接口，但默认演示仍可使用 mock 兜底。
+9. OCR 已新增可选 provider 层：默认 `OCR_PROVIDER=mock`，可选 `rapidocr` 或 `tesseract`；OCR/多模态文本会并入资料分析 chunks，但默认 `review_status=pending_review`，审核通过后才进入检索、RAG citations、Chroma 和知识关系网络。真实 OCR 依赖需单独安装 `backend/requirements-ocr.txt` 并记录 LoongArch/Kylin 兼容性。
 
 ## 3. 核心闭环
 
@@ -47,9 +48,10 @@ dev restart
 -> 查看标准化作业流程
 -> 上传维修手册、现场图片或经验资料
 -> parser_router/MinerU/OCR/多模态分析资料并生成 pending_review 知识片段
--> 审核通过后进入正式检索/RAG/Chroma
+-> 统一审核工作台通过后进入正式检索/RAG/Chroma
 -> 提交维修案例
 -> 审核通过后再次检索命中新案例
+-> 审计流水记录 reviewer/action/reason/before/after
 ```
 
 ## 4. 关键文件
@@ -61,12 +63,13 @@ dev restart
 5. OCR provider：`backend/app/ocr_adapter.py`
 6. 资料入库：`backend/app/knowledge.py`
 7. Chroma 可选索引：`backend/app/vector_store.py`
-8. JSON 原子写：`backend/app/data_store.py`
+8. JSON 原子写与备份恢复：`backend/app/data_store.py`
 9. 前端入口：`frontend/src/App.vue`
 10. 前端 API 类型：`frontend/src/api.ts`
 11. 当前交接：`docs/project-management/current-handoff.md`
 12. 测试报告：`docs/testing/software-test-report.md`
 13. LoongArch 验证：`docs/deployment/loongarch-kylin-verification.md`
+14. 最终交付审计：`docs/project-management/global-closure-audit-2026-06-24.md`
 
 ## 5. 常用命令
 
@@ -87,6 +90,18 @@ npm.cmd run build
 
 ```powershell
 .\start-dev.bat
+```
+
+准生产 readiness：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\run-production-readiness-check.ps1
+```
+
+JSON 存储巡检：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\run-json-store-maintenance.ps1
 ```
 
 构建前端 dist：
@@ -169,12 +184,13 @@ OCR_LANG=ch
 5. 真实多模态 API 只做小样本验收，不承诺所有 OpenAI-compatible 网关都支持图片/PDF。
 6. 真实 OCR 是可选增强，不是默认生产级能力；RapidOCR、PaddleOCR、Docling、MinerU 等依赖在 LoongArch/Kylin 上必须单独验收。
 7. LoongArch 后端最小依赖和 Docker 一体化链路已有验证记录；最终环境仍需保留 FastAPI 静态托管前端访问和增强依赖关闭/降级的复验证据。
+8. JSON 存储已有 `.bak` 恢复和巡检脚本，但不是高并发生产数据库。
 
 ## 8. 接手流程
 
 1. 执行 `git status --short --branch`，确认工作区。
 2. 阅读 `current-handoff.md` 和官方赛题基线。
-3. 运行后端测试和前端构建。
+3. 运行后端测试、前端构建、readiness 和 JSON 存储巡检。
 4. 若改 API、数据状态、演示路径、部署方式或风险边界，必须同步更新本文和交接文档。
 5. 不使用 `git reset --hard` 或 `git checkout --` 回滚协作者改动。
 # Docker 部署快速入口（2026-06-06 最新）

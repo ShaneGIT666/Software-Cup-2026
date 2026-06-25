@@ -1,20 +1,21 @@
 # 软件功能测试报告
 
 项目名称：基于多模态大模型技术的设备检修知识检索与作业系统  
-版本：0.3
-更新时间：2026-06-16
+版本：0.4
+更新时间：2026-06-25
 
 ## 1. 测试结论
 
-当前项目已覆盖比赛 MVP 的核心后端链路：检索、资料入库、上传安全、RAG、provider fallback、多模态 mock、可选 OCR provider、知识关系网络、Chroma 可选召回、官方 PDF 流程、LoongArch 后端最小部署验证。
+当前项目已覆盖比赛演示所需的核心链路：检索、资料入库、上传安全、RAG、provider fallback、多模态/OCR mock、MinerU fallback、统一审核、知识片段状态机、审计流水、Chroma 可选召回、评测 runner、JSON 存储恢复、readiness 检查和 LoongArch/Docker 部署验证。
 
 最近确认事实：
 
-1. Windows 本地后端完整测试最新结果：`92 passed in 21.25s`。
-2. 前端 `npm.cmd run build` 通过，存在 Vite chunk size warning，不阻塞。
-3. Qwen / DashScope OpenAI-compatible 文本 RAG 小样本真实 API 验收通过，`fallback=false`，citations 保留。
-4. LoongArch / 银河麒麟 V11 后端最小依赖测试子集通过：`39 passed`。
-5. 前端 LoongArch 托管方案已调整为：Windows 本地构建 `frontend/dist`，FastAPI 在 VM 上静态托管。
+1. Windows 本地后端完整测试最新结果：`139 passed in 22.98s`。
+2. 前端 `npm.cmd run build` 通过，存在 VueUse pure annotation 和 Vite chunk size warning，不阻塞。
+3. `scripts/run-production-readiness-check.ps1` 通过，覆盖 health、provider status、异步解析、检索、RAG、案例审核、知识片段审核和废弃隔离。
+4. `scripts/run-json-store-maintenance.ps1` 通过，当前 4 个种子 JSON 文件健康。
+5. Qwen / DashScope OpenAI-compatible 文本 RAG 历史小样本真实 API 验收通过；比赛最终模型仍需用最终环境重新验证。
+6. LoongArch / 银河麒麟 V11 后端最小依赖和 Docker 一体化部署均已验证；比赛提供环境需按最新提交重新复验并留证。
 
 ## 2. 推荐回归命令
 
@@ -22,7 +23,7 @@
 
 ```powershell
 .\backend\.venv\Scripts\python.exe -m pytest tests/ -q
-# 92 passed in 21.25s
+# 139 passed in 22.98s
 ```
 
 前端：
@@ -37,6 +38,18 @@ npm.cmd run build
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\run-local-verification.ps1
+```
+
+准生产 readiness：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\run-production-readiness-check.ps1
+```
+
+JSON 存储巡检：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\run-json-store-maintenance.ps1
 ```
 
 前端冒烟测试：
@@ -75,6 +88,14 @@ npm run test:e2e
 | T-BE-020 | 官方 PDF | 官方摩托车维修手册入库、pending_review 审核门槛、审核后检索/RAG/删除/Chroma 流程 |
 | T-BE-021 | OCR 可选增强 | mock OCR 文本可生成 pending_review document chunks，审核通过后被检索和 RAG citations 复用 |
 | T-BE-022 | OCR fallback | `rapidocr` 等真实 provider 缺失或失败时降级 mock OCR，不影响多模态分析 |
+| T-BE-023 | 评测执行器 | 加载 RAG 评测数据集，输出 Hit@K、Recall@K、MRR、违规统计和报告 |
+| T-BE-024 | 检索 pipeline | query normalization、metadata filter、RRF、reranker fallback 和 evidence pack |
+| T-BE-025 | 知识片段状态机 | `draft/pending_review/approved/rejected/deprecated/replaced` 生命周期和 Chroma 同步 |
+| T-BE-026 | 统一审核工作台 | 案例和知识片段 pending_review 审核、拒绝原因、reviewer 和事件记录 |
+| T-BE-027 | 审计事件 | review events 记录 before/after，并通过 `/api/review/events` 查询 |
+| T-BE-028 | 异步解析任务 | `/api/knowledge/documents/async` 创建任务并进入 pending_review 入库 |
+| T-BE-029 | JSON 存储恢复 | 主 JSON 损坏时可从 `.bak` 读取，并提供巡检/修复脚本 |
+| T-BE-030 | 系统状态页 | `/api/providers/status` 附带 LLM、Embedding、OCR、MinerU、Chroma、知识统计和 fallback |
 
 ## 4. LoongArch / 银河麒麟验证
 
@@ -115,7 +136,7 @@ npm/git 不存在
 
 ## 6. 结论
 
-项目已具备比赛演示所需的主要工程闭环。最终提交前仍需重新执行后端测试、前端构建和演示路径冒烟，并保留目标环境复验证据。
+项目已具备比赛演示所需的主要工程闭环。最终提交前仍需在比赛提供环境重新执行部署复验、真实模型 validate、RAG 回答、前端访问和上传审核链路，并保留截图或终端日志。
 # 最新测试补充：LoongArch/Kylin Docker 验证（2026-06-06）
 
 本节为最新事实记录，优先级高于下方历史记录。本文必须在不依赖聊天上下文的情况下，让后续 agent、开发者和指导老师理解当前验证状态。
@@ -188,11 +209,11 @@ RAG_VECTOR_STORE=off
 ```powershell
 $env:MINERU_ENABLED="false"
 .\backend\.venv\Scripts\python.exe -m pytest tests -q
-# 92 passed in 21.25s
+# 139 passed in 22.98s
 
 cd frontend
 npm.cmd run build
-# passed, only existing Vite chunk size warning
+# passed, only existing VueUse pure annotation and Vite chunk size warning
 ```
 
 详细部署说明见：`docs/deployment/mineru-document-parsing.md`。

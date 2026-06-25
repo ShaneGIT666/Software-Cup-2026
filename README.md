@@ -8,13 +8,14 @@
 
 | 项目 | 当前状态 |
 | --- | --- |
-| 后端自动化测试 | `92 passed in 21.25s`，覆盖 pending_review 审核门槛、资料入库、RAG、Chroma 降级等链路 |
-| 前端生产构建 | `npm.cmd run build` 通过；Vite chunk size warning 不阻塞演示 |
-| LoongArch / 银河麒麟 | 后端最小依赖链路已验证；本轮按要求暂不继续做 VM 复验 |
+| 后端自动化测试 | `139 passed in 22.98s`，覆盖检索、资料入库、审核状态机、RAG、OCR/MinerU fallback、评测 runner、审计事件和存储恢复 |
+| 前端生产构建 | `npm.cmd run build` 通过；VueUse pure annotation 与 Vite chunk size warning 不阻塞演示 |
+| 本地交付检查 | `run-production-readiness-check.ps1` 通过；`run-json-store-maintenance.ps1` 检查 4 个 JSON 文件健康 |
+| LoongArch / 银河麒麟 | Docker 一体化链路已验证；比赛提供环境到手后需用最新提交重新复验并留证 |
 | 前端目标环境托管 | 已支持 FastAPI 静态托管 `frontend/dist`，适配无 npm/nginx 的演示环境 |
-| Qwen 文本 RAG | DashScope OpenAI-compatible 小样本已验收，支持 `fallback=false` 与 citations |
+| 真实文本大模型 | 支持 OpenAI-compatible provider；比赛演示需重新配置真实 `base_url`、模型和 Key 复验 |
 | Chroma 向量增强 | 可选开启；`hash` embedding 明确为 fallback，占位不冒充生产级语义向量 |
-| 多模态能力 | mock 演示链路稳定；真实 provider 通过 `/api/providers/multimodal/validate` 做小样本验收 |
+| 多模态能力 | OCR/多模态链路具备 mock 兜底；真实 provider 需在目标环境通过 validate 接口小样本验收 |
 | 现场兜底 | `REMOTE_API_MODE=off` 可强制本地 mock/检索链路，避免弱网断链 |
 
 ## 参赛信息
@@ -52,7 +53,8 @@
 | 向量库 | Chroma MVP，Qdrant 二阶段 |
 | 模型接入 | OpenAI-compatible Adapter，默认 Mock 模式 |
 | 文档解析 | `parser_router -> mineru_adapter` 优先处理 PDF/DOCX/PPTX/XLSX；PDF 可 fallback 到 pypdf，Office 文档未装 MinerU 时 fallback 到 mock parser |
-| 部署 | 本地脚本 MVP，Docker Compose 二阶段 |
+| 审核与审计 | 统一审核工作台 + 知识片段状态机 + revision + review audit events |
+| 部署 | 本地脚本 + FastAPI 静态托管 + Docker/LoongArch 兜底部署 |
 
 完整调研结论见：`docs/research/open-source-architecture-research.md`
 
@@ -106,7 +108,7 @@
 -> 再次检索时可复用新案例
 ```
 
-MVP 完成前，优先保证“能打开、能搜索、能看步骤、能提交案例、能演示”，暂缓完整权限系统、复杂知识图谱、高精度图片识别和本地大模型部署。
+比赛交付前，优先保证“能打开、能搜索、能看步骤、能提交案例、能审核资料、能展示真实模型或稳定兜底、能在目标环境复验”。完整权限系统、数据库迁移和生产级视觉诊断不纳入两天交付范围。
 
 同时必须持续对照 `docs/requirements/official-problem-baseline.md`：
 
@@ -191,23 +193,23 @@ powershell -ExecutionPolicy Bypass -File .\scripts\stop-dev.ps1
 当前仓库已完成：
 
 1. Vue 3 + TypeScript + Vite + Element Plus 工业检修指挥台界面。
-2. FastAPI 后端 API，覆盖检索、诊断、RAG、资料入库、多模态分析、知识关系网络、案例提交和审核。
-3. 本地 JSON 样例数据与原子写入持久化，保留轻量架构和比赛现场兜底能力。
-4. 检索、流程查看、资料上传/入库、RAG citations、案例提交、案例审核、审核后再检索的 MVP 闭环。
+2. FastAPI 后端 API，覆盖检索、诊断、RAG、资料入库、多模态分析、知识关系网络、案例提交、统一审核和审计流水。
+3. 本地 JSON 样例数据、原子写入、`.bak` 恢复和巡检脚本，保留轻量架构和比赛现场兜底能力。
+4. 检索、流程查看、资料上传/入库、pending_review、审核、RAG citations、案例提交、审计追踪、审核后再检索的闭环。
 5. 资料入库支持 `pdf/txt/md/docx/pptx/xlsx/jpg/jpeg/png/webp`；解析或多模态分析生成的片段默认 `pending_review`，审核通过前不进入正式检索、RAG citations 或 Chroma。
-6. RAG provider 支持 `mock/openai/anthropic`，已完成 Qwen / DashScope OpenAI-compatible 文本 RAG 小样本验收。
+6. RAG provider 支持 `mock/openai/anthropic` 和 OpenAI-compatible 云端服务；真实比赛模型需用最终 Key 与 base_url 复验。
 7. Chroma 可选向量索引已接入；未安装、关闭或查询失败时自动降级，`hash` embedding 是 fallback，占位不冒充真实语义 embedding。
 8. FastAPI 可选静态托管 `frontend/dist`，用于无 npm/nginx 的目标环境演示。
-9. 后端全量测试 `92 passed in 21.25s`；前端生产构建通过；Playwright 冒烟测试文件已提交，依赖需联网安装后执行。
+9. 后端全量测试 `139 passed in 22.98s`；前端生产构建通过；readiness 和 JSON 存储巡检通过。
 10. Coding Agent 动态交接入口：`docs/project-management/agent-startup-context.md`。
 
 下一步建议：
 
-1. 面向评委整理最终产品说明书、演示 runbook、PPT 大纲和 7 分钟视频脚本。
-2. 网络可用后安装 `@playwright/test` 并运行 `npm run test:e2e`，把浏览器演示路径纳入自动化冒烟。
-3. 用一张小图片做真实多模态 provider 验收，记录 provider、模型、耗时和 fallback 结果。
-4. 按 `docs/superpowers/specs/2026-05-27-ceiling-improvement-design.md` 继续推进低风险提分项，例如扩展演示种子数据和演示检查清单。
-5. 如恢复 LoongArch 工作，再上传最新 `frontend/dist`，复验 FastAPI 静态托管前端访问。
+1. 在比赛提供环境上复验最新提交，记录系统信息、部署命令、接口结果和截图。
+2. 配置真实 OpenAI-compatible LLM，至少完成一次 `fallback=false` 的 RAG 回答验收。
+3. 整理最终产品说明书、演示 runbook、PPT 大纲和视频脚本。
+4. 扩充评测样例并保存最终评测报告，明确真实模型结果与 fallback 结果。
+5. 打包最终交付物，确认不包含 `.env`、上传资料、运行数据、`node_modules`、`.venv` 和 Key。
 ## 最新补充：MinerU 文档解析主链路（2026-06-09）
 
 项目已在 Windows 本地后端虚拟环境中安装并验证 MinerU 3.2.3。PDF / DOCX / PPTX / XLSX 上传时优先通过 `parser_router -> mineru_adapter` 解析，成功后保存 `raw_parse_result.json`、`parsed.md` 和 `assets/`，并生成 `review_status=pending_review` 的知识片段。审核通过前，这些片段不会进入正式 RAG 检索或 Chroma 同步。
@@ -234,6 +236,6 @@ MINERU_API_URL=
 
 ```text
 mineru, version 3.2.3
-backend tests: 92 passed in 21.25s
+backend tests: 139 passed in 22.98s
 frontend build: passed
 ```
