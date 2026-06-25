@@ -89,7 +89,17 @@ RAG_EMBEDDING_PROVIDER=hash
 RAG_RERANK_PROVIDER=heuristic
 ```
 
-当前真实模型状态：比赛可用 OpenAI-compatible `base_url`、API Key、文本模型名尚未提供，因此本次 VM 复验只验证了真实模型接入接口与 fallback 链路。真实 LLM 复验仍需在获得模型配置后执行。
+真实 LLM 复验配置另行通过运行时环境变量注入，不写入仓库或文档明文：
+
+```text
+REMOTE_API_MODE=auto
+LLM_PROVIDER=openai
+OPENAI_API_STYLE=chat_completions
+OPENAI_BASE_URL=https://maas-api.cn-huabei-1.xf-yun.com/v2
+OPENAI_MODEL=xopqwen36v35b
+```
+
+当前真实模型状态：已在 LoongArch/Kylin VM 上完成 Qwen3.6-35B-A3B OpenAI-compatible 接口验证。HTTP APIKey 只作为临时进程环境变量注入，未提交到仓库。
 
 ## 4. 复验结果
 
@@ -106,10 +116,10 @@ HTTP 接口复验：
 | --- | --- | --- |
 | `GET /` | 通过 | 返回前端 HTML，标题为“设备检修知识检索与作业指挥台” |
 | `GET /api/health` | 通过 | `status=ok`，`version=0.1.0` |
-| `GET /api/providers/status` | 通过 | `remoteApiMode=off`，LLM mock，embedding hash，Chroma disabled |
-| `POST /api/providers/llm/validate` | 通过 | `remoteOk=false`，`fallback=true`，原因是 `REMOTE_API_MODE=off` |
+| `GET /api/providers/status` | 通过 | 离线模式：`remoteApiMode=off`、LLM mock；真实模式：`remoteApiMode=auto`、`effectiveProvider=openai`、`keyConfigured=true` |
+| `POST /api/providers/llm/validate` | 通过 | 真实模式轻量验证：`remoteOk=true`、provider `openai`、model `xopqwen36v35b`、`fallback=false`、latencyMs 约 12516 |
 | `POST /api/search` | 通过 | 返回 4 条结果，首条 `doc-001` |
-| `POST /api/rag/answer` | 通过 | provider mock，3 条 citations，evidenceCount=3，安全规则存在 |
+| `POST /api/rag/answer` | 通过 | 真实模式：provider `openai`、model `xopqwen36v35b`、`fallback=false`、3 条 citations、evidenceCount=3；离线模式 fallback 仍可用 |
 | `POST /api/knowledge/documents/async` | 通过 | 上传任务返回 `queued` |
 | `GET /api/review/items` | 通过 | pending_review 返回 2 条，首条类型 `knowledge_chunk` |
 | `GET /api/review/events` | 通过 | 接口可访问；当前本次运行无审核动作，返回 0 条 |
@@ -117,11 +127,11 @@ HTTP 接口复验：
 ## 5. 演示结论
 
 ```text
-真实 LLM：待配置比赛模型服务后复验
+真实 LLM：已验证 Qwen3.6-35B-A3B，OpenAI-compatible chat_completions，RAG 返回 fallback=false
 真实 embedding/Chroma：本次关闭，使用 hash fallback
 OCR/MinerU：本次关闭，使用 mock/fallback
 离线 fallback：可用
 前端访问：可用，由 FastAPI 托管 frontend/dist
 核心闭环：上传解析、pending_review、审核工作台、检索、RAG、citation/evidence、安全规则均可运行
-主要风险：未提供真实模型配置前，不能宣称 VM 上已完成真实 LLM 返回；Docker 服务 inactive，现场需优先采用 venv 路线
+主要风险：真实 LLM 长上下文首次请求可能接近 60s 超时，演示建议使用稳定问题和 topK=3；Docker 服务 inactive，现场需优先采用 venv 路线
 ```
