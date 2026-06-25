@@ -1,0 +1,11 @@
+case_id,udi,product_id,type,air_temperature_k,process_temperature_k,rotational_speed_rpm,torque_nm,tool_wear_min,machine_failure,failure_type,component,risk_level,maintenance_action
+external-ai4i-case-001,1,M14860,M,298.1,308.6,1551,42.8,0,0,normal,drive_system,low,记录基线工况并继续巡检
+external-ai4i-case-002,51,L47230,L,298.9,309.1,2861,4.6,143,1,power_failure,drive_motor,high,停机复核电机功率与负载匹配
+external-ai4i-case-003,77,L47256,L,298.8,308.9,1286,62.9,128,1,overstrain_failure,transmission,critical,降低负载并检查传动机构和联轴器
+external-ai4i-case-004,161,M15020,M,298.4,308.2,1410,65.7,191,1,heat_dissipation_failure,cooling_system,high,检查散热通道和冷却介质状态
+external-ai4i-case-005,339,H29752,H,297.8,308.0,1362,48.5,215,1,tool_wear_failure,tooling,medium,更换磨损刀具并复核加工参数
+external-ai4i-case-006,431,L47610,L,300.2,310.4,1324,70.1,226,1,random_failure,bearing,high,停机检查轴承异响和润滑状态
+external-ai4i-case-007,612,M15471,M,301.4,310.9,1775,28.3,71,0,normal,spindle,low,确认主轴转速和扭矩波动在正常范围
+external-ai4i-case-008,777,L47956,L,302.6,312.1,1210,73.3,242,1,overstrain_failure,gearbox,critical,禁止继续带载运行并检查齿轮箱
+external-ai4i-case-009,921,H30334,H,303.2,313.5,1398,45.6,251,1,tool_wear_failure,tooling,medium,计划性换刀并记录刀具寿命
+external-ai4i-case-010,1104,M15963,M,304.0,313.8,1564,38.7,93,0,normal,drive_system,low,继续监测温升和负载趋势

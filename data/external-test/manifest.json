@@ -1,0 +1,68 @@
+{
+  "schema_version": "0.1.0",
+  "dataset_id": "software-cup-external-test-assets",
+  "updated_at": "2026-06-25",
+  "policy": {
+    "purpose": "External assets for upload parsing, pending_review isolation, retrieval/RAG citation, and evaluation runner tests.",
+    "no_unclear_copyright_manuals": true,
+    "raw_large_files_ignored": true,
+    "default_review_status": "pending_review"
+  },
+  "assets": [
+    {
+      "id": "sapid-maintenance-manual-pdf",
+      "title": "SAPID demo maintenance manual PDF",
+      "source_type": "pdf_manual_sample",
+      "source_url": "https://github.com/sreejitheg/SAPID/blob/main/frontend/public/demo/maintenance-manual.pdf",
+      "download_url": "https://raw.githubusercontent.com/sreejitheg/SAPID/main/frontend/public/demo/maintenance-manual.pdf",
+      "license": "Apache-2.0",
+      "license_url": "https://github.com/sreejitheg/SAPID/blob/main/LICENSE",
+      "local_path": "data/external-test/pdf/maintenance-manual-sapid.pdf",
+      "commit_policy": "downloaded file may be committed only if size <= max_mb and license remains Apache-2.0",
+      "validation": "must start with %PDF; upstream placeholders must not be committed",
+      "max_mb": 8,
+      "usage": [
+        "pdf_upload_parse_smoke",
+        "pending_review_smoke",
+        "review_to_search_smoke"
+      ]
+    },
+    {
+      "id": "uci-ai4i-2020-sample",
+      "title": "UCI AI4I 2020 Predictive Maintenance Dataset sample",
+      "source_type": "tabular_predictive_maintenance",
+      "source_url": "https://archive.ics.uci.edu/dataset/601/ai4i+2020+predictive+maintenance+dataset",
+      "download_url": "",
+      "license": "CC BY 4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "local_path": "data/external-test/tabular/ai4i2020-sample.csv",
+      "commit_policy": "small curated sample and generated cases may be committed with attribution",
+      "max_mb": 1,
+      "usage": [
+        "external_case_generation",
+        "rag_eval_external_dev",
+        "fault_type_coverage"
+      ]
+    }
+  ],
+  "reference_only_sources": [
+    {
+      "id": "nasa-pcoe",
+      "title": "NASA Prognostics Center of Excellence Data Repository",
+      "url": "https://www.nasa.gov/intelligent-systems-division/discovery-and-systems-health/pcoe/pcoe-data-set-repository/",
+      "recommended_usage": "future engine, bearing, battery prognostics cases; do not download full datasets into repo"
+    },
+    {
+      "id": "mimii-zenodo",
+      "title": "MIMII Dataset",
+      "url": "https://zenodo.org/records/3384388",
+      "recommended_usage": "future acoustic anomaly multimodal demo with tiny samples only"
+    },
+    {
+      "id": "cwru-bearing",
+      "title": "Case Western Reserve University Bearing Data Center",
+      "url": "https://engineering.case.edu/bearingdatacenter",
+      "recommended_usage": "future bearing vibration diagnosis examples"
+    }
+  ]
+}
