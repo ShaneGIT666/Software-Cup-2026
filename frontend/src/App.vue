@@ -26,6 +26,7 @@ import QueryPanel from "./components/QueryPanel.vue";
 import RagPanel from "./components/RagPanel.vue";
 import ResultsPanel from "./components/ResultsPanel.vue";
 import ReviewPanel from "./components/ReviewPanel.vue";
+import ReviewEventsPanel from "./components/ReviewEventsPanel.vue";
 import WorkflowPanel from "./components/WorkflowPanel.vue";
 
 const deviceModel = ref("发动机示例型号 A");
@@ -333,6 +334,7 @@ runSearch();
         @submit="createCase"
       />
       <ReviewPanel ref="reviewPanel" />
+      <ReviewEventsPanel />
     </section>
   </main>
 </template>

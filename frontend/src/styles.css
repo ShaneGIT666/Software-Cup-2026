@@ -272,7 +272,8 @@ h2 {
 .knowledge-graph-panel,
 .rag-panel,
 .case-panel,
-.review-panel {
+.review-panel,
+.review-events-panel {
   position: relative;
   min-width: 0;
   border: 1px solid var(--line);
@@ -1027,6 +1028,75 @@ h2 {
 
 .review-card-actions {
   margin-top: 10px;
+}
+
+.audit-filter {
+  width: 112px;
+  margin-left: auto;
+}
+
+.audit-list {
+  display: grid;
+  gap: 10px;
+}
+
+.audit-row {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  background: var(--surface-soft);
+}
+
+.audit-row-main {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.audit-row-main strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-strong);
+  font-size: 14px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audit-row-main span,
+.audit-row-meta small {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audit-row p {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: var(--text-main);
+  font-size: 13px;
+  line-height: 1.55;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.audit-row-meta {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+}
+
+.audit-row-meta small {
+  min-width: 0;
 }
 
 .el-button {
