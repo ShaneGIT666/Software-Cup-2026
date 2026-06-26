@@ -2242,6 +2242,69 @@ def test_vector_sync_falls_back_to_hash_embedding_when_remote_fails(monkeypatch)
     assert captured["embeddings"][0]
 
 
+def test_json_vector_store_indexes_only_approved_chunks(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("APP_KNOWLEDGE_DIR", str(tmp_path / "knowledge"))
+    monkeypatch.setenv("RAG_VECTOR_STORE", "json")
+    monkeypatch.setenv("RAG_EMBEDDING_PROVIDER", "hash")
+
+    vector_store.sync_chunks(
+        [
+            {
+                "id": "chunk-approved",
+                "documentId": "doc-approved",
+                "title": "LoongArch PDF 资料",
+                "sourceName": "目标环境资料",
+                "sourceType": "document",
+                "content": "发动机启动困难 怠速不稳 点火系统检查",
+                "snippet": "发动机启动困难 怠速不稳",
+                "review_status": "approved",
+            },
+            {
+                "id": "chunk-pending",
+                "documentId": "doc-pending",
+                "title": "待审核资料",
+                "sourceName": "目标环境资料",
+                "sourceType": "document",
+                "content": "pending review should not be indexed",
+                "snippet": "pending review",
+                "review_status": "pending_review",
+            },
+        ]
+    )
+
+    results = vector_store.search_similar_chunks("启动困难 怠速不稳", 5)
+
+    assert vector_store.json_vector_index_path().exists()
+    assert [item["chunkId"] for item in results] == ["chunk-approved"]
+    assert results[0]["embeddingProvider"] == "hash"
+
+
+def test_json_vector_store_delete_document_removes_chunks(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("APP_KNOWLEDGE_DIR", str(tmp_path / "knowledge"))
+    monkeypatch.setenv("RAG_VECTOR_STORE", "json")
+    monkeypatch.setenv("RAG_EMBEDDING_PROVIDER", "hash")
+
+    vector_store.sync_chunks(
+        [
+            {
+                "id": "chunk-delete",
+                "documentId": "doc-delete",
+                "title": "待删除资料",
+                "sourceName": "目标环境资料",
+                "sourceType": "document",
+                "content": "制动泵渗漏 检查密封圈",
+                "snippet": "制动泵渗漏",
+                "review_status": "approved",
+            }
+        ]
+    )
+
+    assert vector_store.search_similar_chunks("制动泵渗漏", 5)
+    vector_store.delete_document("doc-delete")
+
+    assert vector_store.search_similar_chunks("制动泵渗漏", 5) == []
+
+
 def test_multimodal_validate_mock_provider(tmp_path, monkeypatch) -> None:
     client = make_client(tmp_path, monkeypatch)
 

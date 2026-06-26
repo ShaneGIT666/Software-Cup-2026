@@ -5,6 +5,7 @@
 ARG BASE_IMAGE=cr.loongnix.cn/library/python:3.11
 FROM ${BASE_IMAGE}
 ARG INSTALL_CHROMA=false
+ARG INSTALL_TESSERACT=false
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -18,9 +19,16 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     REMOTE_API_MODE=off \
     LLM_PROVIDER=mock \
     MULTIMODAL_PROVIDER=mock \
-    RAG_VECTOR_STORE=off
+    OCR_PROVIDER=mock \
+    RAG_VECTOR_STORE=json
 
 WORKDIR /app
+
+RUN if [ "${INSTALL_TESSERACT}" = "true" ]; then \
+        apt-get update \
+        && apt-get install -y --no-install-recommends tesseract-ocr \
+        && rm -rf /var/lib/apt/lists/*; \
+    fi
 
 COPY backend/requirements.txt /app/backend/requirements.txt
 RUN python -m pip install --no-cache-dir --upgrade pip \

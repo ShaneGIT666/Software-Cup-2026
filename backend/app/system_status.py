@@ -16,7 +16,7 @@ from .data_store import (
     load_seed_data,
 )
 from .mineru_adapter import mineru_available, mineru_enabled, mineru_timeout_seconds
-from .vector_store import vector_store_enabled
+from .vector_store import json_vector_index_path, vector_store_enabled, vector_store_kind
 
 
 REVIEW_STATUSES = ("draft", "pending_review", "approved", "rejected", "deprecated", "replaced")
@@ -167,7 +167,8 @@ def mineru_status() -> dict[str, Any]:
 
 def chroma_status() -> dict[str, Any]:
     enabled = vector_store_enabled()
-    path = chroma_dir()
+    kind = vector_store_kind()
+    path = json_vector_index_path() if kind == "json" else chroma_dir()
     if not enabled:
         return {
             "enabled": False,
@@ -176,8 +177,44 @@ def chroma_status() -> dict[str, Any]:
             "status": "disabled",
             "path": str(path),
             "collectionCount": None,
-            "reason": "RAG_VECTOR_STORE is not chroma.",
+            "reason": "RAG_VECTOR_STORE is off.",
         }
+
+    if kind == "json":
+        if not path.exists():
+            return {
+                "enabled": True,
+                "available": True,
+                "healthy": True,
+                "status": "json_available_not_initialized",
+                "path": str(path),
+                "collectionCount": 0,
+                "reason": "Pure Python JSON vector index is enabled, but no approved chunks have been synced yet.",
+            }
+        try:
+            import json
+
+            data = json.loads(path.read_text(encoding="utf-8"))
+            collections = data.get("collections", {})
+            return {
+                "enabled": True,
+                "available": True,
+                "healthy": True,
+                "status": "json_healthy",
+                "path": str(path),
+                "collectionCount": len(collections) if isinstance(collections, dict) else None,
+                "reason": "",
+            }
+        except Exception as exc:
+            return {
+                "enabled": True,
+                "available": True,
+                "healthy": False,
+                "status": "json_unhealthy",
+                "path": str(path),
+                "collectionCount": None,
+                "reason": str(exc),
+            }
 
     if importlib.util.find_spec("chromadb") is None:
         return {

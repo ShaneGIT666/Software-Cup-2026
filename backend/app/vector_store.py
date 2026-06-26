@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import math
 import os
 import re
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
-from .data_store import chroma_dir
+from .data_store import chroma_dir, knowledge_dir
 from .llm_adapter import _post_json
 from .provider_policy import (
     configured_embedding_provider,
@@ -25,7 +28,16 @@ DEFAULT_DIMENSION = 384
 
 
 def vector_store_enabled() -> bool:
-    return os.getenv("RAG_VECTOR_STORE", "chroma").strip().lower() == "chroma"
+    return vector_store_kind() in {"chroma", "json"}
+
+
+def vector_store_kind() -> str:
+    return os.getenv("RAG_VECTOR_STORE", "chroma").strip().lower() or "chroma"
+
+
+def json_vector_index_path() -> Path:
+    configured = os.getenv("APP_VECTOR_INDEX_PATH")
+    return Path(configured) if configured else knowledge_dir() / "vector-index.json"
 
 
 def embedding_dimension() -> int:
@@ -115,7 +127,7 @@ def embed_texts(texts: list[str]) -> tuple[list[list[float]], str]:
 
 
 def chroma_collection(provider: str) -> Any | None:
-    if not vector_store_enabled():
+    if vector_store_kind() != "chroma":
         return None
     try:
         import chromadb  # type: ignore[import-not-found]
@@ -160,12 +172,61 @@ def metadata_for_chunk(chunk: dict[str, Any], embedding_provider: str) -> dict[s
     return metadata
 
 
+def load_json_vector_index() -> dict[str, Any]:
+    path = json_vector_index_path()
+    if not path.exists():
+        return {"collections": {}, "updatedAt": None}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        backup = path.with_name(f"{path.name}.bak")
+        if backup.exists():
+            data = json.loads(backup.read_text(encoding="utf-8"))
+        else:
+            return {"collections": {}, "updatedAt": None}
+    if not isinstance(data, dict):
+        return {"collections": {}, "updatedAt": None}
+    collections = data.get("collections")
+    if not isinstance(collections, dict):
+        data["collections"] = {}
+    return data
+
+
+def write_json_vector_index(index: dict[str, Any]) -> None:
+    path = json_vector_index_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        backup = path.with_name(f"{path.name}.bak")
+        backup.write_bytes(path.read_bytes())
+    temp_path = path.with_name(f"{path.name}.tmp")
+    temp_path.write_text(json.dumps(index, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    os.replace(temp_path, path)
+
+
+def sync_json_chunks(chunks: list[dict[str, Any]], documents: list[str], embeddings: list[list[float]], provider: str) -> None:
+    index = load_json_vector_index()
+    collections = index.setdefault("collections", {})
+    collection = collections.setdefault(collection_name(provider), {"items": {}})
+    items = collection.setdefault("items", {})
+    for chunk, document, embedding in zip(chunks, documents, embeddings, strict=False):
+        items[chunk["id"]] = {
+            "document": document,
+            "embedding": embedding,
+            "metadata": metadata_for_chunk(chunk, provider),
+        }
+    index["updatedAt"] = datetime.now(timezone.utc).isoformat()
+    write_json_vector_index(index)
+
+
 def sync_chunks(chunks: list[dict[str, Any]]) -> None:
     chunks = [chunk for chunk in chunks if chunk.get("review_status", "approved") == "approved"]
     if not chunks:
         return
     documents = [chunk.get("content") or chunk.get("snippet", "") for chunk in chunks]
     embeddings, provider = embed_texts(documents)
+    if vector_store_kind() == "json":
+        sync_json_chunks(chunks, documents, embeddings, provider)
+        return
     collection = chroma_collection(provider)
     if collection is None:
         return
@@ -180,6 +241,21 @@ def sync_chunks(chunks: list[dict[str, Any]]) -> None:
 
 
 def delete_document(document_id: str) -> None:
+    if vector_store_kind() == "json":
+        index = load_json_vector_index()
+        changed = False
+        for collection in index.get("collections", {}).values():
+            items = collection.get("items", {})
+            for chunk_id in list(items):
+                metadata = items[chunk_id].get("metadata", {})
+                if metadata.get("documentId") == document_id:
+                    del items[chunk_id]
+                    changed = True
+        if changed:
+            index["updatedAt"] = datetime.now(timezone.utc).isoformat()
+            write_json_vector_index(index)
+        return
+
     for provider in ("hash", "openai"):
         collection = chroma_collection(provider)
         if collection is None:
@@ -192,12 +268,73 @@ def delete_document(document_id: str) -> None:
             logger.warning(reason)
 
 
+def cosine_distance(left: list[float], right: list[float]) -> float:
+    if not left or not right:
+        return 1.0
+    size = min(len(left), len(right))
+    dot = sum(left[index] * right[index] for index in range(size))
+    left_norm = math.sqrt(sum(value * value for value in left[:size]))
+    right_norm = math.sqrt(sum(value * value for value in right[:size]))
+    if not left_norm or not right_norm:
+        return 1.0
+    similarity = dot / (left_norm * right_norm)
+    return max(0.0, min(2.0, 1.0 - similarity))
+
+
+def item_from_vector_match(chunk_id: str, document: str, metadata: dict[str, Any], distance: float, provider: str) -> dict[str, Any] | None:
+    if metadata.get("reviewStatus", "approved") != "approved":
+        return None
+    page = metadata.get("page") or None
+    return {
+        "id": metadata.get("chunkId") or chunk_id,
+        "title": metadata.get("title", ""),
+        "sourceType": metadata.get("sourceType", "document"),
+        "sourceName": metadata.get("sourceName", ""),
+        "snippet": metadata.get("snippet") or document[:160],
+        "documentId": metadata.get("documentId", ""),
+        "chunkId": metadata.get("chunkId") or chunk_id,
+        "page": int(page) if str(page).isdigit() else None,
+        "section": metadata.get("section", ""),
+        "version": metadata.get("version", 1),
+        "distance": float(distance),
+        "embeddingProvider": metadata.get("embeddingProvider") or provider,
+    }
+
+
+def search_json_similar_chunks(query_embedding: list[float], provider: str, top_k: int) -> list[dict[str, Any]]:
+    index = load_json_vector_index()
+    collection = index.get("collections", {}).get(collection_name(provider), {})
+    items = collection.get("items", {})
+    scored: list[tuple[float, str, dict[str, Any]]] = []
+    for chunk_id, record in items.items():
+        embedding = record.get("embedding", [])
+        if not isinstance(embedding, list):
+            continue
+        scored.append((cosine_distance(query_embedding, embedding), chunk_id, record))
+    scored.sort(key=lambda item: item[0])
+
+    results: list[dict[str, Any]] = []
+    for distance, chunk_id, record in scored[: max(1, top_k)]:
+        item = item_from_vector_match(
+            chunk_id=chunk_id,
+            document=str(record.get("document") or ""),
+            metadata=record.get("metadata", {}),
+            distance=distance,
+            provider=provider,
+        )
+        if item:
+            results.append(item)
+    return results
+
+
 def search_similar_chunks(query: str, top_k: int) -> list[dict[str, Any]]:
     if not query.strip():
         return []
 
     try:
         query_embeddings, provider = embed_texts([query])
+        if vector_store_kind() == "json":
+            return search_json_similar_chunks(query_embeddings[0], provider, top_k)
         collection = chroma_collection(provider)
         if collection is None:
             return []
@@ -227,25 +364,10 @@ def search_similar_chunks(query: str, top_k: int) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     for index, chunk_id in enumerate(ids):
         metadata = metadatas[index] if index < len(metadatas) and metadatas[index] else {}
-        if metadata.get("reviewStatus", "approved") != "approved":
-            continue
         document = documents[index] if index < len(documents) else ""
         distance = distances[index] if index < len(distances) else 1.0
-        page = metadata.get("page") or None
-        items.append(
-            {
-                "id": metadata.get("chunkId") or chunk_id,
-                "title": metadata.get("title", ""),
-                "sourceType": metadata.get("sourceType", "document"),
-                "sourceName": metadata.get("sourceName", ""),
-                "snippet": metadata.get("snippet") or document[:160],
-                "documentId": metadata.get("documentId", ""),
-                "chunkId": metadata.get("chunkId") or chunk_id,
-                "page": int(page) if str(page).isdigit() else None,
-                "section": metadata.get("section", ""),
-                "version": metadata.get("version", 1),
-                "distance": float(distance),
-                "embeddingProvider": metadata.get("embeddingProvider") or provider,
-            }
-        )
+        item = item_from_vector_match(chunk_id, document, metadata, distance, provider)
+        if not item:
+            continue
+        items.append(item)
     return items
