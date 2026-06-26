@@ -34,7 +34,7 @@ class EvidenceItem(BaseModel):
     sourceDocId: str | None = None
     documentId: str | None = None
     chunkId: str | None = None
-    version: str | int | None = None
+    version: int | str | None = None
     page: int | None = None
     section: str | None = None
     chapter: str | None = None

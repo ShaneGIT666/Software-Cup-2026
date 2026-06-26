@@ -2,6 +2,7 @@
 
 import json
 import shutil
+from pathlib import Path
 from typing import Any
 
 from fastapi.testclient import TestClient
@@ -2502,7 +2503,7 @@ def test_json_writes_use_atomic_replace(tmp_path, monkeypatch) -> None:
     temp_path, target_path = calls[0]
     assert temp_path.endswith(".tmp")
     assert target_path.endswith("repair-cases.json")
-    assert "case-atomic" in (examples / "repair-cases.json").with_name(temp_path.split("\\")[-1]).read_text(
+    assert "case-atomic" in (examples / "repair-cases.json").with_name(Path(temp_path).name).read_text(
         encoding="utf-8"
     )
 
