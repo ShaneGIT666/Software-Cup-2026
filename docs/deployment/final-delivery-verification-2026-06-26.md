@@ -39,7 +39,7 @@ Runtime configuration:
 - `LLM_PROVIDER=openai`
 - `OPENAI_BASE_URL` points to the competition MaaS OpenAI-compatible endpoint.
 - `OPENAI_MODEL=xopqwen36v35b`
-- `RAG_VECTOR_STORE=off`
+- `RAG_VECTOR_STORE=sqlite` for the target-compatible built-in SQLite vector index. Earlier smoke runs also verified the pure keyword path with `RAG_VECTOR_STORE=off`.
 - `MINERU_ENABLED=true`
 - `KNOWLEDGE_AUTO_ANALYZE_ASSETS=true`
 - `OCR_PROVIDER=mock`
@@ -58,7 +58,7 @@ Provider status highlights:
 
 - LLM effective provider: `openai`.
 - LLM key configured: `true`.
-- Chroma status: `disabled`, because the default Docker runtime uses `RAG_VECTOR_STORE=off`.
+- Vector-store status: SQLite vector index is the default target-compatible route. Chroma is optional and not required for the competition Docker image.
 - MinerU status: `fallback`, because MinerU is enabled but not installed in the LoongArch container image.
 
 Real LLM smoke:
@@ -77,6 +77,6 @@ Knowledge ingestion smoke:
 ## Delivery Notes
 
 - The default Docker path is now stable on LoongArch/Kylin without forcing Chroma installation.
-- Chroma can still be attempted with `--build-arg INSTALL_CHROMA=true`, but it is not required for the default competition deployment.
+- Chroma can still be attempted with `--build-arg INSTALL_CHROMA=true`, but it is not part of the target-environment main route until installation succeeds on LoongArch/Kylin.
 - MinerU interface and fallback path are integrated, but real MinerU is not installed in the LoongArch container image in this verification run.
 - Mock OCR is used in the verified container profile. OCR and multimodal provider failures degrade to reviewable pending chunks rather than blocking upload.

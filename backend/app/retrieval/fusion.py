@@ -61,8 +61,8 @@ def fuse_hits_rrf(keyword_hits: list[RetrievalHit], vector_hits: list[RetrievalH
     fused = [apply_fusion_score(hit) for hit in merged.values()]
     fused.sort(
         key=lambda item: (
-            item.fusion_score or 0,
             item.keyword_score or 0,
+            item.fusion_score or 0,
             item.vector_score or 0,
             item.confidence,
         ),

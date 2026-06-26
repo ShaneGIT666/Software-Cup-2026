@@ -1,82 +1,75 @@
-# 语义检索主方案：Embedding + ChromaDB
+# 语义检索主方案：SQLite Vector Store + Embedding
 
-本项目将“真实 embedding 模型 + ChromaDB 向量数据库”设为资料知识片段的语义检索主方案，用于提升已审核检修手册、OCR 文本和故障图片分析结果的语义召回能力。关键词检索仍承担设备型号、故障码、部件名和维修案例召回，hash embedding 只作为无 Key、弱网、依赖不可用时的兜底链路。
+## 当前结论
 
-## 默认配置
+LoongArch/Kylin 比赛交付主链路不再使用 ChromaDB 作为默认向量数据库。目标环境实测中，`chromadb` / `chroma-hnswlib` 原生依赖在 loongarch64 上构建失败，会阻塞 Docker image 构建。
+
+当前默认方案：
 
 ```env
-RAG_VECTOR_STORE=chroma
-RAG_EMBEDDING_PROVIDER=openai
-OPENAI_EMBEDDING_MODEL=text-embedding-3-small
-OPENAI_EMBEDDING_API_STYLE=openai_compatible
-EMBEDDING_TIMEOUT_SECONDS=20
+RAG_VECTOR_STORE=sqlite
+APP_VECTOR_DB_PATH=./data/knowledge/vector-index.sqlite3
+RAG_EMBEDDING_PROVIDER=hash
 ```
 
 说明：
 
-- `RAG_VECTOR_STORE=chroma`：启用 Chroma collection；只有 `review_status=approved` 的资料知识片段会同步，`pending_review` 不进入正式索引。
-- `RAG_EMBEDDING_PROVIDER=openai`：通过 OpenAI-compatible `/embeddings` 接口生成真实语义向量，实际复用 `OPENAI_API_KEY` 和 `OPENAI_BASE_URL`。
-- `text-embedding-3-small` 只对应 OpenAI 官方接口默认示例；DashScope/Qwen、SiliconFlow 或其他兼容网关必须填写该 provider 自己的 embedding 模型名，不能把它当作通用旧名或别名。
-- 如果未配置 Key、`REMOTE_API_MODE=off`、embedding 服务失败或 Chroma 初始化失败，系统会自动回退到 hash embedding 或关键词检索，接口不崩。
-
-## 云端模型示例
-
-```env
-REMOTE_API_MODE=auto
-RAG_VECTOR_STORE=chroma
-RAG_EMBEDDING_PROVIDER=openai
-OPENAI_API_KEY=your-key
-OPENAI_BASE_URL=https://api.openai.com/v1
-OPENAI_EMBEDDING_MODEL=text-embedding-3-small
-```
-
-## 国产 / OpenAI-Compatible 示例
-
-可使用支持 `/embeddings` 的 Qwen、SiliconFlow、LiteLLM 网关或其他兼容服务：
-
-```env
-REMOTE_API_MODE=auto
-RAG_VECTOR_STORE=chroma
-RAG_EMBEDDING_PROVIDER=openai
-OPENAI_API_KEY=your-key
-OPENAI_BASE_URL=https://your-compatible-provider/v1
-OPENAI_EMBEDDING_MODEL=your-embedding-model
-```
-
-## 本地模型示例
-
-若本地服务提供 OpenAI-compatible `/embeddings`：
-
-```env
-REMOTE_API_MODE=auto
-RAG_VECTOR_STORE=chroma
-RAG_EMBEDDING_PROVIDER=openai
-OPENAI_API_KEY=local-placeholder
-OPENAI_BASE_URL=http://127.0.0.1:11434/v1
-OPENAI_EMBEDDING_MODEL=nomic-embed-text
-```
+- `RAG_VECTOR_STORE=sqlite`：启用内置 SQLite 向量索引，只同步 `review_status=approved` 的知识片段。
+- `pending_review`、`rejected`、`deprecated`、`replaced` 不进入正式向量索引。
+- SQLite 后端使用 Python 标准库 `sqlite3`，不需要额外 Python wheel、Docker sidecar 或外部数据库服务。
+- 查询阶段当前采用线性 cosine 扫描，适合比赛和单机演示规模；后续可升级 pgvector 或 sqlite-vec。
+- `RAG_VECTOR_STORE=json` 保留为更小的纯文件 fallback。
+- `RAG_VECTOR_STORE=chroma` 只允许在已验证 `chromadb` 可安装的非 LoongArch 环境使用。
 
 ## 检索流程
 
 ```text
-资料上传/OCR 文本/多模态分析结果
+资料上传 / OCR 文本 / 多模态分析结果
 -> 切分为 document chunks
 -> pending_review
 -> 人工审核为 approved
--> embedding 模型生成向量
--> ChromaDB 持久化索引
--> /api/search 混合召回：关键词结果 + Chroma 语义结果
+-> embedding provider 生成向量
+-> SQLite vector store 持久化索引
+-> /api/search 召回：关键词结果 + SQLite 向量结果
 -> /api/rag/answer 引用召回片段生成回答
 ```
 
+## Provider 配置
+
+默认目标环境配置：
+
+```env
+REMOTE_API_MODE=auto
+RAG_VECTOR_STORE=sqlite
+RAG_EMBEDDING_PROVIDER=hash
+```
+
+真实 embedding 可选增强：
+
+```env
+REMOTE_API_MODE=auto
+RAG_VECTOR_STORE=sqlite
+RAG_EMBEDDING_PROVIDER=openai
+OPENAI_API_KEY=your-key
+OPENAI_BASE_URL=https://your-compatible-provider/v1
+OPENAI_EMBEDDING_MODEL=your-provider-embedding-model
+```
+
+注意：
+
+- `text-embedding-3-small` 只是 OpenAI 官方模型示例。
+- DashScope/Qwen、SiliconFlow 或其他 OpenAI-compatible provider 必须填写各自真实 embedding 模型名。
+- 如果 embedding API 不可用，系统会自动回退 hash embedding，不中断上传、审核、检索和 RAG。
+
 ## 答辩口径
 
-系统采用混合语义检索架构。主路径使用 ChromaDB 向量数据库和可配置 OpenAI-compatible embedding 模型，实现已审核检修知识片段、OCR 文本和图片分析结果的语义召回；设备型号、故障码、部件名和维修案例继续由关键词/字段权重优先召回。兜底路径保留关键词检索与 hash embedding，确保离线、弱网或模型不可用时仍能完成演示。
+系统采用目标环境优先的混合检索架构。设备型号、故障码、部件名优先通过关键词和字段权重召回；语义描述通过内置 SQLite 向量索引召回已审核知识片段。所有自动解析和多模态分析产物默认进入 `pending_review`，审核通过后才会同步到正式检索索引。
+
+ChromaDB 仍保留为可选兼容路径，但由于其原生 HNSW 依赖在 LoongArch/Kylin 当前环境无法可靠安装，不能作为比赛主交付依赖。后续生产级增强优先验证 PostgreSQL + pgvector，其次验证 sqlite-vec。
 
 ## 风险边界
 
-- hash embedding 只能称为 fallback，不应宣称为真实语义 embedding。
-- 自动解析或模型分析结果默认 `pending_review`，审核通过前不会同步 Chroma。
-- 当前维修案例进入检索主要依赖案例审核后的关键词/字段匹配；尚未同步为 Chroma 向量知识片段。
-- LoongArch/Kylin 最小部署可显式设置 `RAG_VECTOR_STORE=off`，先保证前后端和 mock/RAG 演示链路稳定。
-- ChromaDB 是单机 MVP 友好的向量库；若后续需要多租户、高并发或更强过滤检索，可升级到 Qdrant、Milvus 等服务型向量库。
+- SQLite 向量索引是目标环境可运行的嵌入式方案，不等同于大规模 ANN 服务。
+- hash embedding 只能称为 fallback，不应宣传为真实语义 embedding。
+- 真实 embedding 模型只有在 provider、model、base_url、API key 都验证通过后才能作为演示口径。
+- Chroma、Qdrant、Milvus、Weaviate、pgvector、sqlite-vec 进入主链路前，都必须先通过 LoongArch/Kylin 安装和接口冒烟。

@@ -6,6 +6,7 @@ import logging
 import math
 import os
 import re
+import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -28,16 +29,21 @@ DEFAULT_DIMENSION = 384
 
 
 def vector_store_enabled() -> bool:
-    return vector_store_kind() in {"chroma", "json"}
+    return vector_store_kind() in {"chroma", "json", "sqlite"}
 
 
 def vector_store_kind() -> str:
-    return os.getenv("RAG_VECTOR_STORE", "chroma").strip().lower() or "chroma"
+    return os.getenv("RAG_VECTOR_STORE", "sqlite").strip().lower() or "sqlite"
 
 
 def json_vector_index_path() -> Path:
     configured = os.getenv("APP_VECTOR_INDEX_PATH")
     return Path(configured) if configured else knowledge_dir() / "vector-index.json"
+
+
+def sqlite_vector_index_path() -> Path:
+    configured = os.getenv("APP_VECTOR_DB_PATH")
+    return Path(configured) if configured else knowledge_dir() / "vector-index.sqlite3"
 
 
 def embedding_dimension() -> int:
@@ -203,6 +209,65 @@ def write_json_vector_index(index: dict[str, Any]) -> None:
     os.replace(temp_path, path)
 
 
+def sqlite_connection() -> sqlite3.Connection:
+    path = sqlite_vector_index_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(path)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS vector_chunks (
+            collection TEXT NOT NULL,
+            chunk_id TEXT NOT NULL,
+            document_id TEXT NOT NULL,
+            document TEXT NOT NULL,
+            embedding_json TEXT NOT NULL,
+            metadata_json TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (collection, chunk_id)
+        )
+        """
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_vector_chunks_document_id ON vector_chunks(document_id)")
+    return conn
+
+
+def sync_sqlite_chunks(
+    chunks: list[dict[str, Any]], documents: list[str], embeddings: list[list[float]], provider: str
+) -> None:
+    collection = collection_name(provider)
+    updated_at = datetime.now(timezone.utc).isoformat()
+    rows = [
+        (
+            collection,
+            chunk["id"],
+            str(chunk.get("documentId", "")),
+            document,
+            json.dumps(embedding, ensure_ascii=False),
+            json.dumps(metadata_for_chunk(chunk, provider), ensure_ascii=False),
+            updated_at,
+        )
+        for chunk, document, embedding in zip(chunks, documents, embeddings, strict=False)
+    ]
+    with sqlite_connection() as conn:
+        conn.executemany(
+            """
+            INSERT INTO vector_chunks (
+                collection, chunk_id, document_id, document, embedding_json, metadata_json, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(collection, chunk_id) DO UPDATE SET
+                document_id=excluded.document_id,
+                document=excluded.document,
+                embedding_json=excluded.embedding_json,
+                metadata_json=excluded.metadata_json,
+                updated_at=excluded.updated_at
+            """,
+            rows,
+        )
+
+
 def sync_json_chunks(chunks: list[dict[str, Any]], documents: list[str], embeddings: list[list[float]], provider: str) -> None:
     index = load_json_vector_index()
     collections = index.setdefault("collections", {})
@@ -224,6 +289,9 @@ def sync_chunks(chunks: list[dict[str, Any]]) -> None:
         return
     documents = [chunk.get("content") or chunk.get("snippet", "") for chunk in chunks]
     embeddings, provider = embed_texts(documents)
+    if vector_store_kind() == "sqlite":
+        sync_sqlite_chunks(chunks, documents, embeddings, provider)
+        return
     if vector_store_kind() == "json":
         sync_json_chunks(chunks, documents, embeddings, provider)
         return
@@ -241,6 +309,11 @@ def sync_chunks(chunks: list[dict[str, Any]]) -> None:
 
 
 def delete_document(document_id: str) -> None:
+    if vector_store_kind() == "sqlite":
+        with sqlite_connection() as conn:
+            conn.execute("DELETE FROM vector_chunks WHERE document_id = ?", (document_id,))
+        return
+
     if vector_store_kind() == "json":
         index = load_json_vector_index()
         changed = False
@@ -327,12 +400,72 @@ def search_json_similar_chunks(query_embedding: list[float], provider: str, top_
     return results
 
 
+def decode_vector(raw_value: str) -> list[float]:
+    try:
+        value = json.loads(raw_value)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(value, list):
+        return []
+    return [float(item) for item in value if isinstance(item, (int, float))]
+
+
+def decode_metadata(raw_value: str) -> dict[str, Any]:
+    try:
+        value = json.loads(raw_value)
+    except json.JSONDecodeError:
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def search_sqlite_similar_chunks(query_embedding: list[float], provider: str, top_k: int) -> list[dict[str, Any]]:
+    collection = collection_name(provider)
+    path = sqlite_vector_index_path()
+    if not path.exists():
+        return []
+
+    scored: list[tuple[float, str, str, dict[str, Any]]] = []
+    try:
+        with sqlite_connection() as conn:
+            rows = conn.execute(
+                "SELECT chunk_id, document, embedding_json, metadata_json FROM vector_chunks WHERE collection = ?",
+                (collection,),
+            ).fetchall()
+    except sqlite3.Error as exc:
+        reason = f"SQLite vector query failed for {provider}: {exc}"
+        record_fallback("embedding", reason)
+        logger.warning(reason)
+        return []
+
+    for chunk_id, document, embedding_json, metadata_json in rows:
+        embedding = decode_vector(str(embedding_json))
+        if not embedding:
+            continue
+        scored.append((cosine_distance(query_embedding, embedding), str(chunk_id), str(document), decode_metadata(str(metadata_json))))
+    scored.sort(key=lambda item: item[0])
+
+    results: list[dict[str, Any]] = []
+    for distance, chunk_id, document, metadata in scored[: max(1, top_k)]:
+        item = item_from_vector_match(
+            chunk_id=chunk_id,
+            document=document,
+            metadata=metadata,
+            distance=distance,
+            provider=provider,
+        )
+        if item:
+            results.append(item)
+    return results
+
+
 def search_similar_chunks(query: str, top_k: int) -> list[dict[str, Any]]:
     if not query.strip():
         return []
 
     try:
         query_embeddings, provider = embed_texts([query])
+        if vector_store_kind() == "sqlite":
+            return search_sqlite_similar_chunks(query_embeddings[0], provider, top_k)
         if vector_store_kind() == "json":
             return search_json_similar_chunks(query_embeddings[0], provider, top_k)
         collection = chroma_collection(provider)

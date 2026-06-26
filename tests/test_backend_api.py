@@ -57,7 +57,7 @@ def test_provider_status_reports_offline_fallback(tmp_path, monkeypatch) -> None
     assert payload["embedding"]["effectiveProvider"] == "hash"
 
 
-def test_provider_status_defaults_to_openai_embedding_with_hash_fallback(tmp_path, monkeypatch) -> None:
+def test_provider_status_defaults_to_sqlite_vector_store_with_hash_fallback(tmp_path, monkeypatch) -> None:
     monkeypatch.delenv("REMOTE_API_MODE", raising=False)
     monkeypatch.delenv("RAG_EMBEDDING_PROVIDER", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
@@ -69,7 +69,7 @@ def test_provider_status_defaults_to_openai_embedding_with_hash_fallback(tmp_pat
     assert response.status_code == 200
     embedding = response.json()["data"]["embedding"]
     assert embedding["provider"] == "openai"
-    assert embedding["vectorStore"] == "chroma"
+    assert embedding["vectorStore"] == "sqlite"
     assert embedding["remoteCapable"] is True
     assert embedding["keyConfigured"] is False
     assert embedding["effectiveProvider"] == "hash"
@@ -2279,6 +2279,43 @@ def test_json_vector_store_indexes_only_approved_chunks(tmp_path, monkeypatch) -
     assert results[0]["embeddingProvider"] == "hash"
 
 
+def test_sqlite_vector_store_indexes_only_approved_chunks(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("APP_KNOWLEDGE_DIR", str(tmp_path / "knowledge"))
+    monkeypatch.setenv("RAG_VECTOR_STORE", "sqlite")
+    monkeypatch.setenv("RAG_EMBEDDING_PROVIDER", "hash")
+
+    vector_store.sync_chunks(
+        [
+            {
+                "id": "sqlite-chunk-approved",
+                "documentId": "sqlite-doc-approved",
+                "title": "SQLite 目标环境资料",
+                "sourceName": "目标环境资料",
+                "sourceType": "document",
+                "content": "液压泵异响 油液污染 过滤器堵塞",
+                "snippet": "液压泵异响 油液污染",
+                "review_status": "approved",
+            },
+            {
+                "id": "sqlite-chunk-pending",
+                "documentId": "sqlite-doc-pending",
+                "title": "待审核资料",
+                "sourceName": "目标环境资料",
+                "sourceType": "document",
+                "content": "pending sqlite vector data must not be indexed",
+                "snippet": "pending sqlite",
+                "review_status": "pending_review",
+            },
+        ]
+    )
+
+    results = vector_store.search_similar_chunks("液压泵 异响 油液污染", 5)
+
+    assert vector_store.sqlite_vector_index_path().exists()
+    assert [item["chunkId"] for item in results] == ["sqlite-chunk-approved"]
+    assert results[0]["embeddingProvider"] == "hash"
+
+
 def test_json_vector_store_delete_document_removes_chunks(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("APP_KNOWLEDGE_DIR", str(tmp_path / "knowledge"))
     monkeypatch.setenv("RAG_VECTOR_STORE", "json")
@@ -2303,6 +2340,32 @@ def test_json_vector_store_delete_document_removes_chunks(tmp_path, monkeypatch)
     vector_store.delete_document("doc-delete")
 
     assert vector_store.search_similar_chunks("制动泵渗漏", 5) == []
+
+
+def test_sqlite_vector_store_delete_document_removes_chunks(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("APP_KNOWLEDGE_DIR", str(tmp_path / "knowledge"))
+    monkeypatch.setenv("RAG_VECTOR_STORE", "sqlite")
+    monkeypatch.setenv("RAG_EMBEDDING_PROVIDER", "hash")
+
+    vector_store.sync_chunks(
+        [
+            {
+                "id": "sqlite-chunk-delete",
+                "documentId": "sqlite-doc-delete",
+                "title": "待删除资料",
+                "sourceName": "目标环境资料",
+                "sourceType": "document",
+                "content": "冷却风扇不转 检查继电器和保险丝",
+                "snippet": "冷却风扇不转",
+                "review_status": "approved",
+            }
+        ]
+    )
+
+    assert vector_store.search_similar_chunks("冷却风扇 继电器", 5)
+    vector_store.delete_document("sqlite-doc-delete")
+
+    assert vector_store.search_similar_chunks("冷却风扇 继电器", 5) == []
 
 
 def test_multimodal_validate_mock_provider(tmp_path, monkeypatch) -> None:

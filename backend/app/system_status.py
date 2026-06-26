@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import Counter
 from datetime import datetime, timezone
 import importlib.util
+import sqlite3
 from typing import Any, Callable
 
 from .data_store import (
@@ -16,7 +17,7 @@ from .data_store import (
     load_seed_data,
 )
 from .mineru_adapter import mineru_available, mineru_enabled, mineru_timeout_seconds
-from .vector_store import json_vector_index_path, vector_store_enabled, vector_store_kind
+from .vector_store import json_vector_index_path, sqlite_vector_index_path, vector_store_enabled, vector_store_kind
 
 
 REVIEW_STATUSES = ("draft", "pending_review", "approved", "rejected", "deprecated", "replaced")
@@ -168,7 +169,12 @@ def mineru_status() -> dict[str, Any]:
 def chroma_status() -> dict[str, Any]:
     enabled = vector_store_enabled()
     kind = vector_store_kind()
-    path = json_vector_index_path() if kind == "json" else chroma_dir()
+    if kind == "sqlite":
+        path = sqlite_vector_index_path()
+    elif kind == "json":
+        path = json_vector_index_path()
+    else:
+        path = chroma_dir()
     if not enabled:
         return {
             "enabled": False,
@@ -213,6 +219,46 @@ def chroma_status() -> dict[str, Any]:
                 "status": "json_unhealthy",
                 "path": str(path),
                 "collectionCount": None,
+                "reason": str(exc),
+            }
+
+    if kind == "sqlite":
+        if not path.exists():
+            return {
+                "enabled": True,
+                "available": True,
+                "healthy": True,
+                "status": "sqlite_available_not_initialized",
+                "path": str(path),
+                "collectionCount": 0,
+                "itemCount": 0,
+                "reason": "SQLite vector index is enabled, but no approved chunks have been synced yet.",
+            }
+        try:
+            with sqlite3.connect(path) as conn:
+                collection_count = conn.execute(
+                    "SELECT COUNT(DISTINCT collection) FROM vector_chunks"
+                ).fetchone()[0]
+                item_count = conn.execute("SELECT COUNT(*) FROM vector_chunks").fetchone()[0]
+            return {
+                "enabled": True,
+                "available": True,
+                "healthy": True,
+                "status": "sqlite_healthy",
+                "path": str(path),
+                "collectionCount": int(collection_count),
+                "itemCount": int(item_count),
+                "reason": "",
+            }
+        except Exception as exc:
+            return {
+                "enabled": True,
+                "available": True,
+                "healthy": False,
+                "status": "sqlite_unhealthy",
+                "path": str(path),
+                "collectionCount": None,
+                "itemCount": None,
                 "reason": str(exc),
             }
 

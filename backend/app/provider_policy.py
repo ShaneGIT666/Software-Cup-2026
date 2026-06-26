@@ -70,7 +70,7 @@ def provider_status() -> dict[str, Any]:
     embedding_provider = configured_embedding_provider()
     requested_reranker = requested_reranker_provider()
     reranker_provider = configured_reranker_provider()
-    vector_store = os.getenv("RAG_VECTOR_STORE", "chroma").strip().lower() or "chroma"
+    vector_store = os.getenv("RAG_VECTOR_STORE", "sqlite").strip().lower() or "sqlite"
     offline = remote_api_disabled()
     return {
         "remoteApiMode": remote_api_mode(),

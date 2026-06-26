@@ -71,15 +71,16 @@ def test_rrf_fusion_deduplicates_chunk_and_merges_scores() -> None:
     assert fused[0].score_breakdown["vectorScore"] == 18
 
 
-def test_rrf_fusion_orders_by_combined_rank() -> None:
+def test_rrf_fusion_keeps_stronger_keyword_match_first() -> None:
     keyword_only = make_hit("manual-1", keyword_rank=1, keyword_score=30)
     both_channels = make_hit("chunk-1", chunk_id="chunk-1", keyword_rank=3, keyword_score=10)
     vector_duplicate = make_hit("chunk-1", chunk_id="chunk-1", vector_rank=1, vector_score=18)
 
     fused = fuse_hits_rrf([keyword_only, both_channels], [vector_duplicate], top_k=5)
 
-    assert fused[0].id == "chunk-1"
-    assert fused[0].fusion_score and fused[0].fusion_score > (keyword_only.fusion_score or 0)
+    assert fused[0].id == "manual-1"
+    assert fused[1].id == "chunk-1"
+    assert fused[1].fusion_score and fused[1].fusion_score > (keyword_only.fusion_score or 0)
 
 
 def test_reranker_none_preserves_rrf_order(monkeypatch) -> None:

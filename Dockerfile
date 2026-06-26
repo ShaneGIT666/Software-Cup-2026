@@ -20,7 +20,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     LLM_PROVIDER=mock \
     MULTIMODAL_PROVIDER=mock \
     OCR_PROVIDER=mock \
-    RAG_VECTOR_STORE=json
+    RAG_VECTOR_STORE=sqlite
 
 WORKDIR /app
 
@@ -32,7 +32,7 @@ RUN if [ "${INSTALL_TESSERACT}" = "true" ]; then \
 
 COPY backend/requirements.txt /app/backend/requirements.txt
 RUN python -m pip install --no-cache-dir --upgrade pip \
-    && INSTALL_CHROMA=${INSTALL_CHROMA} python -c "import os; from pathlib import Path; p=Path('/app/backend/requirements.txt'); q=Path('/app/backend/requirements-container.txt'); lines=p.read_text(encoding='utf-8').replace('uvicorn[standard]==0.34.0','uvicorn==0.34.0').splitlines(); install_chroma=os.environ.get('INSTALL_CHROMA','false').lower() in {'1','true','yes'}; lines=[line for line in lines if install_chroma or not line.lower().startswith('chromadb')]; q.write_text('\n'.join(lines) + '\npydantic<2\n', encoding='utf-8')" \
+    && INSTALL_CHROMA=${INSTALL_CHROMA} python -c "import os; from pathlib import Path; p=Path('/app/backend/requirements.txt'); q=Path('/app/backend/requirements-container.txt'); lines=p.read_text(encoding='utf-8').replace('uvicorn[standard]==0.34.0','uvicorn==0.34.0').splitlines(); install_chroma=os.environ.get('INSTALL_CHROMA','false').lower() in {'1','true','yes'}; lines.append('pydantic<2'); lines.extend(['chromadb>=0.5.0,<2.0.0'] if install_chroma else []); q.write_text('\n'.join(lines) + '\n', encoding='utf-8')" \
     && python -m pip install --no-cache-dir -r /app/backend/requirements-container.txt
 
 COPY backend /app/backend
