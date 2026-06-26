@@ -1,0 +1,41 @@
+{
+  "generatedAt": "2026-06-26T14:13:47.535254+00:00",
+  "status": "passed",
+  "checks": {
+    "git_status": {
+      "command": [
+        "git",
+        "status",
+        "--short",
+        "--branch"
+      ],
+      "returncode": 0,
+      "ok": true,
+      "outputTail": "## main...origin/main\n M backend/app/evidence_pack.py\n M backend/app/knowledge_graph.py\n M backend/app/llm_adapter.py\n M backend/app/main.py\n M backend/app/rag.py\n M backend/app/schemas.py\n M backend/app/services.py\n M frontend/src/App.vue\n M frontend/src/api.ts\n M frontend/src/components/QueryPanel.vue\n M frontend/src/styles.css\n M tests/test_backend_api.py\n?? backend/app/maintenance_guidance.py\n?? docs/ppt-assets/\n?? docs/requirements/official-compliance-matrix-final.md\n?? docs/testing/final-benchmark-results.json\n?? docs/testing/final-benchmark-summary.md\n?? docs/testing/final-official-requirements-test-report.md\n?? docs/testing/final-test-and-benchmark-report.md\n?? docs/testing/llm-provider-final-validation.md\n?? docs/testing/loongarch-final-verification-template.md\n?? docs/testing/loongarch-final-verification.md\n?? scripts/loongarch-final-verify.sh\n?? scripts/run-final-benchmark.py\n?? tests/test_case_experience_review_flow.py\n?? tests/test_chunk_revision_audit.py\n?? tests/test_knowledge_graph_approved_only.py\n?? tests/test_maintenance_workflow_guidance.py\n?? tests/test_multimodal_diagnosis.py\n?? tests/test_official_compliance_smoke.py\n"
+    },
+    "git_diff_check": {
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "returncode": 0,
+      "ok": true,
+      "outputTail": "warning: in the working copy of 'backend/app/evidence_pack.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'backend/app/knowledge_graph.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'backend/app/llm_adapter.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'backend/app/main.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'backend/app/rag.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'backend/app/schemas.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'backend/app/services.py', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'frontend/src/App.vue', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'frontend/src/api.ts', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'frontend/src/components/QueryPanel.vue', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'frontend/src/styles.css', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'tests/test_backend_api.py', LF will be replaced by CRLF the next time Git touches it\n"
+    },
+    "official_smoke_tests": {
+      "command": [
+        "E:\\Software\\Software-Cup-2026\\backend\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "tests/test_official_compliance_smoke.py",
+        "tests/test_multimodal_diagnosis.py",
+        "tests/test_maintenance_workflow_guidance.py",
+        "-q"
+      ],
+      "returncode": 0,
+      "ok": true,
+      "outputTail": ".....                                                                    [100%]\n5 passed in 0.56s\n"
+    }
+  }
+}

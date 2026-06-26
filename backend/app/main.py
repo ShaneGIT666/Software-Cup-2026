@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import logging
+import tempfile
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -35,7 +36,8 @@ from .knowledge_graph import build_global_knowledge_graph, build_knowledge_graph
 from .provider_policy import provider_status
 from .rag import answer_with_rag, diagnose_with_rag, validate_llm_provider
 from .review_workbench import list_review_events, list_review_items
-from .multimodal_adapter import validate_multimodal_provider
+from .multimodal_adapter import analyze_multimodal_document, validate_multimodal_provider
+from .ocr_adapter import analyze_ocr_document
 from .schemas import (
     ApiResponse,
     CaseCreateRequest,
@@ -159,6 +161,108 @@ def search(request: SearchRequest) -> ApiResponse:
 @app.post("/api/diagnosis", response_model=ApiResponse)
 def diagnosis(request: DiagnosisRequest) -> ApiResponse:
     return ApiResponse(data=diagnose_with_rag(request), message="诊断建议已生成")
+
+
+@app.post("/api/multimodal/diagnosis", response_model=ApiResponse)
+async def multimodal_diagnosis(
+    deviceModel: str = Form(default=""),
+    deviceType: str = Form(default=""),
+    faultText: str = Form(default=""),
+    maintenanceLevel: str = Form(default="normal_repair"),
+    riskLevel: str = Form(default="medium"),
+    topK: int = Form(default=5),
+    image: UploadFile | None = File(default=None),
+) -> ApiResponse:
+    ocr_text = ""
+    image_clues: list[str] = []
+    image_analysis: dict[str, Any] = {
+        "provider": "none",
+        "summary": "",
+        "observations": [],
+        "fallback": False,
+        "fallbackReason": "",
+    }
+    fallback_used = False
+
+    temp_path: Path | None = None
+    if image is not None and image.filename:
+        suffix = Path(image.filename).suffix.lower().lstrip(".")
+        if suffix not in {"jpg", "jpeg", "png", "webp"}:
+            raise HTTPException(status_code=400, detail="故障图片仅支持 jpg、jpeg、png、webp")
+        content = await image.read()
+        if not content:
+            raise HTTPException(status_code=400, detail="故障图片不能为空")
+        if len(content) > MAX_UPLOAD_BYTES:
+            raise HTTPException(status_code=400, detail="故障图片不能超过 10MB")
+        with tempfile.NamedTemporaryFile(delete=False, suffix=f".{suffix}") as temp_file:
+            temp_file.write(content)
+            temp_path = Path(temp_file.name)
+        try:
+            ocr_result = analyze_ocr_document(temp_path, image.filename, suffix)
+            analysis = analyze_multimodal_document(temp_path, image.filename, suffix, None)
+            ocr_text = str(ocr_result.get("text") or "")
+            image_clues = [
+                str(item)
+                for item in (
+                    [analysis.get("summary", "")]
+                    + list(analysis.get("keyComponents", []))
+                    + list(analysis.get("faultSymptoms", []))
+                    + list(analysis.get("textSegments", [])[:3])
+                )
+                if str(item).strip()
+            ][:12]
+            fallback_used = bool(ocr_result.get("fallback") or analysis.get("fallback"))
+            image_analysis = {
+                "provider": analysis.get("provider", "mock"),
+                "summary": analysis.get("summary", ""),
+                "observations": image_clues,
+                "fallback": bool(analysis.get("fallback")),
+                "fallbackReason": analysis.get("fallbackReason", ""),
+                "ocrProvider": ocr_result.get("provider", "mock"),
+                "ocrFallback": bool(ocr_result.get("fallback")),
+            }
+        finally:
+            if temp_path and temp_path.exists():
+                temp_path.unlink()
+
+    expanded_fault_text = " ".join(
+        part for part in [faultText, ocr_text, " ".join(image_clues), maintenanceLevel] if str(part).strip()
+    ).strip()
+    diagnosis_request = DiagnosisRequest(
+        deviceModel=deviceModel,
+        deviceType=deviceType,
+        faultText=expanded_fault_text or faultText,
+        maintenanceLevel=maintenanceLevel,
+        riskLevel=riskLevel,
+    )
+    payload = diagnose_with_rag(diagnosis_request)
+    return ApiResponse(
+        data={
+            "queryContext": {
+                "deviceModel": deviceModel,
+                "deviceType": deviceType,
+                "faultText": faultText,
+                "maintenanceLevel": maintenanceLevel,
+                "riskLevel": riskLevel,
+                "imageClues": image_clues,
+                "ocrText": ocr_text,
+                "fallbackUsed": fallback_used or bool(payload.get("fallback")),
+                "clueType": "inputClue",
+                "expandedFaultText": expanded_fault_text,
+            },
+            "imageAnalysis": image_analysis,
+            "results": payload.get("citations", []),
+            "evidencePack": payload.get("evidencePack", {}),
+            "answer": payload.get("answer", ""),
+            "structuredAnswer": payload.get("structuredAnswer", {}),
+            "citations": payload.get("citations", []),
+            "provider": payload.get("provider", "mock"),
+            "fallback": fallback_used or bool(payload.get("fallback")),
+            "fallbackReason": payload.get("fallbackReason", ""),
+            "raw": payload,
+        },
+        message="故障图片诊断已完成",
+    )
 
 
 @app.post("/api/rag/answer", response_model=ApiResponse)

@@ -367,6 +367,7 @@ h2 {
 }
 
 .upload-result,
+.diagnosis-result,
 .knowledge-status,
 .rag-answer,
 .notice {
@@ -377,6 +378,7 @@ h2 {
 }
 
 .upload-result,
+.diagnosis-result,
 .knowledge-status {
   display: grid;
   gap: 5px;
@@ -384,6 +386,7 @@ h2 {
 }
 
 .upload-result span,
+.diagnosis-result span,
 .knowledge-status span,
 .knowledge-card small,
 .citation-card small,
@@ -393,6 +396,16 @@ h2 {
   color: var(--text-muted);
   font-size: 12px;
   line-height: 1.55;
+}
+
+.diagnosis-result {
+  border-color: oklch(0.78 0.08 178);
+  background: oklch(0.97 0.018 178);
+}
+
+.diagnosis-result.fallback {
+  border-color: oklch(0.79 0.09 72);
+  background: oklch(0.97 0.025 72);
 }
 
 .metric-grid {

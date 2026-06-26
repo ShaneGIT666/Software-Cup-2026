@@ -4,6 +4,15 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from .maintenance_guidance import (
+    build_compliance_checks,
+    build_pre_work_preparation,
+    build_risk_controls,
+    maintenance_level_description,
+    normalize_maintenance_level,
+    normalize_risk_level,
+)
+
 
 HIGH_RISK_LEVELS = {"high", "critical"}
 
@@ -58,8 +67,13 @@ class EvidencePack(BaseModel):
 
 class StructuredRagOutput(BaseModel):
     preliminaryJudgment: str
+    maintenanceLevel: str = "normal_repair"
+    maintenanceLevelDescription: str = ""
+    preWorkPreparation: list[str] = Field(default_factory=list)
     inspectionSteps: list[str] = Field(default_factory=list)
     repairSteps: list[str] = Field(default_factory=list)
+    riskControls: list[str] = Field(default_factory=list)
+    complianceChecks: list[str] = Field(default_factory=list)
     safetyWarnings: list[str] = Field(default_factory=list)
     acceptanceCriteria: list[str] = Field(default_factory=list)
     citations: list[EvidenceTrace] = Field(default_factory=list)
@@ -136,7 +150,7 @@ def build_evidence_pack(results: list[dict[str, Any]]) -> dict[str, Any]:
     if any(item.page is None and item.sourceType in {"manual", "document"} for item in items):
         uncertainty_reasons.append("部分手册或文档证据缺少页码，需回查原始资料。")
     if not approved_only:
-        uncertainty_reasons.append("证据包存在非 approved 状态片段，正式建议前必须剔除或复核。")
+        uncertainty_reasons.append("证据包存在非 approved 片段，正式建议前必须剔除或复核。")
     if risk_review_required:
         uncertainty_reasons.append("证据包包含 high/critical 风险等级，必须人工复核。")
 
@@ -161,16 +175,29 @@ def build_structured_rag_output(
     device_model: str,
     fault_text: str,
     evidence_pack: dict[str, Any],
+    maintenance_level: str = "normal_repair",
+    risk_level: str = "medium",
 ) -> dict[str, Any]:
     items = evidence_pack.get("items", [])
     traces = evidence_pack.get("citationTrace", [])
     risk_review_required = bool(evidence_pack.get("riskReviewRequired"))
+    maintenance_level = normalize_maintenance_level(maintenance_level)
+    risk_level = normalize_risk_level(risk_level)
+    level_description = maintenance_level_description(maintenance_level)
+    pre_work = build_pre_work_preparation(maintenance_level, risk_level)
+    risk_controls = build_risk_controls(maintenance_level, risk_level, evidence_pack)
+    compliance_checks = build_compliance_checks(maintenance_level, risk_level, evidence_pack)
 
     if not items:
         output = StructuredRagOutput(
             preliminaryJudgment="当前没有 approved 证据支撑，不能给出确定检修判断。",
+            maintenanceLevel=maintenance_level,
+            maintenanceLevelDescription=level_description,
+            preWorkPreparation=pre_work,
             inspectionSteps=["补充设备型号、故障码、故障图片或上传并审核相关手册后重新检索。"],
             repairSteps=["暂无证据支持的维修步骤，不建议直接执行拆装或参数调整。"],
+            riskControls=risk_controls,
+            complianceChecks=compliance_checks,
             safetyWarnings=["证据不足时不得执行高风险操作，需由现场负责人或资深检修人员复核。"],
             acceptanceCriteria=["暂无证据支持的验收标准。"],
             citations=[],
@@ -192,11 +219,10 @@ def build_structured_rag_output(
         f"若现场现象与 {_evidence_label(item)} 一致，仅按该来源资料支持的内容执行处理并记录结果。"
         for item in items[:2]
     ]
-    safety_warnings = []
     if risk_review_required:
-        safety_warnings.append("证据包包含 high/critical 风险等级，执行前必须人工复核。")
+        safety_warnings = ["证据包包含 high/critical 风险等级，执行前必须人工复核。"]
     else:
-        safety_warnings.append("证据包未标记 high/critical 风险；涉及断电、拆装、高温或旋转部件时仍需按现场安全规程复核。")
+        safety_warnings = ["证据包未标记 high/critical 风险；涉及断电、拆装、高温或旋转部件时仍需按现场安全规程复核。"]
     acceptance_criteria = [
         f"处理后回查 {_evidence_label(items[0])} 对应来源，确认故障现象消失或进入来源要求的验收状态。",
         "证据未给出量化阈值时，本系统不补写参数，需由人工依据原始手册确认。",
@@ -206,8 +232,13 @@ def build_structured_rag_output(
 
     output = StructuredRagOutput(
         preliminaryJudgment=preliminary,
+        maintenanceLevel=maintenance_level,
+        maintenanceLevelDescription=level_description,
+        preWorkPreparation=pre_work,
         inspectionSteps=inspection_steps,
         repairSteps=repair_steps,
+        riskControls=risk_controls,
+        complianceChecks=compliance_checks,
         safetyWarnings=safety_warnings,
         acceptanceCriteria=acceptance_criteria,
         citations=traces,
@@ -242,8 +273,12 @@ def format_structured_answer(structured_output: dict[str, Any]) -> str:
     uncertain = structured_output.get("uncertainInformation", [])
     return (
         f"【初步判断】\n{structured_output.get('preliminaryJudgment', '')}\n\n"
+        f"【检修等级说明】\n{structured_output.get('maintenanceLevelDescription', '')}\n\n"
+        f"【作业前准备】\n{_numbered(structured_output.get('preWorkPreparation', []))}\n\n"
         f"【建议检查步骤】\n{_numbered(structured_output.get('inspectionSteps', []))}\n\n"
         f"【建议维修步骤】\n{_numbered(structured_output.get('repairSteps', []))}\n\n"
+        f"【作业中风险控制】\n{_numbered(structured_output.get('riskControls', []))}\n\n"
+        f"【合规校验提醒】\n{_numbered(structured_output.get('complianceChecks', []))}\n\n"
         f"【安全提醒】\n{_numbered(structured_output.get('safetyWarnings', []))}\n\n"
         f"【验收标准】\n{_numbered(structured_output.get('acceptanceCriteria', []))}\n\n"
         f"【引用证据】\n{citation_text}\n\n"

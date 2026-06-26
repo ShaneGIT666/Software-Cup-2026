@@ -7,11 +7,13 @@ import {
   fetchProviderStatus,
   fetchWorkflow,
   rebuildKnowledgeGraph,
+  requestMultimodalDiagnosis,
   requestRagAnswer,
   searchKnowledge,
   submitCase,
   uploadFaultFile,
   type KnowledgeGraphPayload,
+  type MultimodalDiagnosisPayload,
   type ProviderStatusPayload,
   type RagAnswerPayload,
   type SearchPayload,
@@ -31,22 +33,25 @@ import WorkflowPanel from "./components/WorkflowPanel.vue";
 
 const deviceModel = ref("发动机-示例型号 A");
 const faultText = ref("启动困难，怠速不稳，排气异常");
+const maintenanceLevel = ref("normal_repair");
 const loading = ref(false);
 const graphLoading = ref(false);
 const ragLoading = ref(false);
 const submitting = ref(false);
 const uploading = ref(false);
+const diagnosisLoading = ref(false);
 const searchPayload = ref<SearchPayload | null>(null);
 const knowledgeGraph = ref<KnowledgeGraphPayload | null>(null);
 const selectedWorkflow = ref<WorkflowPayload | null>(null);
 const selectedResult = ref<SearchResult | null>(null);
 const uploadResult = ref<UploadPayload | null>(null);
 const ragAnswer = ref<RagAnswerPayload | null>(null);
+const multimodalDiagnosis = ref<MultimodalDiagnosisPayload | null>(null);
 const providerStatus = ref<ProviderStatusPayload | null>(null);
 const reviewPanel = ref<InstanceType<typeof ReviewPanel> | null>(null);
 
 const caseForm = ref({
-  cause: "火花塞积碳",
+  cause: "火花塞积碳导致点火能量不足。",
   solution: "清理并更换火花塞，复查燃油滤清器。",
   result: "启动恢复正常，怠速稳定。",
   tags: "启动困难, 点火系统, 火花塞"
@@ -55,6 +60,13 @@ const caseForm = ref({
 const resultCount = computed(() => searchPayload.value?.results.length ?? 0);
 const documentNodeCount = computed(() => knowledgeGraph.value?.nodes.filter((node) => node.type === "document").length ?? 0);
 const graphEdgeCount = computed(() => knowledgeGraph.value?.edges.length ?? 0);
+const diagnosisSummary = computed(() => {
+  const diagnosis = multimodalDiagnosis.value;
+  if (!diagnosis) {
+    return "";
+  }
+  return diagnosis.imageAnalysis.summary || diagnosis.queryContext.ocrText || diagnosis.queryContext.imageClues[0] || "已完成图片诊断。";
+});
 
 const providerModeLabel = computed(() => {
   if (!providerStatus.value) {
@@ -150,7 +162,7 @@ async function runSearch() {
   selectedResult.value = null;
   ragAnswer.value = null;
   try {
-    searchPayload.value = await searchKnowledge(deviceModel.value, faultText.value);
+    searchPayload.value = await searchKnowledge(deviceModel.value, faultText.value, maintenanceLevel.value);
     const firstResultWithWorkflow = searchPayload.value.results.find((item) => item.workflowId);
     if (firstResultWithWorkflow) {
       await openWorkflow(firstResultWithWorkflow);
@@ -166,13 +178,38 @@ async function runSearch() {
 async function generateRagAnswer() {
   ragLoading.value = true;
   try {
-    ragAnswer.value = await requestRagAnswer(deviceModel.value, faultText.value);
+    ragAnswer.value = await requestRagAnswer(deviceModel.value, faultText.value, undefined, maintenanceLevel.value);
     await refreshProviderStatus();
     ElMessage.success(ragAnswer.value.fallback ? "已生成本地兜底建议" : "已生成云端增强建议");
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : "辅助建议生成失败");
   } finally {
     ragLoading.value = false;
+  }
+}
+
+async function runMultimodalDiagnosis(file: File | null) {
+  diagnosisLoading.value = true;
+  ragAnswer.value = null;
+  try {
+    multimodalDiagnosis.value = await requestMultimodalDiagnosis({
+      deviceModel: deviceModel.value,
+      faultText: faultText.value,
+      maintenanceLevel: maintenanceLevel.value,
+      riskLevel: maintenanceLevel.value === "emergency" ? "critical" : "medium",
+      image: file,
+      topK: 5
+    });
+    if (multimodalDiagnosis.value.raw) {
+      ragAnswer.value = multimodalDiagnosis.value.raw;
+    }
+    await refreshProviderStatus();
+    await refreshKnowledgeGraph();
+    ElMessage.success(multimodalDiagnosis.value.fallback ? "图片诊断已降级完成" : "图片诊断已完成");
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : "图片诊断失败");
+  } finally {
+    diagnosisLoading.value = false;
   }
 }
 
@@ -228,9 +265,12 @@ async function createCase() {
       cause: caseForm.value.cause,
       solution: caseForm.value.solution,
       result: caseForm.value.result,
+      experienceSummary: `${caseForm.value.cause} ${caseForm.value.solution}`,
+      lessonsLearned: caseForm.value.result,
+      maintenanceLevel: maintenanceLevel.value,
       tags: caseForm.value.tags.split(",").map((tag) => tag.trim()).filter(Boolean)
     });
-    ElMessage.success(`案例已提交审核：${result.id}`);
+    ElMessage.success(`案例 / 经验总结已提交审核：${result.id}`);
     reviewPanel.value?.loadCases();
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : "案例提交失败");
@@ -243,9 +283,9 @@ async function uploadFile(file: File) {
   uploading.value = true;
   try {
     uploadResult.value = await uploadFaultFile(file);
-    ElMessage.success(`现场材料已上传：${uploadResult.value.fileName}`);
+    ElMessage.success(`现场资料已上传：${uploadResult.value.fileName}`);
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : "现场材料上传失败");
+    ElMessage.error(error instanceof Error ? error.message : "现场资料上传失败");
   } finally {
     uploading.value = false;
   }
@@ -261,7 +301,7 @@ runSearch();
       <div>
         <h1>设备检修知识检索与作业辅助系统</h1>
         <p>
-          输入设备与故障现象，先得到可追溯证据和标准作业步骤，再按需进入 RAG 建议、资料入库和案例沉淀。
+          输入设备与故障现象，先获得可追溯证据和标准作业步骤，再按需进入 RAG 建议、资料入库和案例沉淀。
         </p>
       </div>
       <aside class="status-panel" :class="providerToneClass">
@@ -290,11 +330,11 @@ runSearch();
         <strong>{{ resultCount }}</strong>
       </div>
       <div>
-        <span>资料入库/审核</span>
+        <span>资料入库 / 审核</span>
         <strong>{{ systemStatus?.knowledge.pendingReviewCount ?? 0 }}</strong>
       </div>
       <div>
-        <span>RAG 建议/证据</span>
+        <span>RAG 建议 / 证据</span>
         <strong>{{ documentNodeCount + graphEdgeCount }}</strong>
       </div>
     </section>
@@ -303,13 +343,18 @@ runSearch();
       <QueryPanel
         v-model:device-model="deviceModel"
         v-model:fault-text="faultText"
+        v-model:maintenance-level="maintenanceLevel"
         :loading="loading"
+        :diagnosis-loading="diagnosisLoading"
         :result-count="resultCount"
         :step-count="selectedWorkflow?.steps.length ?? 0"
         :upload-result="uploadResult"
         :uploading="uploading"
+        :diagnosis-summary="diagnosisSummary"
+        :diagnosis-fallback="multimodalDiagnosis?.fallback ?? false"
         @search="runSearch"
         @upload="uploadFile"
+        @diagnose="runMultimodalDiagnosis"
       />
       <ResultsPanel :search-payload="searchPayload" :selected-result="selectedResult" @open-workflow="openWorkflow" />
       <WorkflowPanel :selected-workflow="selectedWorkflow" />

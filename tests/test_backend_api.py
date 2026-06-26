@@ -407,8 +407,12 @@ def test_rag_answer_uses_openai_provider_when_configured(tmp_path, monkeypatch) 
 def test_rag_answer_uses_structured_real_llm_answer_when_compliant(tmp_path, monkeypatch) -> None:
     structured_answer = (
         "【初步判断】\n基于 [1]，优先怀疑点火或供油异常。\n\n"
+        "【检修等级说明】\n一般检修场景，需按标准工序确认风险边界。\n\n"
+        "【作业前准备】\n1. 准备工单、工具和安全隔离措施。\n\n"
         "【建议检查步骤】\n1. 对照 [1] 检查火花塞和供油状态。\n\n"
         "【建议维修步骤】\n1. 仅在 [1] 支持时清洁或更换相关部件。\n\n"
+        "【作业中风险控制】\n1. 记录关键操作，异常时停止作业并复核。\n\n"
+        "【合规校验提醒】\n1. 检查记录、复测记录和引用证据必须完整。\n\n"
         "【安全提醒】\n1. 作业前断电并等待高温部件冷却。\n\n"
         "【验收标准】\n1. 复测启动状态并记录结果。\n\n"
         "【引用证据】\n[1]\n\n"
@@ -417,6 +421,7 @@ def test_rag_answer_uses_structured_real_llm_answer_when_compliant(tmp_path, mon
 
     def fake_post_json(url: str, headers: dict[str, str], payload: dict[str, Any], timeout: float) -> dict[str, Any]:
         assert "【建议检查步骤】" in payload["messages"][0]["content"]
+        assert "【合规校验提醒】" in payload["messages"][0]["content"]
         assert "不得编造参数" in payload["messages"][0]["content"]
         return {"choices": [{"message": {"content": structured_answer}}]}
 

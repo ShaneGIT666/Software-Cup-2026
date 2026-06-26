@@ -1,22 +1,28 @@
 <script setup lang="ts">
-import { Search, Upload } from "@lucide/vue";
+import { ImagePlus, Search, Upload } from "@lucide/vue";
 import type { UploadPayload } from "../api";
 
 defineProps<{
   deviceModel: string;
   faultText: string;
+  maintenanceLevel: string;
   loading: boolean;
+  diagnosisLoading: boolean;
   resultCount: number;
   stepCount: number;
   uploadResult: UploadPayload | null;
   uploading: boolean;
+  diagnosisSummary?: string;
+  diagnosisFallback?: boolean;
 }>();
 
 const emit = defineEmits<{
   "update:deviceModel": [value: string];
   "update:faultText": [value: string];
+  "update:maintenanceLevel": [value: string];
   search: [];
   upload: [file: File];
+  diagnose: [file: File | null];
 }>();
 
 function handleFileChange(event: Event) {
@@ -27,16 +33,22 @@ function handleFileChange(event: Event) {
   }
   input.value = "";
 }
+
+function handleDiagnosisFileChange(event: Event) {
+  const input = event.target as HTMLInputElement;
+  emit("diagnose", input.files?.[0] ?? null);
+  input.value = "";
+}
 </script>
 
 <template>
   <aside class="query-panel panel-accent">
     <div class="section-title">
       <Search :size="18" />
-      <span>检索诊断 / Search</span>
+      <span>检索诊断</span>
     </div>
     <p class="panel-note">
-      输入设备型号与现场现象，系统会检索手册、案例和已审核资料，并给出可追溯证据、命中原因和后续作业链路。
+      输入设备型号、故障现象和检修等级。可上传现场图片触发 OCR/多模态分析，图片线索只用于扩展诊断上下文，审核前不会直接进入正式知识库。
     </p>
 
     <el-form label-position="top">
@@ -56,6 +68,18 @@ function handleFileChange(event: Event) {
           @update:model-value="emit('update:faultText', String($event))"
         />
       </el-form-item>
+      <el-form-item label="检修等级">
+        <el-select
+          :model-value="maintenanceLevel"
+          placeholder="选择检修等级"
+          @update:model-value="emit('update:maintenanceLevel', String($event))"
+        >
+          <el-option label="日常检查" value="daily_check" />
+          <el-option label="一般检修" value="normal_repair" />
+          <el-option label="重大检修" value="major_repair" />
+          <el-option label="紧急处置" value="emergency" />
+        </el-select>
+      </el-form-item>
       <div class="action-row">
         <el-button type="primary" :loading="loading" @click="emit('search')">
           <Search :size="16" />
@@ -63,8 +87,13 @@ function handleFileChange(event: Event) {
         </el-button>
         <label class="upload-button" :class="{ disabled: uploading }">
           <Upload :size="16" />
-          <span>{{ uploading ? "上传中" : "上传现场材料" }}</span>
+          <span>{{ uploading ? "上传中" : "上传资料" }}</span>
           <input type="file" accept="image/*,.pdf" :disabled="uploading" @change="handleFileChange" />
+        </label>
+        <label class="upload-button diagnosis" :class="{ disabled: diagnosisLoading }">
+          <ImagePlus :size="16" />
+          <span>{{ diagnosisLoading ? "诊断中" : "图片诊断" }}</span>
+          <input type="file" accept="image/*" :disabled="diagnosisLoading" @change="handleDiagnosisFileChange" />
         </label>
       </div>
     </el-form>
@@ -74,6 +103,11 @@ function handleFileChange(event: Event) {
       <span>{{ uploadResult.id }} / {{ uploadResult.url }}</span>
     </div>
 
+    <div v-if="diagnosisSummary" class="diagnosis-result" :class="{ fallback: diagnosisFallback }">
+      <strong>{{ diagnosisFallback ? "图片诊断已降级" : "图片诊断线索" }}</strong>
+      <span>{{ diagnosisSummary }}</span>
+    </div>
+
     <div class="metric-grid">
       <div>
         <strong>{{ resultCount }}</strong>
@@ -81,7 +115,7 @@ function handleFileChange(event: Event) {
       </div>
       <div>
         <strong>{{ stepCount }}</strong>
-        <span>流程步骤</span>
+        <span>作业步骤</span>
       </div>
     </div>
   </aside>

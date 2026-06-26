@@ -203,15 +203,74 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   return payload.data;
 }
 
-export function searchKnowledge(deviceModel: string, faultText: string) {
+export function searchKnowledge(deviceModel: string, faultText: string, maintenanceLevel?: string) {
   return request<SearchPayload>("/api/search", {
     method: "POST",
     body: JSON.stringify({
       deviceModel,
       faultText,
+      maintenanceLevel: maintenanceLevel ?? "normal_repair",
       inputType: "text",
       topK: 5
     })
+  });
+}
+
+export interface MultimodalDiagnosisPayload {
+  queryContext: {
+    deviceModel: string;
+    deviceType: string;
+    faultText: string;
+    maintenanceLevel: string;
+    riskLevel: string;
+    imageClues: string[];
+    ocrText: string;
+    fallbackUsed: boolean;
+    clueType: "inputClue" | string;
+    expandedFaultText: string;
+  };
+  imageAnalysis: {
+    provider: string;
+    summary: string;
+    observations: string[];
+    fallback: boolean;
+    fallbackReason?: string;
+    ocrProvider?: string;
+    ocrFallback?: boolean;
+  };
+  results: RagCitation[];
+  evidencePack: EvidencePack;
+  answer: string;
+  structuredAnswer?: StructuredRagOutput;
+  citations: RagCitation[];
+  provider: string;
+  fallback: boolean;
+  fallbackReason?: string;
+  raw?: RagAnswerPayload;
+}
+
+export function requestMultimodalDiagnosis(payload: {
+  deviceModel: string;
+  deviceType?: string;
+  faultText?: string;
+  maintenanceLevel?: string;
+  riskLevel?: string;
+  topK?: number;
+  image?: File | null;
+}) {
+  const formData = new FormData();
+  formData.append("deviceModel", payload.deviceModel);
+  formData.append("deviceType", payload.deviceType ?? "");
+  formData.append("faultText", payload.faultText ?? "");
+  formData.append("maintenanceLevel", payload.maintenanceLevel ?? "normal_repair");
+  formData.append("riskLevel", payload.riskLevel ?? "medium");
+  formData.append("topK", String(payload.topK ?? 5));
+  if (payload.image) {
+    formData.append("image", payload.image);
+  }
+  return request<MultimodalDiagnosisPayload>("/api/multimodal/diagnosis", {
+    method: "POST",
+    body: formData
   });
 }
 
@@ -229,6 +288,9 @@ export function submitCase(payload: {
   cause: string;
   solution: string;
   result: string;
+  experienceSummary?: string;
+  lessonsLearned?: string;
+  maintenanceLevel?: string;
   tags: string[];
 }) {
   return request<{ id: string; status: string }>("/api/cases", {
@@ -699,8 +761,13 @@ export interface EvidencePack {
 
 export interface StructuredRagOutput {
   preliminaryJudgment: string;
+  maintenanceLevel?: string;
+  maintenanceLevelDescription?: string;
+  preWorkPreparation?: string[];
   inspectionSteps: string[];
   repairSteps: string[];
+  riskControls?: string[];
+  complianceChecks?: string[];
   safetyWarnings: string[];
   acceptanceCriteria: string[];
   citations: EvidenceTrace[];
@@ -765,12 +832,13 @@ export interface RagAnswerPayload {
   graphContext?: GraphContextPayload;
 }
 
-export function requestRagAnswer(deviceModel: string, faultText: string, provider?: string) {
+export function requestRagAnswer(deviceModel: string, faultText: string, provider?: string, maintenanceLevel?: string) {
   return request<RagAnswerPayload>("/api/rag/answer", {
     method: "POST",
     body: JSON.stringify({
       deviceModel,
       faultText,
+      maintenanceLevel: maintenanceLevel ?? "normal_repair",
       topK: 5,
       ...(provider ? { provider } : {})
     })
@@ -814,6 +882,7 @@ export interface GraphContextPayload {
 
 export interface KnowledgeGraphPayload {
   mode?: "query" | "global" | string;
+  approvedOnly?: boolean;
   queryId: string;
   summary: string;
   generatedAt?: string;

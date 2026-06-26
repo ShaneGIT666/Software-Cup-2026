@@ -14,6 +14,9 @@ class ApiResponse(BaseModel):
 class SearchRequest(BaseModel):
     deviceModel: str = ""
     faultText: str = ""
+    deviceType: str = ""
+    maintenanceLevel: str = "normal_repair"
+    riskLevel: str = "medium"
     inputType: str = "text"
     topK: int = Field(default=5, ge=1, le=20)
 
@@ -21,12 +24,18 @@ class SearchRequest(BaseModel):
 class DiagnosisRequest(BaseModel):
     deviceModel: str = ""
     faultText: str = ""
+    deviceType: str = ""
+    maintenanceLevel: str = "normal_repair"
+    riskLevel: str = "medium"
     evidenceIds: list[str] = Field(default_factory=list)
 
 
 class RagAnswerRequest(BaseModel):
     deviceModel: str = ""
     faultText: str = ""
+    deviceType: str = ""
+    maintenanceLevel: str = "normal_repair"
+    riskLevel: str = "medium"
     topK: int = Field(default=5, ge=1, le=10)
     provider: Literal["mock", "openai", "anthropic"] | None = None
     includeGraphContext: bool = True
@@ -55,6 +64,9 @@ class CaseCreateRequest(BaseModel):
     solution: str
     result: str
     tags: list[str] = Field(default_factory=list)
+    experienceSummary: str = ""
+    lessonsLearned: str = ""
+    maintenanceLevel: str = "normal_repair"
 
 
 class CaseReviewRequest(BaseModel):

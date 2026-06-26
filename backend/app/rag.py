@@ -62,6 +62,9 @@ def answer_with_rag(request: RagAnswerRequest) -> dict[str, Any]:
     search_request = SearchRequest(
         deviceModel=request.deviceModel,
         faultText=request.faultText,
+        deviceType=request.deviceType,
+        maintenanceLevel=request.maintenanceLevel,
+        riskLevel=request.riskLevel,
         inputType="text",
         topK=request.topK,
     )
@@ -77,6 +80,8 @@ def answer_with_rag(request: RagAnswerRequest) -> dict[str, Any]:
         contexts=search_payload["results"],
         requested_provider=request.provider,
         graph_context=graph_context,
+        maintenance_level=request.maintenanceLevel,
+        risk_level=request.riskLevel,
     )
     original_rag_payload = dict(rag_payload)
     corrective_decision = assess_corrective_rag(request.deviceModel, request.faultText, search_payload["results"])
@@ -101,6 +106,9 @@ def diagnose_with_rag(request: DiagnosisRequest) -> dict[str, Any]:
     search_request = SearchRequest(
         deviceModel=request.deviceModel,
         faultText=request.faultText,
+        deviceType=request.deviceType,
+        maintenanceLevel=request.maintenanceLevel,
+        riskLevel=request.riskLevel,
         inputType="text",
         topK=5,
     )
@@ -113,6 +121,8 @@ def diagnose_with_rag(request: DiagnosisRequest) -> dict[str, Any]:
         contexts=contexts,
         requested_provider=None,
         graph_context=graph_context,
+        maintenance_level=request.maintenanceLevel,
+        risk_level=request.riskLevel,
     )
     original_rag_payload = dict(rag_payload)
     corrective_decision = assess_corrective_rag(request.deviceModel, request.faultText, contexts)

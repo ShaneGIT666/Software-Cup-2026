@@ -15,8 +15,12 @@ logger = logging.getLogger(__name__)
 
 REQUIRED_RAG_HEADINGS = (
     "【初步判断】",
+    "【检修等级说明】",
+    "【作业前准备】",
     "【建议检查步骤】",
     "【建议维修步骤】",
+    "【作业中风险控制】",
+    "【合规校验提醒】",
     "【安全提醒】",
     "【验收标准】",
     "【引用证据】",
@@ -166,12 +170,14 @@ def mock_rag_answer(
     requested_provider: str | None,
     fallback_reason: str | None = None,
     graph_context: dict[str, Any] | None = None,
+    maintenance_level: str = "normal_repair",
+    risk_level: str = "medium",
 ) -> dict[str, Any]:
     provider = configured_provider(requested_provider)
     compressed_contexts, context_chars = compress_contexts(contexts)
     citations = [citation_from_result(item) for item in compressed_contexts]
     evidence_pack = build_evidence_pack(citations)
-    structured_answer = build_structured_rag_output(device_model, fault_text, evidence_pack)
+    structured_answer = build_structured_rag_output(device_model, fault_text, evidence_pack, maintenance_level, risk_level)
     source_names = list(dict.fromkeys(item["sourceName"] for item in citations))[:3]
 
     graph_note = ""
@@ -301,20 +307,28 @@ def real_rag_answer(
     contexts: list[dict[str, Any]],
     provider: str,
     graph_context: dict[str, Any] | None = None,
+    maintenance_level: str = "normal_repair",
+    risk_level: str = "medium",
 ) -> dict[str, Any]:
     compressed_contexts, context_chars = compress_contexts(contexts)
     prompt = build_context_prompt(device_model, fault_text, compressed_contexts, graph_context) + (
-        "\n\n输出必须严格使用以下 7 个标题，标题文字不得改写："
+        "\n\n输出必须严格使用以下标题，标题文字不得改写："
         "\n【初步判断】"
+        "\n【检修等级说明】"
+        "\n【作业前准备】"
         "\n【建议检查步骤】"
         "\n【建议维修步骤】"
+        "\n【作业中风险控制】"
+        "\n【合规校验提醒】"
         "\n【安全提醒】"
         "\n【验收标准】"
         "\n【引用证据】"
         "\n【不确定信息】"
+        f"\n当前检修等级：{maintenance_level}；当前风险等级：{risk_level}。"
         "\n所有检修建议必须基于检索上下文中的 evidence 编号；如果没有 evidence，"
         "只能给通用安全排查模板，并在【引用证据】写“暂无可追溯证据”，"
         "在【不确定信息】明确说明证据不足。不得编造参数、页码、故障码或维修结论。"
+        "high 或 critical 风险必须提示人工复核。"
     )
     timeout = float(os.getenv("LLM_TIMEOUT_SECONDS", "20"))
     citations = [citation_from_result(item) for item in compressed_contexts]
@@ -385,7 +399,7 @@ def real_rag_answer(
     if not answer:
         raise RuntimeError("模型返回内容为空")
 
-    structured_answer = build_structured_rag_output(device_model, fault_text, evidence_pack)
+    structured_answer = build_structured_rag_output(device_model, fault_text, evidence_pack, maintenance_level, risk_level)
     template_answer = format_structured_answer(structured_answer)
     final_answer, llm_answer_used, llm_answer_mode = select_final_rag_answer(answer, template_answer, citations)
     return {
@@ -416,18 +430,45 @@ def generate_rag_answer(
     contexts: list[dict[str, Any]],
     requested_provider: str | None,
     graph_context: dict[str, Any] | None = None,
+    maintenance_level: str = "normal_repair",
+    risk_level: str = "medium",
 ) -> dict[str, Any]:
     provider = configured_provider(requested_provider)
     if provider == "mock":
-        return mock_rag_answer(device_model, fault_text, contexts, provider, graph_context=graph_context)
+        return mock_rag_answer(
+            device_model,
+            fault_text,
+            contexts,
+            provider,
+            graph_context=graph_context,
+            maintenance_level=maintenance_level,
+            risk_level=risk_level,
+        )
     if remote_api_disabled():
         reason = "REMOTE_API_MODE=off，已强制使用本地 mock provider，避免比赛现场网络不稳定影响演示。"
         record_fallback("llm", reason)
         logger.info("LLM fallback: %s", reason)
-        return mock_rag_answer(device_model, fault_text, contexts, provider, fallback_reason=reason, graph_context=graph_context)
+        return mock_rag_answer(
+            device_model,
+            fault_text,
+            contexts,
+            provider,
+            fallback_reason=reason,
+            graph_context=graph_context,
+            maintenance_level=maintenance_level,
+            risk_level=risk_level,
+        )
 
     try:
-        return real_rag_answer(device_model, fault_text, contexts, provider, graph_context=graph_context)
+        return real_rag_answer(
+            device_model,
+            fault_text,
+            contexts,
+            provider,
+            graph_context=graph_context,
+            maintenance_level=maintenance_level,
+            risk_level=risk_level,
+        )
     except Exception as exc:
         reason = f"{provider} provider 调用失败，已降级到 mock：{exc}"
         record_fallback("llm", reason)
@@ -439,4 +480,6 @@ def generate_rag_answer(
             provider,
             fallback_reason=reason,
             graph_context=graph_context,
+            maintenance_level=maintenance_level,
+            risk_level=risk_level,
         )

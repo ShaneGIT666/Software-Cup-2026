@@ -52,6 +52,7 @@ def add_node(
         "id": identifier,
         "label": compact(label, node_type),
         "type": node_type,
+        "reviewStatus": (properties or {}).get("reviewStatus") or (properties or {}).get("status") or "approved",
         "weight": weight,
         "properties": properties or {},
     }
@@ -74,6 +75,7 @@ def add_edge(
             "source": source,
             "target": target,
             "relation": relation,
+            "type": relation,
             "evidence": compact(evidence, ""),
             "confidence": round(confidence, 2),
         }
@@ -120,7 +122,8 @@ def sort_edges(edges: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
 def build_global_knowledge_graph() -> dict[str, Any]:
     data = load_seed_data()
     documents = load_documents()
-    chunks = load_document_chunks()
+    chunks = [chunk for chunk in load_document_chunks() if chunk.get("review_status", "approved") == "approved"]
+    approved_document_ids = {str(chunk.get("documentId", "")) for chunk in chunks}
     nodes: dict[str, dict[str, Any]] = {}
     edges: dict[str, dict[str, Any]] = {}
 
@@ -175,13 +178,21 @@ def build_global_knowledge_graph() -> dict[str, Any]:
         add_terms(nodes, edges, workflow_id, workflow.get("tools", []), relation="需要工具", evidence="作业流程工具清单")
 
     for repair_case in data["cases"]:
+        if repair_case.get("status", "approved") != "approved":
+            continue
         case_id = add_node(
             nodes,
             "case",
             repair_case.get("faultTitle"),
             raw_id=f"case:{repair_case['id']}",
             weight=5 if repair_case.get("status") == "approved" else 2,
-            properties={"status": repair_case.get("status", ""), "createdAt": repair_case.get("createdAt", "")},
+            properties={
+                "status": repair_case.get("status", "approved"),
+                "reviewStatus": repair_case.get("status", "approved"),
+                "createdAt": repair_case.get("createdAt", ""),
+                "experienceSummary": repair_case.get("experienceSummary", ""),
+                "lessonsLearned": repair_case.get("lessonsLearned", ""),
+            },
         )
         device_ref = add_node(nodes, "device", repair_case.get("deviceModel") or repair_case.get("deviceType"), weight=5)
         fault_ref = add_node(nodes, "fault", repair_case.get("faultTitle") or repair_case.get("faultText"), weight=5)
@@ -197,6 +208,8 @@ def build_global_knowledge_graph() -> dict[str, Any]:
         chunks_by_document.setdefault(str(chunk.get("documentId", "")), []).append(chunk)
 
     for document in documents:
+        if document["id"] not in approved_document_ids and document.get("status") != "approved":
+            continue
         document_id = add_node(
             nodes,
             "document",
@@ -205,6 +218,7 @@ def build_global_knowledge_graph() -> dict[str, Any]:
             weight=6,
             properties={
                 "status": document.get("status", ""),
+                "reviewStatus": "approved",
                 "parser": document.get("parser", ""),
                 "chunkCount": document.get("chunkCount", 0),
             },
@@ -222,6 +236,7 @@ def build_global_knowledge_graph() -> dict[str, Any]:
     edge_list = [edge for edge in sort_edges(edges) if edge["source"] in kept_ids and edge["target"] in kept_ids][:MAX_OVERVIEW_EDGES]
     graph = {
         "mode": "global",
+        "approvedOnly": True,
         "queryId": "global-knowledge-graph",
         "summary": f"当前知识图谱沉淀 {len(node_list)} 个实体节点、{len(edge_list)} 条关系，覆盖设备、故障、资料、案例、流程、术语和模型分析来源。",
         "generatedAt": utc_now(),
@@ -290,6 +305,7 @@ def build_knowledge_graph(request: SearchRequest) -> dict[str, Any]:
     edge_list = sort_edges(edges)
     graph = {
         "mode": "query",
+        "approvedOnly": True,
         "queryId": search_payload["queryId"],
         "summary": f"围绕当前查询生成 {len(node_list)} 个知识节点、{len(edge_list)} 条关系，展示设备、故障、证据、流程与来源之间的可追溯链路。",
         "generatedAt": utc_now(),

@@ -161,7 +161,7 @@ def search_knowledge(request: SearchRequest) -> dict[str, Any]:
     return run_retrieval_pipeline(request)
 
 
-def create_repair_case(request: CaseCreateRequest) -> dict[str, str]:
+def create_repair_case(request: CaseCreateRequest) -> dict[str, Any]:
     cases = load_cases()
     case_id = f"case-{uuid4().hex[:8]}"
     repair_case = {
@@ -174,6 +174,9 @@ def create_repair_case(request: CaseCreateRequest) -> dict[str, str]:
         "possibleCauses": [request.cause],
         "solution": request.solution,
         "result": request.result,
+        "experienceSummary": request.experienceSummary,
+        "lessonsLearned": request.lessonsLearned,
+        "maintenanceLevel": request.maintenanceLevel,
         "status": "pending_review",
         "tags": request.tags,
         "workflowId": "wf-001",
@@ -182,7 +185,7 @@ def create_repair_case(request: CaseCreateRequest) -> dict[str, str]:
     }
     cases.append(repair_case)
     save_cases(cases)
-    return {"id": case_id, "status": "pending_review"}
+    return repair_case
 
 
 def list_repair_cases(status: str | None = None) -> dict[str, Any]:
@@ -191,7 +194,7 @@ def list_repair_cases(status: str | None = None) -> dict[str, Any]:
     return {"items": items, "total": len(items)}
 
 
-def review_repair_case(case_id: str, request: CaseReviewRequest) -> dict[str, str]:
+def review_repair_case(case_id: str, request: CaseReviewRequest) -> dict[str, Any]:
     cases = load_cases()
     status = "approved" if request.action == "approve" else "rejected"
     reason = request.reviewNote.strip()
@@ -228,5 +231,5 @@ def review_repair_case(case_id: str, request: CaseReviewRequest) -> dict[str, st
                 }
             )
             save_review_events(events)
-            return {"id": case_id, "status": status}
+            return repair_case
     raise HTTPException(status_code=404, detail="案例不存在")
