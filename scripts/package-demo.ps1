@@ -68,7 +68,51 @@ foreach ($item in $include) {
 if (Test-Path $zipPath) {
     Remove-Item -LiteralPath $zipPath -Force
 }
-Compress-Archive -Path (Join-Path $packageRoot "*") -DestinationPath $zipPath -Force
+
+$python = $null
+$venvPython = Join-Path $projectRoot "backend\.venv\Scripts\python.exe"
+if (Test-Path $venvPython) {
+    $python = @{ Source = $venvPython }
+}
+if (-not $python) {
+    $python = Get-Command python -ErrorAction SilentlyContinue
+}
+if (-not $python) {
+    $python = Get-Command python3 -ErrorAction SilentlyContinue
+}
+if (-not $python) {
+    throw "Python is required to create a Linux-friendly release zip."
+}
+
+$zipScript = @'
+import os
+from pathlib import Path
+from zipfile import ZIP_DEFLATED, ZipFile
+
+root = Path(os.environ["PACKAGE_ROOT_FOR_ZIP"])
+zip_path = Path(os.environ["PACKAGE_ZIP_PATH"])
+
+with ZipFile(zip_path, "w", ZIP_DEFLATED) as archive:
+    for path in sorted(root.rglob("*")):
+        if path.is_file():
+            archive.write(path, path.relative_to(root).as_posix())
+'@
+
+$zipScriptPath = Join-Path ([System.IO.Path]::GetTempPath()) "software-cup-package-zip.py"
+Set-Content -LiteralPath $zipScriptPath -Value $zipScript -Encoding UTF8
+try {
+    $env:PACKAGE_ROOT_FOR_ZIP = $packageRoot
+    $env:PACKAGE_ZIP_PATH = $zipPath
+    & $python.Source $zipScriptPath
+    if ($LASTEXITCODE -ne 0) {
+        throw "release zip creation failed with exit code $LASTEXITCODE"
+    }
+}
+finally {
+    Remove-Item -LiteralPath $zipScriptPath -Force -ErrorAction SilentlyContinue
+    Remove-Item Env:\PACKAGE_ROOT_FOR_ZIP -ErrorAction SilentlyContinue
+    Remove-Item Env:\PACKAGE_ZIP_PATH -ErrorAction SilentlyContinue
+}
 
 Write-Host "[package] Demo package ready: $zipPath"
 Write-Host "[package] Upload this zip to Kylin/LoongArch, then run the backend with SERVE_FRONTEND=auto."
