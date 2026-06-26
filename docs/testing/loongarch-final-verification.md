@@ -26,3 +26,38 @@ bash scripts/loongarch-final-verify.sh
 - Docker 不可用时使用 Python venv + FastAPI 静态托管 `frontend/dist`。
 - MinerU、OCR、向量增强、视觉模型必须有 fallback。
 - 真实 LLM 使用比赛提供的 OpenAI-compatible Qwen 服务。
+
+## 2026-06-26 实测记录
+
+环境：
+
+- CPU 架构：`loongarch64`
+- OS：Kylin Linux Advanced Server V11 (Swan25)
+- Python：3.11.6
+- Node：20.18.2
+- Docker：24.0.9
+
+依赖结论：
+
+- `uvicorn[standard]` 会触发 `uvloop/watchfiles/httptools` 等源码构建，不适合作为 LoongArch/Kylin 默认依赖。
+- Pydantic v2 的 `pydantic-core` 在该环境会进入源码构建，默认交付路线改为 `pydantic<2`。
+- 后端基础依赖使用 `uvicorn==0.34.0` + `pydantic<2`，增强依赖保留为可选。
+- 系统初始 Node 有 `node` 但缺 `npm`，已通过 `dnf install npm` 验证可补齐前端构建能力。
+
+已通过：
+
+```text
+LoongArch/Kylin 可迁移主测试集：105 passed in 170.44s
+前端生产构建：built in 21.41s
+GET /api/health：success
+GET /api/providers/status：success
+POST /api/search：3 条 manual 命中
+POST /api/rag/answer：mock fallback，3 条 citations，structuredAnswer 含 complianceChecks
+POST /api/multimodal/diagnosis：mock fallback，4 条 citations，maintenanceLevel=emergency
+```
+
+未作为失败处理的项：
+
+- `tests/test_motorcycle_manual.py` 依赖 Windows 本地路径 `E:/Download/Downloads/摩托车发动机维修手册.pdf`，目标环境没有该文件，因此不纳入 LoongArch 可迁移主测试集。
+- 目标环境 `18000` 端口用于最新代码复验，`8000` 端口已有旧演示服务占用，未强制停止旧服务。
+- 本次 VM 冒烟以离线兜底模式运行，真实 Qwen LLM 仍需按 `docs/testing/llm-provider-final-validation.md` 配置 `.env` 后复验。
