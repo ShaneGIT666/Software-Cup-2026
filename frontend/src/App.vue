@@ -25,11 +25,11 @@ import KnowledgePanel from "./components/KnowledgePanel.vue";
 import QueryPanel from "./components/QueryPanel.vue";
 import RagPanel from "./components/RagPanel.vue";
 import ResultsPanel from "./components/ResultsPanel.vue";
-import ReviewPanel from "./components/ReviewPanel.vue";
 import ReviewEventsPanel from "./components/ReviewEventsPanel.vue";
+import ReviewPanel from "./components/ReviewPanel.vue";
 import WorkflowPanel from "./components/WorkflowPanel.vue";
 
-const deviceModel = ref("发动机示例型号 A");
+const deviceModel = ref("发动机-示例型号 A");
 const faultText = ref("启动困难，怠速不稳，排气异常");
 const loading = ref(false);
 const graphLoading = ref(false);
@@ -77,7 +77,7 @@ const providerDetailLabel = computed(() => {
   const ocr = providerStatus.value.ocr;
   const embeddingProvider = embedding?.effectiveProvider ?? "hash";
   const ocrProvider = ocr?.effectiveProvider ?? "mock";
-  return `RAG ${llm.effectiveProvider} · 多模态 ${multimodal.effectiveProvider} · OCR ${ocrProvider} · 向量 ${embeddingProvider}`;
+  return `LLM ${llm.effectiveProvider} / 多模态 ${multimodal.effectiveProvider} / OCR ${ocrProvider} / 向量 ${embeddingProvider}`;
 });
 
 const systemStatus = computed(() => providerStatus.value?.system ?? null);
@@ -118,15 +118,15 @@ const systemSignalItems = computed(() => {
   }
   const latestTask = system.parsing.latestTask;
   const latestTaskLabel = latestTask
-    ? `${latestTask.fileName || latestTask.documentId} · ${latestTask.status || "unknown"}`
+    ? `${latestTask.fileName || latestTask.documentId} / ${latestTask.status || "unknown"}`
     : "暂无解析任务";
   const latestIndexLabel =
     system.indexing.latestIndexTime ?? system.indexing.latestKnownIndexActivityAt ?? "未记录";
   return [
     `MinerU ${system.parsing.mineru.status}`,
     `Chroma ${system.indexing.chroma.status}`,
-    `最近解析 ${latestTaskLabel}`,
-    `最近索引 ${latestIndexLabel}`
+    `最近解析：${latestTaskLabel}`,
+    `最近索引：${latestIndexLabel}`
   ];
 });
 
@@ -261,7 +261,7 @@ runSearch();
       <div>
         <h1>设备检修知识检索与作业辅助系统</h1>
         <p>
-          输入设备与故障现象，先得到可追溯证据和标准作业步骤，再按需进入 RAG、资料入库和案例沉淀。
+          输入设备与故障现象，先得到可追溯证据和标准作业步骤，再按需进入 RAG 建议、资料入库和案例沉淀。
         </p>
       </div>
       <aside class="status-panel" :class="providerToneClass">
@@ -282,7 +282,7 @@ runSearch();
 
     <section class="task-summary" aria-label="当前检修上下文">
       <div>
-        <span>当前设备</span>
+        <span>检索诊断</span>
         <strong>{{ deviceModel }}</strong>
       </div>
       <div>
@@ -290,11 +290,11 @@ runSearch();
         <strong>{{ resultCount }}</strong>
       </div>
       <div>
-        <span>作业步骤</span>
-        <strong>{{ selectedWorkflow?.steps.length ?? 0 }}</strong>
+        <span>资料入库/审核</span>
+        <strong>{{ systemStatus?.knowledge.pendingReviewCount ?? 0 }}</strong>
       </div>
       <div>
-        <span>知识节点</span>
+        <span>RAG 建议/证据</span>
         <strong>{{ documentNodeCount + graphEdgeCount }}</strong>
       </div>
     </section>

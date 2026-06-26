@@ -19,7 +19,7 @@ const documents = ref<KnowledgeDocument[]>([]);
 const loading = ref(false);
 const uploading = ref(false);
 const analyzingId = ref("");
-const sourceName = ref("摩托车检修手册");
+const sourceName = ref("设备检修资料");
 const lastUploaded = ref<KnowledgeDocument | null>(null);
 
 const revisionDialogVisible = ref(false);
@@ -76,8 +76,51 @@ function statusType(status: string) {
   return "info";
 }
 
+function assetStatusText(status?: string) {
+  const statusMap: Record<string, string> = {
+    queued: "图片资产待分析",
+    running: "图片资产分析中",
+    completed: "图片资产分析完成",
+    failed: "图片资产分析失败",
+    skipped: "未发现图片资产或未启用"
+  };
+  return status ? statusMap[status] ?? status : "未触发图片资产分析";
+}
+
+function assetStatusType(status?: string) {
+  if (status === "completed") {
+    return "success";
+  }
+  if (status === "queued" || status === "running") {
+    return "warning";
+  }
+  if (status === "failed") {
+    return "danger";
+  }
+  return "info";
+}
+
+function knowledgeTypeText(type?: string) {
+  const labels: Record<string, string> = {
+    manual_excerpt: "手册文本",
+    ocr_result: "OCR 结果",
+    image_analysis: "图片分析",
+    inspection_step: "检查步骤",
+    repair_step: "维修步骤",
+    safety_warning: "安全提醒",
+    acceptance_criteria: "验收标准",
+    case_summary: "案例摘要",
+    troubleshooting: "故障排查"
+  };
+  return type ? labels[type] ?? type : "知识片段";
+}
+
+function chunkAssetName(chunk?: KnowledgeChunkPreview) {
+  return chunk?.assetName ?? chunk?.evidence_location?.assetName ?? "";
+}
+
 function canAnalyze(document: KnowledgeDocument) {
-  return ["pdf", "jpg", "jpeg", "png", "webp"].includes(document.suffix);
+  return ["pdf", "docx", "pptx", "xlsx", "jpg", "jpeg", "png", "webp"].includes(document.suffix);
 }
 
 async function loadDocuments() {
@@ -101,7 +144,7 @@ async function handleFileChange(event: Event) {
   uploading.value = true;
   try {
     lastUploaded.value = await uploadKnowledgeDocument(file, sourceName.value);
-    ElMessage.success(`资料已入库：${lastUploaded.value.fileName}`);
+    ElMessage.success(`资料已进入审核队列：${lastUploaded.value.fileName}`);
     await loadDocuments();
   } catch (error) {
     ElMessage.error(error instanceof Error ? error.message : "资料入库失败");
@@ -115,10 +158,10 @@ async function handleAnalyze(document: KnowledgeDocument) {
   analyzingId.value = document.id;
   try {
     lastUploaded.value = await analyzeKnowledgeDocument(document.id);
-    ElMessage.success(`多模态分析完成：${lastUploaded.value.fileName}`);
+    ElMessage.success(`资料分析已完成：${lastUploaded.value.fileName}`);
     await loadDocuments();
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : "多模态分析失败");
+    ElMessage.error(error instanceof Error ? error.message : "资料分析失败");
   } finally {
     analyzingId.value = "";
   }
@@ -189,7 +232,7 @@ async function saveRevision() {
       reason: revisionForm.value.reason,
       reviewer: revisionForm.value.reviewer
     });
-    ElMessage.success("知识片段修正已保存并重新入库");
+    ElMessage.success("知识片段修正已保存，并重新同步索引");
     await openRevisionDialog(selectedDocument.value);
     await loadDocuments();
   } catch (error) {
@@ -220,7 +263,7 @@ async function saveChunkStatus() {
       reviewer: lifecycleForm.value.reviewer,
       replacementChunkId: lifecycleForm.value.replacementChunkId || null
     });
-    ElMessage.success("知识片段状态已更新并同步检索索引");
+    ElMessage.success("知识片段状态已更新，并同步检索索引");
     await openRevisionDialog(selectedDocument.value);
     await loadDocuments();
   } catch (error) {
@@ -239,14 +282,14 @@ defineExpose({ loadDocuments });
   <section class="knowledge-panel panel-highlight">
     <div class="section-title">
       <Database :size="18" />
-      <span>资料知识库 / Knowledge Dock</span>
+      <span>资料入库与审核 / Knowledge Dock</span>
     </div>
     <p class="panel-note">
-      上传 PDF、TXT、Markdown 或图片资料。文本会直接切片入库，扫描 PDF 和图片可通过多模态/OCR 生成可检索知识片段，并支持人工修正。
+      上传 PDF、Office、Markdown 或图片资料。解析结果默认进入 pending_review，审核通过前不会参与正式检索；若 MinerU 提取到图片资产，系统会自动生成 OCR 和图片分析片段。
     </p>
 
     <div class="knowledge-upload">
-      <el-input v-model="sourceName" placeholder="资料来源名称，例如：摩托车维修手册" />
+      <el-input v-model="sourceName" placeholder="资料来源名称，例如：设备检修手册" />
       <label class="upload-button knowledge-upload-button" :class="{ disabled: uploading }">
         <UploadCloud :size="16" />
         <span>{{ uploading ? "入库中" : "上传资料" }}</span>
@@ -262,6 +305,11 @@ defineExpose({ loadDocuments });
     <div v-if="lastUploaded" class="knowledge-status">
       <strong>{{ lastUploaded.fileName }}</strong>
       <span>{{ statusText(lastUploaded.status) }} / {{ lastUploaded.chunkCount }} 个片段 / {{ lastUploaded.parser }}</span>
+      <small v-if="lastUploaded.assetAnalysisStatus" class="asset-status-line">
+        图片资产：{{ assetStatusText(lastUploaded.assetAnalysisStatus) }}
+        / {{ lastUploaded.assetAnalysisCount ?? 0 }} 个片段
+        / {{ lastUploaded.assetAnalysisFallbackCount ?? 0 }} 次降级
+      </small>
       <small v-if="lastUploaded.parserFallbackReason" class="fallback-note">{{ lastUploaded.parserFallbackReason }}</small>
       <p v-if="lastUploaded.analysis?.summary">{{ lastUploaded.analysis.summary }}</p>
       <small v-if="lastUploaded.analysis?.fallbackReason" class="fallback-note">{{ lastUploaded.analysis.fallbackReason }}</small>
@@ -282,6 +330,14 @@ defineExpose({ loadDocuments });
           <span v-if="document.pendingReviewCount"> / {{ document.pendingReviewCount }} 个待审核</span>
           <span v-if="document.revisionCount"> / {{ document.revisionCount }} 次修正</span>
         </small>
+        <div class="asset-status-row">
+          <el-tag :type="assetStatusType(document.assetAnalysisStatus)" size="small" effect="plain">
+            {{ assetStatusText(document.assetAnalysisStatus) }}
+          </el-tag>
+          <span>{{ document.assetAnalysisCount ?? 0 }} 个图片片段</span>
+          <span>{{ document.assetAnalysisFallbackCount ?? 0 }} 次 LLM/OCR 降级</span>
+        </div>
+        <small v-if="document.assetAnalysisError" class="fallback-note">{{ document.assetAnalysisError }}</small>
         <small v-if="document.parserFallbackReason" class="fallback-note">{{ document.parserFallbackReason }}</small>
         <p v-if="document.analysis?.summary" class="knowledge-analysis-summary">{{ document.analysis.summary }}</p>
         <small v-if="document.analysis?.fallbackReason" class="fallback-note">{{ document.analysis.fallbackReason }}</small>
@@ -299,7 +355,7 @@ defineExpose({ loadDocuments });
             @click="handleAnalyze(document)"
           >
             <WandSparkles :size="14" />
-            多模态分析
+            分析图片资产
           </el-button>
           <el-button class="knowledge-analyze-button" type="primary" size="small" plain @click="openRevisionDialog(document)">
             <Pencil :size="14" />
@@ -324,11 +380,19 @@ defineExpose({ loadDocuments });
               <el-option
                 v-for="chunk in documentChunks"
                 :key="chunk.id"
-                :label="`${chunk.id} · ${chunk.snippet}`"
+                :label="`${chunk.id} / ${knowledgeTypeText(chunk.knowledge_type)} / ${chunkAssetName(chunk) || chunk.snippet}`"
                 :value="chunk.id"
               />
             </el-select>
           </el-form-item>
+          <div v-if="selectedChunkId" class="asset-status-row">
+            <el-tag size="small" effect="plain">
+              {{ knowledgeTypeText(documentChunks.find((item) => item.id === selectedChunkId)?.knowledge_type) }}
+            </el-tag>
+            <span v-if="chunkAssetName(documentChunks.find((item) => item.id === selectedChunkId)!)">
+              {{ chunkAssetName(documentChunks.find((item) => item.id === selectedChunkId)!) }}
+            </span>
+          </div>
           <div class="revision-grid">
             <el-form-item label="标题">
               <el-input v-model="revisionForm.title" />
@@ -342,14 +406,14 @@ defineExpose({ loadDocuments });
           </el-form-item>
           <div class="revision-grid">
             <el-form-item label="标签">
-              <el-input v-model="revisionForm.tags" placeholder="用逗号分隔，如 火花塞, 启动困难" />
+              <el-input v-model="revisionForm.tags" placeholder="用逗号分隔，例如：火花塞, 启动困难" />
             </el-form-item>
             <el-form-item label="修正人">
               <el-input v-model="revisionForm.reviewer" />
             </el-form-item>
           </div>
           <el-form-item label="修正原因">
-            <el-input v-model="revisionForm.reason" placeholder="例如：一线技师确认模型输出需修正" />
+            <el-input v-model="revisionForm.reason" placeholder="例如：一线技师确认模型输出需要修正" />
           </el-form-item>
         </el-form>
 
@@ -374,7 +438,7 @@ defineExpose({ loadDocuments });
             </el-form-item>
           </div>
           <el-form-item v-if="lifecycleForm.status === 'replaced'" label="替换片段 ID">
-            <el-input v-model="lifecycleForm.replacementChunkId" placeholder="例如：kdoc-xxxx-chunk-002" />
+            <el-input v-model="lifecycleForm.replacementChunkId" placeholder="例如：doc-xxxx-chunk-002" />
           </el-form-item>
           <el-form-item label="状态原因">
             <el-input

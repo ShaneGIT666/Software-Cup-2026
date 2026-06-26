@@ -22,7 +22,7 @@ const emit = defineEmits<{
   <section class="case-panel">
     <div class="section-title">
       <ClipboardCheck :size="18" />
-      <span>经验沉淀 / Field Memory</span>
+      <span>经验沉淀 / Field Case</span>
     </div>
     <p class="panel-note">
       将现场处置经验提交到审核队列，审核通过后进入检索结果和 RAG 引用链路，形成知识沉淀闭环。

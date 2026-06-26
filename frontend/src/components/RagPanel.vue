@@ -16,7 +16,8 @@ function sourceLabel(sourceType: string) {
   const labels: Record<string, string> = {
     manual: "手册",
     case: "案例",
-    document: "资料"
+    document: "资料",
+    document_asset: "图片资产"
   };
   return labels[sourceType] ?? sourceType;
 }
@@ -83,7 +84,7 @@ function traceText(trace: EvidenceTrace) {
   if (trace.section) {
     parts.push(`section=${trace.section}`);
   }
-  return parts.join(" · ");
+  return parts.join(" / ");
 }
 
 function evidenceMeta(item: EvidenceItem) {
@@ -122,7 +123,7 @@ function severityLabel(severity: string) {
   <section class="rag-panel panel-highlight">
     <div class="section-title">
       <Bot :size="18" />
-      <span>RAG 辅助建议 / AI Copilot</span>
+      <span>RAG 建议与证据 / Assisted Answer</span>
     </div>
     <p class="panel-note">
       基于当前检索证据生成检修建议，保留 chunk、来源、页码和不确定信息，便于现场复核。
@@ -131,10 +132,11 @@ function severityLabel(severity: string) {
     <div class="action-row">
       <el-button type="primary" :loading="loading" @click="emit('answer')">
         <Bot :size="16" />
-        生成辅助建议
+        生成检修建议
       </el-button>
       <el-tag v-if="ragAnswer?.fallback" type="warning">本地兜底</el-tag>
       <el-tag v-if="ragAnswer && !ragAnswer.fallback" type="success">云端增强</el-tag>
+      <el-tag v-if="ragAnswer?.llmAnswerUsed" type="success">真实 LLM 结构化回答</el-tag>
       <el-tag v-if="ragAnswer" type="info">{{ ragAnswer.provider }} / requested {{ ragAnswer.requestedProvider }}</el-tag>
       <el-tag v-if="ragAnswer?.model" type="info">{{ ragAnswer.model }} / {{ ragAnswer.apiStyle }}</el-tag>
       <el-tag v-if="ragAnswer?.contextCount !== undefined" type="info">
@@ -240,7 +242,7 @@ function severityLabel(severity: string) {
         <article v-for="item in evidenceItems" :key="item.evidenceId" class="evidence-card">
           <div class="evidence-card-header">
             <span class="source-pill">{{ sourceLabel(item.sourceType) }}</span>
-            <strong>{{ item.evidenceId }} · {{ item.title }}</strong>
+            <strong>{{ item.evidenceId }} / {{ item.title }}</strong>
             <el-tag size="small" :type="item.reviewStatus === 'approved' ? 'success' : 'warning'">
               {{ item.reviewStatus }}
             </el-tag>

@@ -8,7 +8,7 @@ export interface SearchResult {
   id: string;
   title: string;
   sourceId?: string;
-  sourceType: "manual" | "case" | "document";
+  sourceType: "manual" | "case" | "document" | "document_asset";
   sourceName: string;
   confidence: number;
   snippet: string;
@@ -319,8 +319,20 @@ export interface KnowledgeChunkPreview {
   chunk_id?: string;
   title: string;
   sourceName: string;
+  sourceType?: string;
+  source_type?: string;
+  knowledge_type?: string;
+  origin?: string;
   page?: number | null;
   section?: string | null;
+  evidence_location?: {
+    page?: number | null;
+    section?: string | null;
+    assetName?: string;
+    assetPath?: string;
+  };
+  assetName?: string;
+  assetPath?: string;
   snippet: string;
   content?: string;
   keywords?: string[];
@@ -387,6 +399,11 @@ export interface KnowledgeDocument {
     parsedMarkdown: string;
     assetsDir: string;
   };
+  assetAnalysisStatus?: "queued" | "running" | "completed" | "failed" | "skipped" | string;
+  assetAnalysisCount?: number;
+  assetAnalysisFallbackCount?: number;
+  assetAnalysisError?: string;
+  assetAnalysisUpdatedAt?: string;
   uploadedAt: string;
   url: string;
   revisionCount?: number;
@@ -439,6 +456,10 @@ export interface KnowledgeParseTask {
   startedAt?: string;
   completedAt?: string;
   error?: string;
+  assetAnalysisStatus?: string;
+  assetAnalysisCount?: number;
+  assetAnalysisFallbackCount?: number;
+  assetAnalysisError?: string;
 }
 
 export interface KnowledgeParseTaskListPayload {
@@ -734,6 +755,9 @@ export interface RagAnswerPayload {
   requestedProvider: string;
   fallback: boolean;
   fallbackReason?: string;
+  llmAnswerUsed?: boolean;
+  llmAnswerMode?: string;
+  llmAnswerPreservedAfterRules?: boolean;
   contextCount?: number;
   contextChars?: number;
   model?: string;

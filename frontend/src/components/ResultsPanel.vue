@@ -12,12 +12,13 @@ const emit = defineEmits<{
 }>();
 
 function sourceLabel(sourceType: SearchResult["sourceType"]) {
-  const labels = {
+  const labels: Record<SearchResult["sourceType"], string> = {
     manual: "手册",
     case: "案例",
-    document: "资料"
+    document: "资料",
+    document_asset: "图片资产"
   };
-  return labels[sourceType];
+  return labels[sourceType] ?? sourceType;
 }
 </script>
 
@@ -25,7 +26,7 @@ function sourceLabel(sourceType: SearchResult["sourceType"]) {
   <section class="results-panel">
     <div class="section-title">
       <FileText :size="18" />
-      <span>证据检索 / Evidence Feed</span>
+      <span>证据检索 / Evidence</span>
     </div>
     <template v-if="searchPayload && searchPayload.results.length">
       <p class="summary">{{ searchPayload.summary }}</p>
