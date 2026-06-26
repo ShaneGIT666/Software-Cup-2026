@@ -4,6 +4,7 @@
 # across Kylin/Loongnix/Docker Hub environments.
 ARG BASE_IMAGE=cr.loongnix.cn/library/python:3.11
 FROM ${BASE_IMAGE}
+ARG INSTALL_CHROMA=false
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -23,7 +24,7 @@ WORKDIR /app
 
 COPY backend/requirements.txt /app/backend/requirements.txt
 RUN python -m pip install --no-cache-dir --upgrade pip \
-    && python -c "from pathlib import Path; p=Path('/app/backend/requirements.txt'); q=Path('/app/backend/requirements-container.txt'); text=p.read_text(encoding='utf-8').replace('uvicorn[standard]==0.34.0','uvicorn==0.34.0'); q.write_text(text + '\npydantic<2\n', encoding='utf-8')" \
+    && INSTALL_CHROMA=${INSTALL_CHROMA} python -c "import os; from pathlib import Path; p=Path('/app/backend/requirements.txt'); q=Path('/app/backend/requirements-container.txt'); lines=p.read_text(encoding='utf-8').replace('uvicorn[standard]==0.34.0','uvicorn==0.34.0').splitlines(); install_chroma=os.environ.get('INSTALL_CHROMA','false').lower() in {'1','true','yes'}; lines=[line for line in lines if install_chroma or not line.lower().startswith('chromadb')]; q.write_text('\n'.join(lines) + '\npydantic<2\n', encoding='utf-8')" \
     && python -m pip install --no-cache-dir -r /app/backend/requirements-container.txt
 
 COPY backend /app/backend
