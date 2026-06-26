@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .data_store import PROJECT_ROOT, knowledge_dir, upload_dir
 from .knowledge import (
+    analyze_document_assets,
     analyze_knowledge_document,
     create_knowledge_parse_task,
     delete_knowledge_document,
@@ -28,6 +29,7 @@ from .knowledge import (
     review_knowledge_chunk,
     revise_knowledge_chunk,
     set_knowledge_chunk_status,
+    should_enqueue_asset_analysis,
 )
 from .knowledge_graph import build_global_knowledge_graph, build_knowledge_graph, knowledge_graph_overview
 from .provider_policy import provider_status
@@ -259,11 +261,15 @@ async def upload_file(file: UploadFile = File(...)) -> ApiResponse:
 
 @app.post("/api/knowledge/documents", response_model=ApiResponse)
 async def upload_knowledge_document(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     source_name: str | None = Form(default=None),
 ) -> ApiResponse:
+    document = await ingest_knowledge_document(file, source_name)
+    if should_enqueue_asset_analysis(document):
+        background_tasks.add_task(analyze_document_assets, document["id"])
     return ApiResponse(
-        data=await ingest_knowledge_document(file, source_name),
+        data=document,
         message="资料已入库",
     )
 

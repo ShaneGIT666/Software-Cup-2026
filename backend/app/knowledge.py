@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from io import BytesIO
+import json
 import logging
+import os
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -22,8 +24,20 @@ from .data_store import (
     save_parse_tasks,
     save_review_events,
 )
+from .llm_adapter import (
+    _post_json,
+    llm_max_tokens,
+    llm_temperature,
+    parse_anthropic_response,
+    parse_openai_chat_response,
+    parse_openai_response,
+    provider_api_style,
+    provider_model,
+)
 from .multimodal_adapter import analyze_multimodal_document
+from .ocr_adapter import analyze_ocr_document
 from .parser_router import parse_document, save_parse_artifacts
+from .provider_policy import configured_llm_provider, key_configured, record_fallback, remote_api_disabled
 from .schemas import KnowledgeChunkReviewRequest, KnowledgeChunkRevisionRequest, KnowledgeChunkStatusRequest
 from .vector_store import delete_document as delete_vector_document
 from .vector_store import sync_chunks
@@ -44,6 +58,8 @@ ALLOWED_KNOWLEDGE_TYPES = {
 }
 MULTIMODAL_SUFFIXES = {"pdf", "jpg", "jpeg", "png", "webp"}
 IMAGE_SUFFIXES = {"jpg", "jpeg", "png", "webp"}
+ASSET_ANALYSIS_ORIGIN = "mineru_asset_analysis"
+ASSET_IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 CHUNK_SIZE = 700
 CHUNK_OVERLAP = 120
 logger = logging.getLogger(__name__)
@@ -198,6 +214,402 @@ def build_chunk(
     return chunk
 
 
+def env_flag(name: str, default: bool) -> bool:
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+    return raw_value.strip().lower() not in {"0", "false", "no", "off"}
+
+
+def auto_analyze_assets_enabled() -> bool:
+    return env_flag("KNOWLEDGE_AUTO_ANALYZE_ASSETS", True)
+
+
+def asset_analysis_limit() -> int:
+    raw_value = os.getenv("KNOWLEDGE_ASSET_ANALYSIS_MAX_ASSETS", "12")
+    try:
+        return max(0, int(raw_value))
+    except ValueError:
+        return 12
+
+
+def load_parse_result_from_artifacts(parse_artifacts: dict[str, Any]) -> dict[str, Any]:
+    raw_path = Path(str(parse_artifacts.get("rawParseResult") or ""))
+    if not raw_path.exists() or not raw_path.is_file():
+        return {}
+    try:
+        return json.loads(raw_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        logger.warning("Failed to load raw parse result for asset analysis: %s", exc)
+        return {}
+
+
+def asset_candidates_from_artifacts(parse_artifacts: dict[str, Any]) -> list[dict[str, Any]]:
+    parse_result = load_parse_result_from_artifacts(parse_artifacts)
+    assets_dir = Path(str(parse_artifacts.get("assetsDir") or ""))
+    raw_assets = parse_result.get("assets") if isinstance(parse_result, dict) else []
+    candidates: list[Path] = []
+
+    if isinstance(raw_assets, list):
+        for item in raw_assets:
+            path = Path(str(item))
+            if not path.is_absolute() and assets_dir:
+                path = assets_dir / path
+            candidates.append(path)
+
+    if assets_dir.exists():
+        candidates.extend(path for path in assets_dir.rglob("*") if path.is_file())
+
+    unique: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for path in candidates:
+        if path.suffix.lower() not in ASSET_IMAGE_SUFFIXES or not path.exists() or not path.is_file():
+            continue
+        key = str(path.resolve())
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(
+            {
+                "path": path,
+                "assetName": path.name,
+                "assetPath": str(path),
+                "page": None,
+                "section": f"asset:{path.name}",
+            }
+        )
+    return unique
+
+
+def update_document_asset_analysis_status(document_id: str, **updates: Any) -> dict[str, Any] | None:
+    documents = load_documents()
+    for index, document in enumerate(documents):
+        if document.get("id") == document_id:
+            updated = {**document, **updates, "assetAnalysisUpdatedAt": utc_now()}
+            documents[index] = updated
+            save_documents(documents)
+            return updated
+    return None
+
+
+def mark_initial_asset_analysis_state(document: dict[str, Any]) -> dict[str, Any]:
+    candidates = asset_candidates_from_artifacts(document.get("parseArtifacts", {}))
+    if candidates and auto_analyze_assets_enabled() and asset_analysis_limit() > 0:
+        return {
+            **document,
+            "assetAnalysisStatus": "queued",
+            "assetAnalysisCount": 0,
+            "assetAnalysisFallbackCount": 0,
+            "assetAnalysisError": "",
+            "assetAnalysisUpdatedAt": utc_now(),
+        }
+    reason = "auto_disabled" if candidates else "no_assets"
+    return {
+        **document,
+        "assetAnalysisStatus": "skipped",
+        "assetAnalysisCount": 0,
+        "assetAnalysisFallbackCount": 0,
+        "assetAnalysisError": reason,
+        "assetAnalysisUpdatedAt": utc_now(),
+    }
+
+
+def should_enqueue_asset_analysis(document: dict[str, Any]) -> bool:
+    return (
+        auto_analyze_assets_enabled()
+        and asset_analysis_limit() > 0
+        and document.get("assetAnalysisStatus") == "queued"
+    )
+
+
+def apply_asset_chunk_metadata(
+    chunk: dict[str, Any],
+    document: dict[str, Any],
+    asset: dict[str, Any],
+    knowledge_type: str,
+    chunk_id: str,
+    provider: str,
+    fallback_reason: str = "",
+) -> dict[str, Any]:
+    chunk["id"] = chunk_id
+    chunk["chunk_id"] = chunk_id
+    chunk["sourceType"] = "document_asset"
+    chunk["source_type"] = "document_asset"
+    chunk["knowledge_type"] = knowledge_type
+    chunk["origin"] = ASSET_ANALYSIS_ORIGIN
+    chunk["assetName"] = asset["assetName"]
+    chunk["assetPath"] = asset["assetPath"]
+    chunk["page"] = asset.get("page")
+    chunk["section"] = asset.get("section", "")
+    chunk["evidence_location"] = {
+        "page": asset.get("page"),
+        "section": asset.get("section", ""),
+        "assetName": asset["assetName"],
+        "assetPath": asset["assetPath"],
+    }
+    chunk["analysisProvider"] = provider
+    chunk["review_status"] = "pending_review"
+    chunk["risk_level"] = "medium"
+    if fallback_reason:
+        chunk["analysisFallbackReason"] = fallback_reason
+    if document.get("parser"):
+        chunk["parser"] = document["parser"]
+    return chunk
+
+
+def build_asset_text_chunks(
+    document: dict[str, Any],
+    asset: dict[str, Any],
+    texts: list[str],
+    knowledge_type: str,
+    provider: str,
+    id_prefix: str,
+    fallback_reason: str = "",
+) -> list[dict[str, Any]]:
+    chunks: list[dict[str, Any]] = []
+    source_name = f"{document.get('sourceName') or document.get('fileName') or document['id']} / {asset['assetName']}"
+    for segment in texts:
+        for chunk_text in split_text(str(segment)):
+            chunk = build_chunk(
+                document_id=document["id"],
+                file_name=asset["assetName"],
+                source_name=source_name,
+                chunk_text=chunk_text,
+                chunk_index=len(chunks) + 1,
+                page=asset.get("page"),
+                analysis_provider=provider,
+                section=asset.get("section", ""),
+                review_status="pending_review",
+            )
+            chunks.append(
+                apply_asset_chunk_metadata(
+                    chunk=chunk,
+                    document=document,
+                    asset=asset,
+                    knowledge_type=knowledge_type,
+                    chunk_id=f"{document['id']}-asset-{id_prefix}-{len(chunks) + 1:03d}",
+                    provider=provider,
+                    fallback_reason=fallback_reason,
+                )
+            )
+    return chunks
+
+
+def call_text_llm_for_asset_analysis(
+    document: dict[str, Any],
+    asset: dict[str, Any],
+    ocr_result: dict[str, Any],
+    visual_fallback_reason: str,
+) -> dict[str, Any]:
+    provider = configured_llm_provider(None)
+    if provider == "mock":
+        raise RuntimeError("LLM_PROVIDER=mock")
+    if remote_api_disabled():
+        raise RuntimeError("REMOTE_API_MODE=off")
+    if not key_configured(provider):
+        raise RuntimeError(f"{provider} API key is not configured")
+
+    ocr_text = str(ocr_result.get("text") or "\n".join(ocr_result.get("textSegments", []))).strip()
+    prompt = (
+        "你是设备检修知识库的资料审核助手。请基于 OCR 文本、图片文件名和来源文档信息，"
+        "生成一段可进入 pending_review 的图片资产分析摘要。\n"
+        "要求：只能基于给定信息，不得编造页码、参数、故障码、维修结论；证据不足时明确写“不确定”。\n\n"
+        f"来源文档：{document.get('sourceName') or document.get('fileName') or document.get('id')}\n"
+        f"图片资产：{asset.get('assetName')}\n"
+        f"MinerU section：{asset.get('section') or 'unknown'}\n"
+        f"视觉分析失败原因：{visual_fallback_reason or 'unknown'}\n"
+        f"OCR 文本：\n{ocr_text or '无可用 OCR 文本'}\n\n"
+        "请输出中文短摘要，包含：可见文字/部件线索、可能对应的检修用途、安全风险、仍不确定的信息。"
+    )
+    timeout = float(os.getenv("LLM_TIMEOUT_SECONDS", "20"))
+    model = provider_model(provider)
+
+    if provider == "openai":
+        api_key = os.getenv("OPENAI_API_KEY", "")
+        base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
+        if provider_api_style(provider) == "chat_completions":
+            payload = _post_json(
+                f"{base_url}/chat/completions",
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                payload={
+                    "model": model,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": llm_max_tokens(),
+                    "temperature": llm_temperature(),
+                },
+                timeout=timeout,
+            )
+            text = parse_openai_chat_response(payload)
+        else:
+            payload = _post_json(
+                f"{base_url}/responses",
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                payload={
+                    "model": model,
+                    "input": prompt,
+                    "max_output_tokens": llm_max_tokens(),
+                    "temperature": llm_temperature(),
+                },
+                timeout=timeout,
+            )
+            text = parse_openai_response(payload)
+    elif provider == "anthropic":
+        api_key = os.getenv("ANTHROPIC_API_KEY", "")
+        base_url = os.getenv("ANTHROPIC_BASE_URL", "https://api.anthropic.com/v1").rstrip("/")
+        payload = _post_json(
+            f"{base_url}/messages",
+            headers={
+                "x-api-key": api_key,
+                "anthropic-version": os.getenv("ANTHROPIC_VERSION", "2023-06-01"),
+                "Content-Type": "application/json",
+            },
+            payload={
+                "model": model,
+                "max_tokens": llm_max_tokens(),
+                "temperature": llm_temperature(),
+                "messages": [{"role": "user", "content": prompt}],
+            },
+            timeout=timeout,
+        )
+        text = parse_anthropic_response(payload)
+    else:
+        raise RuntimeError(f"unsupported LLM provider: {provider}")
+
+    if not text:
+        raise RuntimeError("text LLM returned empty asset analysis")
+    return {
+        "provider": f"{provider}-text-fallback",
+        "requestedProvider": provider,
+        "fallback": True,
+        "fallbackReason": visual_fallback_reason,
+        "textSegments": [text],
+        "summary": text[:240],
+    }
+
+
+def build_asset_analysis_chunks(
+    document: dict[str, Any],
+    asset: dict[str, Any],
+    provider: str | None,
+    asset_index: int,
+) -> tuple[list[dict[str, Any]], int, str]:
+    chunks: list[dict[str, Any]] = []
+    fallback_count = 0
+    errors: list[str] = []
+    suffix = Path(asset["assetName"]).suffix.lower().lstrip(".")
+
+    ocr_result = analyze_ocr_document(Path(asset["assetPath"]), asset["assetName"], suffix)
+    ocr_segments = [str(segment) for segment in ocr_result.get("textSegments", []) if str(segment).strip()]
+    if ocr_result.get("text") and not ocr_segments:
+        ocr_segments = [str(ocr_result["text"])]
+    if ocr_segments:
+        chunks.extend(
+            build_asset_text_chunks(
+                document=document,
+                asset=asset,
+                texts=ocr_segments,
+                knowledge_type="ocr_result",
+                provider=str(ocr_result.get("provider") or "ocr"),
+                id_prefix=f"{asset_index:03d}-ocr",
+                fallback_reason=str(ocr_result.get("fallbackReason") or ""),
+            )
+        )
+    if ocr_result.get("fallback"):
+        fallback_count += 1
+
+    visual_analysis = analyze_multimodal_document(
+        file_path=Path(asset["assetPath"]),
+        source_name=f"{document.get('sourceName') or document.get('fileName') or document['id']} / {asset['assetName']}",
+        suffix=suffix,
+        requested_provider=provider,
+    )
+    if visual_analysis.get("fallback"):
+        fallback_count += 1
+        try:
+            visual_analysis = call_text_llm_for_asset_analysis(document, asset, ocr_result, str(visual_analysis.get("fallbackReason", "")))
+        except Exception as exc:
+            reason = f"asset text LLM fallback failed for {asset['assetName']}: {exc}"
+            record_fallback("llm", reason)
+            logger.warning(reason)
+            errors.append(reason)
+            return chunks, fallback_count + 1, "; ".join(errors)
+
+    visual_segments = [str(segment) for segment in visual_analysis.get("textSegments", []) if str(segment).strip()]
+    if not visual_segments and visual_analysis.get("summary"):
+        visual_segments = [str(visual_analysis["summary"])]
+    if visual_segments:
+        chunks.extend(
+            build_asset_text_chunks(
+                document=document,
+                asset=asset,
+                texts=visual_segments,
+                knowledge_type="image_analysis",
+                provider=str(visual_analysis.get("provider") or "multimodal"),
+                id_prefix=f"{asset_index:03d}-image",
+                fallback_reason=str(visual_analysis.get("fallbackReason") or ""),
+            )
+        )
+    return chunks, fallback_count, "; ".join(errors)
+
+
+def analyze_document_assets(document_id: str, provider: str | None = None) -> dict[str, Any]:
+    documents = load_documents()
+    document = next((item for item in documents if item.get("id") == document_id), None)
+    if document is None:
+        raise HTTPException(status_code=404, detail="knowledge document not found")
+
+    candidates = asset_candidates_from_artifacts(document.get("parseArtifacts", {}))
+    limit = asset_analysis_limit()
+    if not candidates or limit <= 0:
+        updated = update_document_asset_analysis_status(
+            document_id,
+            assetAnalysisStatus="skipped",
+            assetAnalysisCount=0,
+            assetAnalysisFallbackCount=0,
+            assetAnalysisError="no_assets" if not candidates else "limit_zero",
+        )
+        return {**(updated or document), "chunks": []}
+
+    update_document_asset_analysis_status(document_id, assetAnalysisStatus="running", assetAnalysisError="")
+    limited_assets = candidates[:limit]
+    new_chunks: list[dict[str, Any]] = []
+    fallback_count = 0
+    errors: list[str] = []
+    for index, asset in enumerate(limited_assets, start=1):
+        try:
+            chunks, chunk_fallback_count, error = build_asset_analysis_chunks(document, asset, provider, index)
+            new_chunks.extend(chunks)
+            fallback_count += chunk_fallback_count
+            if error:
+                errors.append(error)
+        except Exception as exc:
+            reason = f"asset analysis failed for {asset['assetName']}: {exc}"
+            logger.warning(reason)
+            errors.append(reason)
+            fallback_count += 1
+
+    chunks = load_document_chunks()
+    preserved_chunks = [
+        chunk
+        for chunk in chunks
+        if not (chunk.get("documentId") == document_id and chunk.get("origin") == ASSET_ANALYSIS_ORIGIN)
+    ]
+    preserved_chunks.extend(new_chunks)
+    save_document_chunks(preserved_chunks)
+
+    documents = load_documents()
+    document = next((item for item in documents if item.get("id") == document_id), document)
+    document_chunks = [chunk for chunk in preserved_chunks if chunk.get("documentId") == document_id]
+    update_document_review_summary(document, document_chunks)
+    document["assetAnalysisStatus"] = "completed" if new_chunks else "failed"
+    document["assetAnalysisCount"] = len(new_chunks)
+    document["assetAnalysisFallbackCount"] = fallback_count
+    document["assetAnalysisError"] = "; ".join(errors)[:1000]
+    document["assetAnalysisUpdatedAt"] = utc_now()
+    save_documents(documents)
+    return {**document, "chunks": new_chunks[:3]}
+
+
 def ingest_knowledge_document_bytes(
     content: bytes,
     file_name: str | None,
@@ -250,6 +662,7 @@ def ingest_knowledge_document_bytes(
         "uploadedAt": utc_now(),
         "url": f"/knowledge/files/{target.name}",
     }
+    document = mark_initial_asset_analysis_state(document)
 
     documents = load_documents()
     documents.append(document)
@@ -337,7 +750,17 @@ def process_knowledge_parse_task(task_id: str) -> None:
             parser=document.get("parser", ""),
             parserFallback=document.get("parserFallback", False),
             parserFallbackReason=document.get("parserFallbackReason", ""),
+            assetAnalysisStatus=document.get("assetAnalysisStatus", "skipped"),
         )
+        if should_enqueue_asset_analysis(document):
+            analyzed_document = analyze_document_assets(str(document["id"]))
+            update_parse_task(
+                task_id,
+                assetAnalysisStatus=analyzed_document.get("assetAnalysisStatus", ""),
+                assetAnalysisCount=analyzed_document.get("assetAnalysisCount", 0),
+                assetAnalysisFallbackCount=analyzed_document.get("assetAnalysisFallbackCount", 0),
+                assetAnalysisError=analyzed_document.get("assetAnalysisError", ""),
+            )
     except Exception as exc:  # pragma: no cover - exact parser failures vary by dependency
         logger.exception("Knowledge parse task failed: %s", task_id)
         update_parse_task(task_id, status="failed", completedAt=utc_now(), error=str(exc))
@@ -386,6 +809,7 @@ def build_multimodal_chunks(document: dict[str, Any], analysis: dict[str, Any]) 
             chunk["chunk_id"] = chunk["id"]
             chunk["keywords"] = build_keywords(f"{chunk_text} {keyword_context}")
             chunk["knowledge_type"] = "image_analysis"
+            chunk["origin"] = "document_multimodal_analysis"
             chunks.append(chunk)
     return chunks
 
@@ -397,6 +821,8 @@ def analyze_knowledge_document(document_id: str, provider: str | None = None) ->
         raise HTTPException(status_code=404, detail="入库资料不存在")
 
     suffix = document.get("suffix", "")
+    if asset_candidates_from_artifacts(document.get("parseArtifacts", {})):
+        return analyze_document_assets(document_id, provider)
     if suffix not in MULTIMODAL_SUFFIXES:
         raise HTTPException(status_code=400, detail="该资料类型不需要多模态分析")
 
@@ -415,13 +841,16 @@ def analyze_knowledge_document(document_id: str, provider: str | None = None) ->
     )
     chunks = build_multimodal_chunks(document, analysis)
 
-    existing_chunks = [chunk for chunk in load_document_chunks() if chunk.get("documentId") != document_id]
+    existing_chunks = [
+        chunk
+        for chunk in load_document_chunks()
+        if not (chunk.get("documentId") == document_id and chunk.get("origin") == "document_multimodal_analysis")
+    ]
     existing_chunks.extend(chunks)
     save_document_chunks(existing_chunks)
 
-    document["status"] = "pending_review" if chunks else "needs_multimodal_analysis"
-    document["chunkCount"] = len(chunks)
-    document["pendingReviewCount"] = len(chunks)
+    document_chunks = [chunk for chunk in existing_chunks if chunk.get("documentId") == document_id]
+    update_document_review_summary(document, document_chunks)
     document["parser"] = f"multimodal-{analysis.get('provider', 'mock')}"
     document["analysis"] = {
         "summary": analysis.get("summary", ""),

@@ -13,6 +13,16 @@ from .provider_policy import configured_llm_provider, record_fallback, remote_ap
 
 logger = logging.getLogger(__name__)
 
+REQUIRED_RAG_HEADINGS = (
+    "【初步判断】",
+    "【建议检查步骤】",
+    "【建议维修步骤】",
+    "【安全提醒】",
+    "【验收标准】",
+    "【引用证据】",
+    "【不确定信息】",
+)
+
 
 def configured_provider(requested_provider: str | None) -> str:
     return configured_llm_provider(requested_provider)
@@ -44,6 +54,49 @@ def provider_api_style(provider: str) -> str:
     if provider == "anthropic":
         return "messages"
     return "mock"
+
+
+def env_flag(name: str, default: bool) -> bool:
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+    return raw_value.strip().lower() not in {"0", "false", "no", "off"}
+
+
+def structured_llm_answer_enabled() -> bool:
+    return env_flag("RAG_USE_STRUCTURED_LLM_ANSWER", True)
+
+
+def allow_llm_no_evidence_fallback() -> bool:
+    return env_flag("RAG_ALLOW_LLM_NO_EVIDENCE_FALLBACK", True)
+
+
+def llm_answer_has_required_headings(answer: str) -> bool:
+    return all(heading in answer for heading in REQUIRED_RAG_HEADINGS)
+
+
+def select_final_rag_answer(
+    model_answer: str,
+    template_answer: str,
+    citations: list[dict[str, Any]],
+) -> tuple[str, bool, str]:
+    if not structured_llm_answer_enabled():
+        return template_answer, False, "disabled"
+
+    answer = model_answer.strip()
+    if not answer:
+        return template_answer, False, "empty_model_answer"
+
+    if not llm_answer_has_required_headings(answer):
+        return template_answer, False, "missing_required_headings"
+
+    if citations:
+        return answer, True, "structured_evidence_answer"
+
+    if allow_llm_no_evidence_fallback():
+        return answer, True, "structured_no_evidence_fallback"
+
+    return template_answer, False, "no_evidence_fallback_disabled"
 
 
 def truncate_text(text: str, limit: int) -> str:
@@ -250,7 +303,19 @@ def real_rag_answer(
     graph_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     compressed_contexts, context_chars = compress_contexts(contexts)
-    prompt = build_context_prompt(device_model, fault_text, compressed_contexts, graph_context)
+    prompt = build_context_prompt(device_model, fault_text, compressed_contexts, graph_context) + (
+        "\n\n输出必须严格使用以下 7 个标题，标题文字不得改写："
+        "\n【初步判断】"
+        "\n【建议检查步骤】"
+        "\n【建议维修步骤】"
+        "\n【安全提醒】"
+        "\n【验收标准】"
+        "\n【引用证据】"
+        "\n【不确定信息】"
+        "\n所有检修建议必须基于检索上下文中的 evidence 编号；如果没有 evidence，"
+        "只能给通用安全排查模板，并在【引用证据】写“暂无可追溯证据”，"
+        "在【不确定信息】明确说明证据不足。不得编造参数、页码、故障码或维修结论。"
+    )
     timeout = float(os.getenv("LLM_TIMEOUT_SECONDS", "20"))
     citations = [citation_from_result(item) for item in compressed_contexts]
     evidence_pack = build_evidence_pack(citations)
@@ -321,10 +386,14 @@ def real_rag_answer(
         raise RuntimeError("模型返回内容为空")
 
     structured_answer = build_structured_rag_output(device_model, fault_text, evidence_pack)
+    template_answer = format_structured_answer(structured_answer)
+    final_answer, llm_answer_used, llm_answer_mode = select_final_rag_answer(answer, template_answer, citations)
     return {
-        "answer": format_structured_answer(structured_answer),
+        "answer": final_answer,
         "rawAnswer": answer,
         "structuredAnswer": structured_answer,
+        "llmAnswerUsed": llm_answer_used,
+        "llmAnswerMode": llm_answer_mode,
         "recommendedActions": structured_answer.get("inspectionSteps", []) + structured_answer.get("repairSteps", []),
         "evidencePack": evidence_pack,
         "riskReviewRequired": structured_answer.get("riskReviewRequired", False),

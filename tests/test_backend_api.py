@@ -400,6 +400,48 @@ def test_rag_answer_uses_openai_provider_when_configured(tmp_path, monkeypatch) 
     assert "【初步判断】" in payload["answer"]
 
 
+def test_rag_answer_uses_structured_real_llm_answer_when_compliant(tmp_path, monkeypatch) -> None:
+    structured_answer = (
+        "【初步判断】\n基于 [1]，优先怀疑点火或供油异常。\n\n"
+        "【建议检查步骤】\n1. 对照 [1] 检查火花塞和供油状态。\n\n"
+        "【建议维修步骤】\n1. 仅在 [1] 支持时清洁或更换相关部件。\n\n"
+        "【安全提醒】\n1. 作业前断电并等待高温部件冷却。\n\n"
+        "【验收标准】\n1. 复测启动状态并记录结果。\n\n"
+        "【引用证据】\n[1]\n\n"
+        "【不确定信息】\n1. 未在证据中出现的参数不做推断。"
+    )
+
+    def fake_post_json(url: str, headers: dict[str, str], payload: dict[str, Any], timeout: float) -> dict[str, Any]:
+        assert "【建议检查步骤】" in payload["messages"][0]["content"]
+        assert "不得编造参数" in payload["messages"][0]["content"]
+        return {"choices": [{"message": {"content": structured_answer}}]}
+
+    monkeypatch.setenv("OPENAI_API_KEY", "compatible-key")
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://compatible-provider.test/v1")
+    monkeypatch.setenv("OPENAI_MODEL", "compatible-model")
+    monkeypatch.setenv("OPENAI_API_STYLE", "chat_completions")
+    monkeypatch.setattr(llm_adapter, "_post_json", fake_post_json)
+    client = make_client(tmp_path, monkeypatch)
+
+    response = client.post(
+        "/api/rag/answer",
+        json={
+            "deviceModel": "发动机-示例型号 A",
+            "faultText": "启动困难",
+            "topK": 2,
+            "provider": "openai",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    assert payload["fallback"] is False
+    assert payload["rawAnswer"] == structured_answer
+    assert payload["answer"] == structured_answer
+    assert payload["llmAnswerUsed"] is True
+    assert payload["llmAnswerMode"] == "structured_evidence_answer"
+
+
 def test_rag_answer_uses_openai_compatible_chat_completions(tmp_path, monkeypatch) -> None:
     def fake_post_json(url: str, headers: dict[str, str], payload: dict[str, Any], timeout: float) -> dict[str, Any]:
         assert url == "https://compatible-provider.test/v1/chat/completions"
@@ -1146,6 +1188,226 @@ def test_knowledge_document_upload_creates_pending_review_chunks_and_parse_artif
     )
     results = search_response.json()["data"]["results"]
     assert not any(item["sourceType"] == "document" and item["sourceName"] == "摩托车检修手册" for item in results)
+
+
+def test_knowledge_document_upload_auto_analyzes_mineru_assets(tmp_path, monkeypatch) -> None:
+    asset_path = tmp_path / "mineru-asset.png"
+    asset_path.write_bytes(b"fake image bytes")
+
+    def fake_parse_document(*_: Any, **__: Any) -> dict[str, Any]:
+        return {
+            "parser": "mineru",
+            "status": "parsed",
+            "pages": [{"page": 1, "section": "manual-page", "text": "手册文本：启动困难检查火花塞。"}],
+            "markdown": "# 手册文本",
+            "assets": [str(asset_path)],
+            "fallback": False,
+            "fallbackReason": "",
+        }
+
+    def fake_ocr(*_: Any, **__: Any) -> dict[str, Any]:
+        return {
+            "provider": "rapidocr",
+            "requestedProvider": "rapidocr",
+            "fallback": False,
+            "fallbackReason": "",
+            "text": "图中标注火花塞间隙检查",
+            "textSegments": ["图中标注火花塞间隙检查"],
+        }
+
+    def fake_multimodal(*_: Any, **__: Any) -> dict[str, Any]:
+        return {
+            "provider": "openai",
+            "requestedProvider": "openai",
+            "fallback": False,
+            "fallbackReason": "",
+            "summary": "图片显示火花塞检查位置。",
+            "textSegments": ["图片显示火花塞检查位置，应结合手册文字复核。"],
+        }
+
+    monkeypatch.setattr(knowledge, "parse_document", fake_parse_document)
+    monkeypatch.setattr(knowledge, "analyze_ocr_document", fake_ocr)
+    monkeypatch.setattr(knowledge, "analyze_multimodal_document", fake_multimodal)
+    client = make_client(tmp_path, monkeypatch)
+
+    response = client.post(
+        "/api/knowledge/documents",
+        files={"file": ("manual.pdf", b"%PDF-1.4 fake", "application/pdf")},
+        data={"source_name": "图文维修手册"},
+    )
+
+    assert response.status_code == 200
+    uploaded = response.json()["data"]
+    assert uploaded["assetAnalysisStatus"] == "queued"
+
+    detail = client.get(f"/api/knowledge/documents/{uploaded['id']}").json()["data"]
+    assert detail["assetAnalysisStatus"] == "completed"
+    assert detail["assetAnalysisCount"] == 2
+    assert detail["pendingReviewCount"] == 3
+
+    chunks = client.get(f"/api/knowledge/documents/{uploaded['id']}/chunks").json()["data"]["items"]
+    knowledge_types = {chunk["knowledge_type"] for chunk in chunks}
+    assert {"manual_excerpt", "ocr_result", "image_analysis"} <= knowledge_types
+    asset_chunks = [chunk for chunk in chunks if chunk.get("origin") == "mineru_asset_analysis"]
+    assert len(asset_chunks) == 2
+    assert {chunk["review_status"] for chunk in asset_chunks} == {"pending_review"}
+    assert {chunk["sourceType"] for chunk in asset_chunks} == {"document_asset"}
+    assert all(chunk["evidence_location"]["assetName"].endswith(".png") for chunk in asset_chunks)
+
+    search_response = client.post(
+        "/api/search",
+        json={"deviceModel": "发动机", "faultText": "火花塞间隙 图片", "inputType": "text", "topK": 5},
+    )
+    results = search_response.json()["data"]["results"]
+    assert not any(item.get("documentId") == uploaded["id"] for item in results)
+
+
+def test_mineru_asset_analysis_is_idempotent(tmp_path, monkeypatch) -> None:
+    asset_path = tmp_path / "asset-idempotent.png"
+    asset_path.write_bytes(b"fake image bytes")
+
+    monkeypatch.setattr(
+        knowledge,
+        "parse_document",
+        lambda *_: {
+            "parser": "mineru",
+            "status": "parsed",
+            "pages": [{"page": 1, "section": "manual-page", "text": "文本片段"}],
+            "markdown": "文本片段",
+            "assets": [str(asset_path)],
+            "fallback": False,
+            "fallbackReason": "",
+        },
+    )
+    monkeypatch.setattr(
+        knowledge,
+        "analyze_ocr_document",
+        lambda *_: {"provider": "mock", "fallback": False, "textSegments": ["OCR 一次结果"]},
+    )
+    monkeypatch.setattr(
+        knowledge,
+        "analyze_multimodal_document",
+        lambda *_, **__: {"provider": "mock", "fallback": False, "textSegments": ["图片一次结果"]},
+    )
+    client = make_client(tmp_path, monkeypatch)
+    uploaded = client.post(
+        "/api/knowledge/documents",
+        files={"file": ("manual.pdf", b"%PDF-1.4 fake", "application/pdf")},
+    ).json()["data"]
+
+    first = client.get(f"/api/knowledge/documents/{uploaded['id']}/chunks").json()["data"]["items"]
+    first_asset_ids = sorted(chunk["id"] for chunk in first if chunk.get("origin") == "mineru_asset_analysis")
+
+    client.post(f"/api/knowledge/documents/{uploaded['id']}/analyze", json={"provider": "mock"})
+    second = client.get(f"/api/knowledge/documents/{uploaded['id']}/chunks").json()["data"]["items"]
+    second_asset_ids = sorted(chunk["id"] for chunk in second if chunk.get("origin") == "mineru_asset_analysis")
+
+    assert first_asset_ids == second_asset_ids
+    assert len(second) == 3
+    assert sum(1 for chunk in second if chunk["knowledge_type"] == "manual_excerpt") == 1
+
+
+def test_mineru_asset_visual_failure_uses_text_llm_fallback(tmp_path, monkeypatch) -> None:
+    asset_path = tmp_path / "asset-llm-fallback.png"
+    asset_path.write_bytes(b"fake image bytes")
+
+    monkeypatch.setenv("LLM_PROVIDER", "openai")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://compatible-provider.test/v1")
+    monkeypatch.setenv("OPENAI_MODEL", "qwen-test")
+    monkeypatch.setenv("OPENAI_API_STYLE", "chat_completions")
+    monkeypatch.setattr(
+        knowledge,
+        "parse_document",
+        lambda *_: {
+            "parser": "mineru",
+            "status": "parsed",
+            "pages": [],
+            "markdown": "",
+            "assets": [str(asset_path)],
+            "fallback": False,
+            "fallbackReason": "",
+        },
+    )
+    monkeypatch.setattr(
+        knowledge,
+        "analyze_ocr_document",
+        lambda *_: {"provider": "rapidocr", "fallback": False, "text": "OCR: 制动泵渗漏", "textSegments": ["OCR: 制动泵渗漏"]},
+    )
+    monkeypatch.setattr(
+        knowledge,
+        "analyze_multimodal_document",
+        lambda *_, **__: {
+            "provider": "mock",
+            "requestedProvider": "openai",
+            "fallback": True,
+            "fallbackReason": "vision unavailable",
+            "textSegments": ["mock should not be used"],
+        },
+    )
+    monkeypatch.setattr(
+        knowledge,
+        "_post_json",
+        lambda *_args, **_kwargs: {"choices": [{"message": {"content": "LLM 基于 OCR 判断该图可能与制动泵渗漏检查有关；不确定具体参数。"}}]},
+    )
+    client = make_client(tmp_path, monkeypatch)
+
+    uploaded = client.post(
+        "/api/knowledge/documents",
+        files={"file": ("manual.pdf", b"%PDF-1.4 fake", "application/pdf")},
+    ).json()["data"]
+    chunks = client.get(f"/api/knowledge/documents/{uploaded['id']}/chunks").json()["data"]["items"]
+    image_chunk = next(chunk for chunk in chunks if chunk["knowledge_type"] == "image_analysis")
+
+    assert "LLM 基于 OCR" in image_chunk["content"]
+    assert image_chunk["analysisProvider"] == "openai-text-fallback"
+    assert image_chunk["analysisFallbackReason"] == "vision unavailable"
+
+
+def test_mineru_asset_llm_failure_retains_ocr_chunk(tmp_path, monkeypatch) -> None:
+    asset_path = tmp_path / "asset-llm-fail.png"
+    asset_path.write_bytes(b"fake image bytes")
+
+    monkeypatch.setenv("LLM_PROVIDER", "openai")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(
+        knowledge,
+        "parse_document",
+        lambda *_: {
+            "parser": "mineru",
+            "status": "parsed",
+            "pages": [],
+            "markdown": "",
+            "assets": [str(asset_path)],
+            "fallback": False,
+            "fallbackReason": "",
+        },
+    )
+    monkeypatch.setattr(
+        knowledge,
+        "analyze_ocr_document",
+        lambda *_: {"provider": "rapidocr", "fallback": False, "text": "OCR: 油路堵塞", "textSegments": ["OCR: 油路堵塞"]},
+    )
+    monkeypatch.setattr(
+        knowledge,
+        "analyze_multimodal_document",
+        lambda *_, **__: {"provider": "mock", "fallback": True, "fallbackReason": "vision unavailable", "textSegments": []},
+    )
+    monkeypatch.setattr(knowledge, "_post_json", lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("llm down")))
+    client = make_client(tmp_path, monkeypatch)
+
+    uploaded = client.post(
+        "/api/knowledge/documents",
+        files={"file": ("manual.pdf", b"%PDF-1.4 fake", "application/pdf")},
+    ).json()["data"]
+    detail = client.get(f"/api/knowledge/documents/{uploaded['id']}").json()["data"]
+    chunks = client.get(f"/api/knowledge/documents/{uploaded['id']}/chunks").json()["data"]["items"]
+
+    assert detail["assetAnalysisStatus"] == "completed"
+    assert detail["assetAnalysisFallbackCount"] >= 1
+    assert any(chunk["knowledge_type"] == "ocr_result" for chunk in chunks)
+    assert not any(chunk["knowledge_type"] == "image_analysis" for chunk in chunks)
+    assert "llm down" in detail["assetAnalysisError"]
 
 
 def test_knowledge_document_upload_does_not_sync_pending_chunks_to_vector_store(tmp_path, monkeypatch) -> None:
