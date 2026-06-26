@@ -19,6 +19,7 @@ from .provider_policy import (
     record_fallback,
     remote_api_disabled,
 )
+from .retrieval.qdrant_enhancer import qdrant_status, search_qdrant
 
 
 logger = logging.getLogger(__name__)
@@ -44,6 +45,20 @@ def json_vector_index_path() -> Path:
 def sqlite_vector_index_path() -> Path:
     configured = os.getenv("APP_VECTOR_DB_PATH")
     return Path(configured) if configured else knowledge_dir() / "vector-index.sqlite3"
+
+
+def sqlite_engine_kind() -> str:
+    engine = os.getenv("RAG_VECTOR_SQLITE_ENGINE", "python_scan").strip().lower() or "python_scan"
+    return engine if engine in {"python_scan", "sqlite_vec"} else "python_scan"
+
+
+def vector_enhancer_kind() -> str:
+    enhancer = os.getenv("RAG_VECTOR_ENHANCER", "off").strip().lower() or "off"
+    return enhancer if enhancer in {"off", "chroma", "qdrant"} else "off"
+
+
+def vector_fallback_local_enabled() -> bool:
+    return os.getenv("RAG_VECTOR_FALLBACK_LOCAL", "on").strip().lower() not in {"0", "false", "no", "off"}
 
 
 def embedding_dimension() -> int:
@@ -133,7 +148,7 @@ def embed_texts(texts: list[str]) -> tuple[list[list[float]], str]:
 
 
 def chroma_collection(provider: str) -> Any | None:
-    if vector_store_kind() != "chroma":
+    if vector_store_kind() != "chroma" and vector_enhancer_kind() != "chroma":
         return None
     try:
         import chromadb  # type: ignore[import-not-found]
@@ -231,6 +246,89 @@ def sqlite_connection() -> sqlite3.Connection:
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_vector_chunks_document_id ON vector_chunks(document_id)")
     return conn
+
+
+def sqlite_vec_status() -> dict[str, Any]:
+    requested = sqlite_engine_kind()
+    if requested != "sqlite_vec":
+        return {
+            "requested": requested,
+            "effective": "python_scan",
+            "available": False,
+            "status": "python_scan",
+            "reason": "RAG_VECTOR_SQLITE_ENGINE is python_scan.",
+        }
+    extension_path = os.getenv("SQLITE_VEC_EXTENSION_PATH", "").strip()
+    try:
+        with sqlite_connection() as conn:
+            conn.enable_load_extension(True)
+            if extension_path:
+                conn.load_extension(extension_path)
+            else:
+                import sqlite_vec  # type: ignore[import-not-found]
+
+                sqlite_vec.load(conn)
+            version = conn.execute("select vec_version()").fetchone()[0]
+            return {
+                "requested": "sqlite_vec",
+                "effective": "sqlite_vec",
+                "available": True,
+                "status": "available",
+                "version": str(version),
+                "reason": "",
+            }
+    except Exception as exc:
+        reason = f"sqlite-vec unavailable, fallback to python_scan: {exc}"
+        record_fallback("vector", reason)
+        return {
+            "requested": "sqlite_vec",
+            "effective": "python_scan",
+            "available": False,
+            "status": "fallback",
+            "reason": str(exc),
+        }
+
+
+def vector_backend_status() -> dict[str, Any]:
+    kind = vector_store_kind()
+    enhancer = vector_enhancer_kind()
+    sqlite_status = sqlite_vec_status() if kind == "sqlite" else {
+        "requested": "",
+        "effective": "",
+        "available": False,
+        "status": "not_sqlite",
+        "reason": "RAG_VECTOR_STORE is not sqlite.",
+    }
+    enhancer_status: dict[str, Any]
+    if enhancer == "qdrant":
+        enhancer_status = qdrant_status()
+    elif enhancer == "chroma":
+        enhancer_status = {
+            "enabled": True,
+            "kind": "chroma",
+            "available": chroma_collection("hash") is not None,
+            "status": "legacy_optional",
+            "reason": "Chroma is configured as an optional enhancer.",
+        }
+    else:
+        enhancer_status = {
+            "enabled": False,
+            "kind": "off",
+            "available": False,
+            "healthy": False,
+            "status": "disabled",
+            "reason": "RAG_VECTOR_ENHANCER is off.",
+        }
+    return {
+        "store": kind,
+        "enabled": vector_store_enabled(),
+        "sqliteEngine": sqlite_status,
+        "enhancer": {
+            "requested": enhancer,
+            **enhancer_status,
+        },
+        "fallbackLocal": vector_fallback_local_enabled(),
+    }
 
 
 def sync_sqlite_chunks(
@@ -396,6 +494,7 @@ def search_json_similar_chunks(query_embedding: list[float], provider: str, top_
             provider=provider,
         )
         if item:
+            item["retrievalSource"] = "json"
             results.append(item)
     return results
 
@@ -454,8 +553,110 @@ def search_sqlite_similar_chunks(query_embedding: list[float], provider: str, to
             provider=provider,
         )
         if item:
+            item["retrievalSource"] = "sqlite"
             results.append(item)
     return results
+
+
+def local_sqlite_record_by_chunk_id(chunk_id: str, provider: str) -> tuple[str, dict[str, Any]] | None:
+    path = sqlite_vector_index_path()
+    if not path.exists() or not chunk_id:
+        return None
+    try:
+        with sqlite_connection() as conn:
+            row = conn.execute(
+                "SELECT document, metadata_json FROM vector_chunks WHERE collection = ? AND chunk_id = ?",
+                (collection_name(provider), chunk_id),
+            ).fetchone()
+    except sqlite3.Error:
+        return None
+    if not row:
+        return None
+    return str(row[0]), decode_metadata(str(row[1]))
+
+
+def search_local_similar_chunks(query: str, top_k: int) -> list[dict[str, Any]]:
+    if not query.strip():
+        return []
+    query_embeddings, provider = embed_texts([query])
+    if vector_store_kind() == "sqlite":
+        sqlite_vec = sqlite_vec_status()
+        if sqlite_vec.get("requested") == "sqlite_vec" and sqlite_vec.get("effective") != "sqlite_vec":
+            record_fallback("vector", f"sqlite-vec fallback to python_scan: {sqlite_vec.get('reason', '')}")
+        return search_sqlite_similar_chunks(query_embeddings[0], provider, top_k)
+    if vector_store_kind() == "json":
+        return search_json_similar_chunks(query_embeddings[0], provider, top_k)
+    collection = chroma_collection(provider)
+    if collection is None:
+        return []
+    return search_chroma_similar_chunks(query_embeddings, provider, top_k, collection)
+
+
+def qdrant_matches_to_local_items(matches: list[dict[str, Any]], provider: str, top_k: int) -> list[dict[str, Any]]:
+    results: list[dict[str, Any]] = []
+    for match in matches:
+        chunk_id = str(match.get("chunkId") or "")
+        record = local_sqlite_record_by_chunk_id(chunk_id, provider)
+        if not record:
+            continue
+        document, metadata = record
+        item = item_from_vector_match(
+            chunk_id=chunk_id,
+            document=document,
+            metadata=metadata,
+            distance=max(0.0, 1.0 - float(match.get("score") or 0)),
+            provider=provider,
+        )
+        if not item:
+            continue
+        item["retrievalSource"] = "qdrant"
+        item["qdrantRank"] = match.get("rank")
+        item["qdrantScore"] = match.get("score")
+        results.append(item)
+        if len(results) >= top_k:
+            break
+    return results
+
+
+def search_enhanced_similar_chunks(query: str, top_k: int) -> list[dict[str, Any]]:
+    if not query.strip():
+        return []
+    try:
+        query_embeddings, provider = embed_texts([query])
+    except Exception as exc:
+        reason = f"vector embedding failed: {exc}"
+        record_fallback("vector", reason)
+        return []
+
+    local_results: list[dict[str, Any]] = []
+    if vector_fallback_local_enabled():
+        if vector_store_kind() == "sqlite":
+            local_results = search_sqlite_similar_chunks(query_embeddings[0], provider, top_k)
+        elif vector_store_kind() == "json":
+            local_results = search_json_similar_chunks(query_embeddings[0], provider, top_k)
+
+    enhancer = vector_enhancer_kind()
+    if enhancer == "qdrant" and vector_store_kind() == "sqlite":
+        qdrant_items = qdrant_matches_to_local_items(
+            search_qdrant(query_embeddings[0], top_k, embedding_provider=provider),
+            provider,
+            top_k,
+        )
+        merged: dict[str, dict[str, Any]] = {item.get("chunkId") or item["id"]: item for item in local_results}
+        for item in qdrant_items:
+            key = item.get("chunkId") or item["id"]
+            merged[key] = {**merged.get(key, {}), **item}
+        return list(merged.values())[:top_k]
+
+    if enhancer == "chroma":
+        collection = chroma_collection(provider)
+        chroma_items = search_chroma_similar_chunks(query_embeddings, provider, top_k, collection) if collection else []
+        merged = {item.get("chunkId") or item["id"]: item for item in local_results}
+        for item in chroma_items:
+            merged.setdefault(item.get("chunkId") or item["id"], item)
+        return list(merged.values())[:top_k]
+
+    return local_results
 
 
 def search_similar_chunks(query: str, top_k: int) -> list[dict[str, Any]]:
@@ -463,18 +664,23 @@ def search_similar_chunks(query: str, top_k: int) -> list[dict[str, Any]]:
         return []
 
     try:
+        if vector_store_kind() in {"sqlite", "json"} or vector_enhancer_kind() != "off":
+            return search_enhanced_similar_chunks(query, top_k)
         query_embeddings, provider = embed_texts([query])
-        if vector_store_kind() == "sqlite":
-            return search_sqlite_similar_chunks(query_embeddings[0], provider, top_k)
-        if vector_store_kind() == "json":
-            return search_json_similar_chunks(query_embeddings[0], provider, top_k)
         collection = chroma_collection(provider)
         if collection is None:
             return []
     except Exception as exc:
-        reason = f"Chroma query setup failed: {exc}"
-        record_fallback("embedding", reason)
+        reason = f"Vector query setup failed: {exc}"
+        record_fallback("vector", reason)
         logger.warning(reason)
+        return []
+
+    return search_chroma_similar_chunks(query_embeddings, provider, top_k, collection)
+
+
+def search_chroma_similar_chunks(query_embeddings: list[list[float]], provider: str, top_k: int, collection: Any) -> list[dict[str, Any]]:
+    if collection is None:
         return []
 
     try:
@@ -502,5 +708,6 @@ def search_similar_chunks(query: str, top_k: int) -> list[dict[str, Any]]:
         item = item_from_vector_match(chunk_id, document, metadata, distance, provider)
         if not item:
             continue
+        item["retrievalSource"] = "chroma"
         items.append(item)
     return items

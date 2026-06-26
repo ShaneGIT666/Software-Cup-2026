@@ -62,6 +62,8 @@ def test_provider_status_defaults_to_sqlite_vector_store_with_hash_fallback(tmp_
     monkeypatch.delenv("RAG_EMBEDDING_PROVIDER", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_EMBEDDING_MODEL", raising=False)
+    monkeypatch.delenv("RAG_VECTOR_SQLITE_ENGINE", raising=False)
+    monkeypatch.delenv("RAG_VECTOR_ENHANCER", raising=False)
     client = make_client(tmp_path, monkeypatch)
 
     response = client.get("/api/providers/status")
@@ -70,6 +72,8 @@ def test_provider_status_defaults_to_sqlite_vector_store_with_hash_fallback(tmp_
     embedding = response.json()["data"]["embedding"]
     assert embedding["provider"] == "openai"
     assert embedding["vectorStore"] == "sqlite"
+    assert embedding["sqliteEngine"]["effective"] == "python_scan"
+    assert embedding["vectorEnhancer"]["requested"] == "off"
     assert embedding["remoteCapable"] is True
     assert embedding["keyConfigured"] is False
     assert embedding["effectiveProvider"] == "hash"
@@ -2196,11 +2200,12 @@ def test_vector_sync_uses_openai_embedding_when_available(monkeypatch) -> None:
     assert captured["metadatas"][0]["embeddingProvider"] == "openai"
 
 
-def test_vector_store_defaults_to_chroma_with_current_embedding_model(monkeypatch) -> None:
+def test_vector_store_defaults_to_sqlite_with_current_embedding_model(monkeypatch) -> None:
     monkeypatch.delenv("RAG_VECTOR_STORE", raising=False)
     monkeypatch.delenv("OPENAI_EMBEDDING_MODEL", raising=False)
 
     assert vector_store.vector_store_enabled() is True
+    assert vector_store.vector_store_kind() == "sqlite"
     assert vector_store.embedding_model() == "text-embedding-3-small"
 
 
@@ -2314,6 +2319,66 @@ def test_sqlite_vector_store_indexes_only_approved_chunks(tmp_path, monkeypatch)
     assert vector_store.sqlite_vector_index_path().exists()
     assert [item["chunkId"] for item in results] == ["sqlite-chunk-approved"]
     assert results[0]["embeddingProvider"] == "hash"
+
+
+def test_sqlite_vec_request_falls_back_to_python_scan(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("APP_KNOWLEDGE_DIR", str(tmp_path / "knowledge"))
+    monkeypatch.setenv("RAG_VECTOR_STORE", "sqlite")
+    monkeypatch.setenv("RAG_VECTOR_SQLITE_ENGINE", "sqlite_vec")
+    monkeypatch.setenv("SQLITE_VEC_EXTENSION_PATH", str(tmp_path / "missing-sqlite-vec.so"))
+    monkeypatch.setenv("RAG_EMBEDDING_PROVIDER", "hash")
+
+    vector_store.sync_chunks(
+        [
+            {
+                "id": "sqlite-vec-fallback-approved",
+                "documentId": "sqlite-vec-doc",
+                "title": "sqlite-vec fallback 资料",
+                "sourceName": "目标环境资料",
+                "sourceType": "document",
+                "content": "轴承温升异常 润滑不足 检查油脂",
+                "snippet": "轴承温升异常",
+                "review_status": "approved",
+            }
+        ]
+    )
+
+    status = vector_store.vector_backend_status()
+    results = vector_store.search_similar_chunks("轴承 温升 润滑", 5)
+
+    assert status["sqliteEngine"]["requested"] == "sqlite_vec"
+    assert status["sqliteEngine"]["effective"] == "python_scan"
+    assert status["sqliteEngine"]["status"] == "fallback"
+    assert [item["chunkId"] for item in results] == ["sqlite-vec-fallback-approved"]
+
+
+def test_qdrant_enhancer_unavailable_keeps_sqlite_local_results(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("APP_KNOWLEDGE_DIR", str(tmp_path / "knowledge"))
+    monkeypatch.setenv("RAG_VECTOR_STORE", "sqlite")
+    monkeypatch.setenv("RAG_VECTOR_ENHANCER", "qdrant")
+    monkeypatch.setenv("RAG_VECTOR_FALLBACK_LOCAL", "on")
+    monkeypatch.setenv("RAG_EMBEDDING_PROVIDER", "hash")
+    monkeypatch.setattr(vector_store, "search_qdrant", lambda *_args, **_kwargs: [])
+
+    vector_store.sync_chunks(
+        [
+            {
+                "id": "qdrant-fallback-approved",
+                "documentId": "qdrant-doc",
+                "title": "Qdrant fallback 资料",
+                "sourceName": "目标环境资料",
+                "sourceType": "document",
+                "content": "液压缸爬行 密封磨损 空气进入系统",
+                "snippet": "液压缸爬行",
+                "review_status": "approved",
+            }
+        ]
+    )
+
+    results = vector_store.search_similar_chunks("液压缸 爬行 密封", 5)
+
+    assert [item["chunkId"] for item in results] == ["qdrant-fallback-approved"]
+    assert results[0]["retrievalSource"] == "sqlite"
 
 
 def test_json_vector_store_delete_document_removes_chunks(tmp_path, monkeypatch) -> None:

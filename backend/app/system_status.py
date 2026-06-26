@@ -17,7 +17,13 @@ from .data_store import (
     load_seed_data,
 )
 from .mineru_adapter import mineru_available, mineru_enabled, mineru_timeout_seconds
-from .vector_store import json_vector_index_path, sqlite_vector_index_path, vector_store_enabled, vector_store_kind
+from .vector_store import (
+    json_vector_index_path,
+    sqlite_vector_index_path,
+    vector_backend_status,
+    vector_store_enabled,
+    vector_store_kind,
+)
 
 
 REVIEW_STATUSES = ("draft", "pending_review", "approved", "rejected", "deprecated", "replaced")
@@ -350,6 +356,7 @@ def build_system_status() -> dict[str, Any]:
         },
         "indexing": {
             **index_activity(documents, chunks),
+            "vector": vector_backend_status(),
             "chroma": chroma_status(),
         },
         "parsing": {
@@ -363,6 +370,7 @@ def build_system_status() -> dict[str, Any]:
         "fallback": {
             "enabled": True,
             "parserFallbackCount": parser_fallback_count,
+            "vectorFallbackEnabled": True,
             "chromaFallbackEnabled": True,
             "llmFallbackEnabled": True,
             "ocrFallbackEnabled": True,

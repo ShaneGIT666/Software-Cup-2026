@@ -35,6 +35,14 @@ class EvidenceItem(BaseModel):
     reviewStatus: str = "approved"
     riskLevel: str = "unknown"
     score: float | int | None = None
+    retrievalSource: str | None = None
+    retrievalMode: str | None = None
+    sourceRetrievers: list[str] = Field(default_factory=list)
+    finalRank: int | None = None
+    fusionScore: float | None = None
+    vectorDistance: float | None = None
+    embeddingProvider: str | None = None
+    scoreBreakdown: dict[str, Any] = Field(default_factory=dict)
     trace: EvidenceTrace
 
 
@@ -105,6 +113,14 @@ def build_evidence_pack(results: list[dict[str, Any]]) -> dict[str, Any]:
                 reviewStatus=str(result.get("reviewStatus") or "approved"),
                 riskLevel=_risk_level(result),
                 score=score_breakdown.get("score"),
+                retrievalSource=result.get("retrievalSource") or score_breakdown.get("retrievalSource"),
+                retrievalMode=score_breakdown.get("retrievalMode"),
+                sourceRetrievers=list(result.get("sourceRetrievers") or score_breakdown.get("sourceRetrievers") or []),
+                finalRank=score_breakdown.get("finalRank"),
+                fusionScore=score_breakdown.get("fusionScore"),
+                vectorDistance=score_breakdown.get("vectorDistance"),
+                embeddingProvider=score_breakdown.get("embeddingProvider"),
+                scoreBreakdown=score_breakdown,
                 trace=trace,
             )
         )

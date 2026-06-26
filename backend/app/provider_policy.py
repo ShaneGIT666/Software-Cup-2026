@@ -8,7 +8,14 @@ SUPPORTED_REMOTE_MODES = {"auto", "off"}
 REMOTE_PROVIDERS = {"openai", "anthropic"}
 LOCAL_PROVIDERS = {"local"}
 SUPPORTED_RERANKERS = {"none", "heuristic"}
-LAST_FALLBACK: dict[str, str] = {"llm": "", "multimodal": "", "embedding": "", "ocr": "", "reranker": ""}
+LAST_FALLBACK: dict[str, str] = {
+    "llm": "",
+    "multimodal": "",
+    "embedding": "",
+    "ocr": "",
+    "reranker": "",
+    "vector": "",
+}
 
 
 def remote_api_mode() -> str:
@@ -70,7 +77,10 @@ def provider_status() -> dict[str, Any]:
     embedding_provider = configured_embedding_provider()
     requested_reranker = requested_reranker_provider()
     reranker_provider = configured_reranker_provider()
+    from .vector_store import vector_backend_status
+
     vector_store = os.getenv("RAG_VECTOR_STORE", "sqlite").strip().lower() or "sqlite"
+    vector_status = vector_backend_status()
     offline = remote_api_disabled()
     return {
         "remoteApiMode": remote_api_mode(),
@@ -95,6 +105,9 @@ def provider_status() -> dict[str, Any]:
         "embedding": {
             "provider": embedding_provider,
             "vectorStore": vector_store,
+            "sqliteEngine": vector_status.get("sqliteEngine", {}),
+            "vectorEnhancer": vector_status.get("enhancer", {}),
+            "backendStatus": vector_status,
             "remoteCapable": embedding_provider == "openai",
             "keyConfigured": key_configured("openai") if embedding_provider == "openai" else False,
             "effectiveProvider": "hash"
@@ -106,7 +119,7 @@ def provider_status() -> dict[str, Any]:
             "apiStyle": os.getenv("OPENAI_EMBEDDING_API_STYLE", "openai_compatible")
             if embedding_provider == "openai"
             else "hash",
-            "lastFallbackReason": LAST_FALLBACK["embedding"],
+            "lastFallbackReason": LAST_FALLBACK["embedding"] or LAST_FALLBACK["vector"],
         },
         "ocr": {
             **ocr_status(),

@@ -239,3 +239,38 @@ mineru, version 3.2.3
 backend tests: 139 passed in 22.98s
 frontend build: passed
 ```
+# 设备检修知识检索与作业辅助系统
+
+> 最终交付状态：本仓库已收口为中国软件杯 A1 赛题可演示、可部署、可答辩版本。主链路为 FastAPI + Vue 3 + SQLite 向量索引 + approved-only RAG；真实大模型通过 OpenAI-compatible 配置接入，mock/offline 仅作为现场兜底。LoongArch/银河麒麟环境默认不硬依赖 Chroma，sqlite-vec 与 Qdrant 作为可选增强，失败时自动回退本地 SQLite 检索。
+
+## 快速启动
+
+```powershell
+.\backend\.venv\Scripts\python.exe -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
+cd frontend
+npm.cmd run dev
+```
+
+Docker 交付环境默认配置：
+
+```env
+REMOTE_API_MODE=off
+LLM_PROVIDER=mock
+MULTIMODAL_PROVIDER=mock
+OCR_PROVIDER=mock
+RAG_VECTOR_STORE=sqlite
+RAG_VECTOR_SQLITE_ENGINE=python_scan
+RAG_VECTOR_ENHANCER=off
+RAG_VECTOR_FALLBACK_LOCAL=on
+```
+
+最终交付文档：
+
+- `docs/product/final-delivery-summary.md`
+- `docs/product/demo-runbook-final.md`
+- `docs/product/defense-qa-final.md`
+- `docs/architecture/final-architecture.md`
+- `docs/architecture/loongarch-sqlite-vec-qdrant-final-roadmap.md`
+- `docs/product/final-checklist.md`
+
+---

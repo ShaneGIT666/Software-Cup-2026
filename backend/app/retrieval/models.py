@@ -40,11 +40,15 @@ class RetrievalHit:
     review_status: str | None = "approved"
     keyword_rank: int | None = None
     vector_rank: int | None = None
+    qdrant_rank: int | None = None
     keyword_score: float | None = None
     vector_score: float | None = None
+    qdrant_score: float | None = None
     fusion_score: float | None = None
     rerank_score: float | None = None
     matched_fields: list[str] = field(default_factory=list)
+    retrieval_source: str | None = None
+    source_retrievers: list[str] = field(default_factory=list)
 
     def dedupe_key(self) -> str:
         if self.chunk_id:
@@ -72,6 +76,10 @@ class RetrievalHit:
             "scoreBreakdown": self.score_breakdown,
             "reviewStatus": self.review_status,
         }
+        if self.retrieval_source:
+            result["retrievalSource"] = self.retrieval_source
+        if self.source_retrievers:
+            result["sourceRetrievers"] = self.source_retrievers
         if self.device_type:
             result["deviceType"] = self.device_type
         if self.device_model:

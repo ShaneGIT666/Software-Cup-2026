@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from backend.app.retrieval.fusion import fuse_hits_rrf, reciprocal_rank
+from backend.app.retrieval.fusion import fuse_hit_groups_rrf, fuse_hits_rrf, reciprocal_rank
 from backend.app.retrieval.models import QueryContext, RetrievalHit
 from backend.app.retrieval.reranker import rerank_hits
 from backend.app.provider_policy import LAST_FALLBACK
@@ -13,8 +13,10 @@ def make_hit(
     device_model: str | None = None,
     keyword_rank: int | None = None,
     vector_rank: int | None = None,
+    qdrant_rank: int | None = None,
     keyword_score: float | None = None,
     vector_score: float | None = None,
+    qdrant_score: float | None = None,
     fusion_score: float | None = None,
     matched_terms: list[str] | None = None,
     matched_fields: list[str] | None = None,
@@ -35,8 +37,10 @@ def make_hit(
         device_model=device_model,
         keyword_rank=keyword_rank,
         vector_rank=vector_rank,
+        qdrant_rank=qdrant_rank,
         keyword_score=keyword_score,
         vector_score=vector_score,
+        qdrant_score=qdrant_score,
         fusion_score=fusion_score,
         matched_fields=matched_fields or [],
     )
@@ -69,6 +73,22 @@ def test_rrf_fusion_deduplicates_chunk_and_merges_scores() -> None:
     assert fused[0].score_breakdown["retrievalMode"] == "rrf"
     assert fused[0].score_breakdown["keywordScore"] == 12
     assert fused[0].score_breakdown["vectorScore"] == 18
+    assert fused[0].score_breakdown["sourceRetrievers"] == ["keyword", "vector"]
+    assert fused[0].score_breakdown["originalRanks"] == {"keyword": 2, "vector": 1}
+
+
+def test_rrf_group_fusion_keeps_optional_qdrant_rank_breakdown() -> None:
+    local_hit = make_hit("chunk-1", chunk_id="chunk-1", vector_rank=2, vector_score=14)
+    qdrant_hit = make_hit("chunk-1", chunk_id="chunk-1", qdrant_rank=1, qdrant_score=0.92)
+    keyword_hit = make_hit("manual-1", keyword_rank=1, keyword_score=22)
+
+    fused = fuse_hit_groups_rrf({"keyword": [keyword_hit], "vector": [local_hit], "qdrant": [qdrant_hit]}, top_k=5)
+    chunk = next(hit for hit in fused if hit.id == "chunk-1")
+
+    assert chunk.qdrant_rank == 1
+    assert chunk.qdrant_score == 0.92
+    assert chunk.score_breakdown["qdrantRank"] == 1
+    assert chunk.score_breakdown["sourceRetrievers"] == ["vector", "qdrant"]
 
 
 def test_rrf_fusion_keeps_stronger_keyword_match_first() -> None:

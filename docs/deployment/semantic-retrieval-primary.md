@@ -73,3 +73,31 @@ ChromaDB 仍保留为可选兼容路径，但由于其原生 HNSW 依赖在 Loon
 - hash embedding 只能称为 fallback，不应宣传为真实语义 embedding。
 - 真实 embedding 模型只有在 provider、model、base_url、API key 都验证通过后才能作为演示口径。
 - Chroma、Qdrant、Milvus、Weaviate、pgvector、sqlite-vec 进入主链路前，都必须先通过 LoongArch/Kylin 安装和接口冒烟。
+# 最终语义检索主方案（交付版）
+
+比赛目标环境采用 `SQLite vector store + approved-only indexing` 作为默认主链路：
+
+```env
+RAG_VECTOR_STORE=sqlite
+RAG_VECTOR_SQLITE_ENGINE=python_scan
+RAG_VECTOR_ENHANCER=off
+RAG_VECTOR_FALLBACK_LOCAL=on
+```
+
+可选增强：
+
+```env
+# sqlite-vec，本地扩展可用时启用；不可用自动回退 python_scan
+RAG_VECTOR_SQLITE_ENGINE=sqlite_vec
+SQLITE_VEC_EXTENSION_PATH=/path/to/sqlite-vec
+
+# Qdrant，服务可用时作为增强召回；不可用自动回退 SQLite
+RAG_VECTOR_ENHANCER=qdrant
+RAG_QDRANT_URL=http://127.0.0.1:6333
+RAG_QDRANT_COLLECTION=repair_knowledge_chunks
+RAG_VECTOR_FALLBACK_LOCAL=on
+```
+
+Chroma 仅作为兼容路径，不作为 LoongArch/银河麒麟交付硬依赖。原因是 `chromadb/chroma-hnswlib` 等原生依赖在 loongarch64 上缺少稳定 wheel，现场 Docker 构建风险高。
+
+---

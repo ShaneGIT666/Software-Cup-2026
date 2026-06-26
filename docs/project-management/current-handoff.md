@@ -187,3 +187,14 @@ frontend build: passed
 2026-06-25 文档同步口径：后端全量回归已更新为 `139 passed in 22.98s`；资料解析产物进入 `pending_review` 是当前真实规则，统一资料审核、状态机、审计事件和 readiness 检查均已完成。
 
 详细说明：`docs/deployment/mineru-document-parsing.md`。
+# 当前交接摘要（最终交付收口）
+
+本仓库当前目标是比赛交付优先，不再扩展大功能。核心状态：
+
+- 主链路：上传/解析 -> pending_review -> 审核 approved -> SQLite 向量索引 -> 检索 -> Evidence Pack -> RAG 结构化回答。
+- 目标环境：LoongArch/银河麒麟默认使用 `RAG_VECTOR_STORE=sqlite`，不硬依赖 Chroma。
+- 增强入口：`RAG_VECTOR_SQLITE_ENGINE=sqlite_vec`、`RAG_VECTOR_ENHANCER=qdrant|chroma` 均为可选；不可用时回退本地 SQLite。
+- 真实 LLM：通过 OpenAI-compatible `.env` 配置接入，不提交 Key。
+- 交付文档：见 `docs/product/final-delivery-summary.md`、`docs/product/demo-runbook-final.md`、`docs/product/defense-qa-final.md`、`docs/architecture/final-architecture.md`。
+
+---

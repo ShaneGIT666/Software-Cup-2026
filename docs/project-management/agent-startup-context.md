@@ -216,3 +216,31 @@ powershell -ExecutionPolicy Bypass -File .\scripts\deploy-docker-vm.ps1
 4. Docker 默认使用离线兜底：`REMOTE_API_MODE=off`、`LLM_PROVIDER=mock`、`MULTIMODAL_PROVIDER=mock`、`RAG_VECTOR_STORE=off`。
 
 复现与风险边界见 `docs/deployment/docker-loongarch-deployment.md`。
+# Agent 启动上下文（最终交付版）
+
+如果新 agent 接手，请先执行：
+
+```powershell
+git status --short --branch
+git log --oneline -5
+```
+
+当前代码冻结方向：
+
+- 不再迁移数据库、不引入大型 RAG 框架、不重做 UI 架构。
+- 保持 FastAPI + Vue 3 + SQLite vector store 主链路。
+- 所有上传解析、OCR、多模态和人工修正产物默认 pending_review。
+- 正式检索/RAG 只使用 approved evidence。
+- LoongArch/银河麒麟交付优先：Chroma 不是主依赖，sqlite-vec/Qdrant 是可选增强。
+
+必要验证：
+
+```powershell
+.\backend\.venv\Scripts\python.exe -m pytest tests\ -q
+cd frontend; npm.cmd run build
+powershell -ExecutionPolicy Bypass -File .\scripts\run-production-readiness-check.ps1
+powershell -ExecutionPolicy Bypass -File .\scripts\run-json-store-maintenance.ps1
+git diff --check
+```
+
+---
