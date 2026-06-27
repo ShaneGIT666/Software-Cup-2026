@@ -19,6 +19,17 @@ from backend.app.main import app
 TEN_MB = 10 * 1024 * 1024
 
 
+def small_pdf_fixture_bytes() -> bytes:
+    return (
+        b"%PDF-1.4\n"
+        b"1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n"
+        b"2 0 obj<</Type/Pages/Count 2/Kids[3 0 R 4 0 R]>>endobj\n"
+        b"3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]>>endobj\n"
+        b"4 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]>>endobj\n"
+        b"trailer<</Root 1 0 R>>\n%%EOF\n"
+    )
+
+
 def make_client(tmp_path, monkeypatch) -> TestClient:
     source = tmp_path / "source"
     shutil.copytree("data/examples", source)
@@ -1270,6 +1281,91 @@ def test_knowledge_document_upload_auto_analyzes_mineru_assets(tmp_path, monkeyp
     )
     results = search_response.json()["data"]["results"]
     assert not any(item.get("documentId") == uploaded["id"] for item in results)
+
+
+def test_pdf_visual_asset_fallback_when_mineru_timeout(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("PDF_PAGE_VISUAL_ASSET_LIMIT", "2")
+
+    def fake_parse_document(*_: Any, **__: Any) -> dict[str, Any]:
+        return {
+            "parser": "pypdf",
+            "status": "parsed",
+            "pages": [
+                {"page": 1, "section": "page-1", "text": "维修手册目录"},
+                {"page": 2, "section": "page-2", "text": "火花塞拆卸图示，检查电极间隙。"},
+                {"page": 3, "section": "page-3", "text": "起动电机装配图，安装固定螺栓。"},
+            ],
+            "markdown": "fallback text",
+            "assets": [],
+            "fallback": True,
+            "fallbackReason": "MinerU unavailable: MinerU timed out after 180 seconds.",
+        }
+
+    monkeypatch.setattr(knowledge, "parse_document", fake_parse_document)
+    client = make_client(tmp_path, monkeypatch)
+
+    response = client.post(
+        "/api/knowledge/documents",
+        files={"file": ("official-demo.pdf", small_pdf_fixture_bytes(), "application/pdf")},
+        data={"source_name": "官方演示维修手册"},
+    )
+
+    assert response.status_code == 200
+    uploaded = response.json()["data"]
+    detail = client.get(f"/api/knowledge/documents/{uploaded['id']}").json()["data"]
+    chunks = client.get(f"/api/knowledge/documents/{uploaded['id']}/chunks").json()["data"]["items"]
+
+    assert detail["assetAnalysisStatus"] == "fallback_completed"
+    assert detail["assetAnalysisCount"] > 0
+    assert detail["assetAnalysisFallbackCount"] >= 1
+    assert detail["assetAnalysisError"]
+    assert detail["assetAnalysisError"] != "no_assets"
+    assert any(chunk["knowledge_type"] == "manual_excerpt" for chunk in chunks)
+    visual_chunks = [chunk for chunk in chunks if chunk["knowledge_type"] == "pdf_page_visual_asset"]
+    assert len(visual_chunks) == 2
+    assert {chunk["sourceType"] for chunk in visual_chunks} == {"document_asset"}
+    assert {chunk["review_status"] for chunk in visual_chunks} == {"pending_review"}
+    assert all(chunk.get("assetFallbackType") == "pdf_page_visual_asset" for chunk in visual_chunks)
+
+
+def test_pdf_visual_asset_fallback_when_no_assets(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("PDF_PAGE_VISUAL_ASSET_LIMIT", "3")
+
+    monkeypatch.setattr(
+        knowledge,
+        "parse_document",
+        lambda *_: {
+            "parser": "mineru",
+            "status": "parsed",
+            "pages": [
+                {"page": 1, "section": "page-1", "text": "发动机拆装说明。"},
+                {"page": 2, "section": "page-2", "text": "气缸活塞装配图示。"},
+            ],
+            "markdown": "mineru text without assets",
+            "assets": [],
+            "fallback": False,
+            "fallbackReason": "",
+        },
+    )
+    client = make_client(tmp_path, monkeypatch)
+
+    uploaded = client.post(
+        "/api/knowledge/documents",
+        files={"file": ("no-assets.pdf", small_pdf_fixture_bytes(), "application/pdf")},
+    ).json()["data"]
+    detail = client.get(f"/api/knowledge/documents/{uploaded['id']}").json()["data"]
+    chunks = client.get(f"/api/knowledge/documents/{uploaded['id']}/chunks").json()["data"]["items"]
+
+    assert detail["assetAnalysisStatus"] == "fallback_completed"
+    assert detail["assetAnalysisCount"] >= 1
+    assert detail["assetAnalysisFallbackCount"] >= 1
+    assert any(chunk["knowledge_type"] == "manual_excerpt" for chunk in chunks)
+    assert any(chunk["knowledge_type"] == "pdf_page_visual_asset" for chunk in chunks)
+    assert all(
+        chunk["review_status"] == "pending_review"
+        for chunk in chunks
+        if chunk["knowledge_type"] in {"manual_excerpt", "pdf_page_visual_asset"}
+    )
 
 
 def test_mineru_asset_analysis_is_idempotent(tmp_path, monkeypatch) -> None:

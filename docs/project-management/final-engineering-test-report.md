@@ -119,3 +119,9 @@ bash scripts/loongarch-final-verify.sh --docker
 ## 8. 是否建议用于最终演示视频
 
 建议。新版界面更适合录制：默认首页是检修助手，主流程清晰；管理中心和系统状态可按答辩需要切换展示；知识关系图具备摘要、图例、SVG 可视化和节点详情，能够直观说明知识沉淀。
+
+## P0 补充：官方 PDF 视觉资产阻断修复
+
+本轮修复官方“摩托车发动机维修手册”上传后图片资产计数为 0 的演示阻断问题。根因是 MinerU 超时后 PDF 会 fallback 到 pypdf 文本解析，但后续图片资产分析只读取 MinerU 输出 assets；当 assets 为空时文档被标记为 `skipped/no_assets`，不会生成可审核的图示页片段。
+
+修复后：当 PDF 的 MinerU assets 缺失时，系统自动生成 `pdf_page_visual_asset` 页面视觉资产 fallback 片段。官方 PDF 手动验证生成 12 个页面视觉资产片段，`assetAnalysisStatus=fallback_completed`，`assetAnalysisFallbackCount=1`，文本 chunk 仍正常保留。

@@ -133,3 +133,11 @@ bash scripts/validate-provider.sh
 ## 安全边界
 
 不要提交 `.env`、API Key、上传资料、运行知识库、日志、压缩包、视频、截图、`.venv`、`node_modules` 或 `frontend/dist`。真实模型能力以目标环境的 provider 验证结果为准；mock、hash、fallback 和轻量知识关系图不能包装成生产级能力。
+
+## P0 补充：PDF 页面视觉资产 fallback
+
+维修手册 PDF 优先通过 MinerU 提取正文和图片 assets。若 MinerU 超时、不可用，或未提取到独立图片 assets，系统会基于 PDF 页码、页面文本和可检测到的页面图片对象自动生成 `pdf_page_visual_asset` 知识片段。
+
+这些片段默认 `pending_review`，仅用于演示、审核和知识沉淀链路，不会在审核前进入正式检索或 RAG 引用。官方演示文件“摩托车发动机维修手册”已在本地验证：PDF 共 41 页，pypdf 可检测到 36 页存在图片对象；在 MinerU 不可用 fallback 模式下可生成 12 个 PDF 页面视觉资产片段，资料卡不再显示 0 个图片片段。
+
+该 fallback 不宣称生产级图像理解能力；若目标环境配置真实 OCR/多模态 provider，仍优先使用真实 provider 的分析结果。

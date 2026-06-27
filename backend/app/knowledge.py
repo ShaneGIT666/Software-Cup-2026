@@ -60,6 +60,24 @@ MULTIMODAL_SUFFIXES = {"pdf", "jpg", "jpeg", "png", "webp"}
 IMAGE_SUFFIXES = {"jpg", "jpeg", "png", "webp"}
 ASSET_ANALYSIS_ORIGIN = "mineru_asset_analysis"
 ASSET_IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
+PDF_PAGE_VISUAL_ASSET_TYPE = "pdf_page_visual_asset"
+PDF_VISUAL_KEYWORDS = (
+    "图",
+    "图示",
+    "装配",
+    "部件清单",
+    "拆卸",
+    "安装",
+    "检查",
+    "火花塞",
+    "起动电机",
+    "发动机",
+    "气缸",
+    "活塞",
+    "气门",
+    "曲轴",
+    "离合器",
+)
 CHUNK_SIZE = 700
 CHUNK_OVERLAP = 120
 logger = logging.getLogger(__name__)
@@ -233,6 +251,14 @@ def asset_analysis_limit() -> int:
         return 12
 
 
+def pdf_page_visual_asset_limit() -> int:
+    raw_value = os.getenv("PDF_PAGE_VISUAL_ASSET_LIMIT", "12")
+    try:
+        return max(0, int(raw_value))
+    except ValueError:
+        return 12
+
+
 def load_parse_result_from_artifacts(parse_artifacts: dict[str, Any]) -> dict[str, Any]:
     raw_path = Path(str(parse_artifacts.get("rawParseResult") or ""))
     if not raw_path.exists() or not raw_path.is_file():
@@ -281,6 +307,147 @@ def asset_candidates_from_artifacts(parse_artifacts: dict[str, Any]) -> list[dic
     return unique
 
 
+def safe_page_number(value: Any) -> int | None:
+    try:
+        page = int(value)
+    except (TypeError, ValueError):
+        return None
+    return page if page > 0 else None
+
+
+def extract_pdf_image_counts(file_path: Path) -> tuple[int, dict[int, int], dict[int, str]]:
+    try:
+        from pypdf import PdfReader  # type: ignore[import-not-found]
+    except ImportError:
+        return 0, {}, {}
+
+    try:
+        reader = PdfReader(str(file_path))
+    except Exception as exc:
+        logger.info("PDF visual fallback could not inspect PDF with pypdf: %s", exc)
+        return 0, {}, {}
+
+    image_counts: dict[int, int] = {}
+    page_texts: dict[int, str] = {}
+    for index, page in enumerate(reader.pages, start=1):
+        try:
+            text = (page.extract_text() or "").strip()
+        except Exception:
+            text = ""
+        if text:
+            page_texts[index] = text
+
+        image_count = 0
+        try:
+            resources = page.get("/Resources") or {}
+            xobjects = resources.get("/XObject") or {}
+            for obj in xobjects.values():
+                try:
+                    resolved = obj.get_object()
+                    if resolved.get("/Subtype") == "/Image":
+                        image_count += 1
+                except Exception:
+                    continue
+        except Exception:
+            image_count = 0
+        if image_count:
+            image_counts[index] = image_count
+    return len(reader.pages), image_counts, page_texts
+
+
+def clean_pdf_page_summary(text: str, max_length: int = 220) -> str:
+    normalized = " ".join(str(text or "").split())
+    if not normalized:
+        return "未提取到稳定的页面文字。"
+    replacement_count = normalized.count("\ufffd")
+    if replacement_count and replacement_count / max(1, len(normalized)) > 0.08:
+        return "页面文字编码无法稳定提取，已保留该页作为视觉资产供人工审核。"
+    return normalized[:max_length]
+
+
+def pdf_page_visual_asset_candidates(document: dict[str, Any]) -> list[dict[str, Any]]:
+    if str(document.get("suffix") or "").lower() != "pdf":
+        return []
+
+    parse_result = load_parse_result_from_artifacts(document.get("parseArtifacts", {}))
+    parse_pages = parse_result.get("pages") if isinstance(parse_result, dict) else []
+    page_infos: dict[int, dict[str, Any]] = {}
+
+    if isinstance(parse_pages, list):
+        for item in parse_pages:
+            if not isinstance(item, dict):
+                continue
+            page = safe_page_number(item.get("page"))
+            if page is None:
+                continue
+            page_infos.setdefault(page, {"page": page, "text": "", "section": f"pdf-page-{page}"})
+            if item.get("text"):
+                page_infos[page]["text"] = str(item.get("text") or "")
+            if item.get("section"):
+                page_infos[page]["section"] = str(item.get("section") or f"pdf-page-{page}")
+
+    stored_file = knowledge_dir() / "files" / f"{document.get('id')}.pdf"
+    page_count = 0
+    image_counts: dict[int, int] = {}
+    page_texts: dict[int, str] = {}
+    if stored_file.exists():
+        page_count, image_counts, page_texts = extract_pdf_image_counts(stored_file)
+
+    for page, text in page_texts.items():
+        page_infos.setdefault(page, {"page": page, "text": "", "section": f"pdf-page-{page}"})
+        if text and not page_infos[page].get("text"):
+            page_infos[page]["text"] = text
+    for page, image_count in image_counts.items():
+        page_infos.setdefault(page, {"page": page, "text": "", "section": f"pdf-page-{page}"})
+        page_infos[page]["imageCount"] = image_count
+
+    if not page_infos and page_count:
+        for page in range(1, page_count + 1):
+            page_infos[page] = {"page": page, "text": "", "section": f"pdf-page-{page}", "imageCount": 0}
+
+    if not page_infos:
+        return []
+
+    def score(info: dict[str, Any]) -> int:
+        text = str(info.get("text") or "")
+        keyword_hits = sum(1 for keyword in PDF_VISUAL_KEYWORDS if keyword in text)
+        image_count = int(info.get("imageCount") or 0)
+        base = image_count * 1000 + keyword_hits * 100
+        if info.get("text"):
+            base += 10
+        if safe_page_number(info.get("page")) == 1:
+            base -= 20
+        return base
+
+    selected = sorted(page_infos.values(), key=lambda item: (-score(item), safe_page_number(item.get("page")) or 99999))
+    if not any(score(item) > 0 for item in selected):
+        selected = sorted(page_infos.values(), key=lambda item: safe_page_number(item.get("page")) or 99999)
+    selected = selected[:pdf_page_visual_asset_limit()]
+    selected = sorted(selected, key=lambda item: safe_page_number(item.get("page")) or 99999)
+
+    candidates: list[dict[str, Any]] = []
+    for info in selected:
+        page = safe_page_number(info.get("page"))
+        if page is None:
+            continue
+        asset_name = f"page-{page}-visual"
+        candidates.append(
+            {
+                "assetName": asset_name,
+                "assetPath": f"{stored_file}#page={page}" if stored_file.exists() else asset_name,
+                "page": page,
+                "section": str(info.get("section") or f"pdf-page-{page}"),
+                "pageText": str(info.get("text") or ""),
+                "imageCount": int(info.get("imageCount") or 0),
+            }
+        )
+    return candidates
+
+
+def has_pdf_page_visual_asset_fallback(document: dict[str, Any]) -> bool:
+    return pdf_page_visual_asset_limit() > 0 and bool(pdf_page_visual_asset_candidates(document))
+
+
 def update_document_asset_analysis_status(document_id: str, **updates: Any) -> dict[str, Any] | None:
     documents = load_documents()
     for index, document in enumerate(documents):
@@ -294,7 +461,8 @@ def update_document_asset_analysis_status(document_id: str, **updates: Any) -> d
 
 def mark_initial_asset_analysis_state(document: dict[str, Any]) -> dict[str, Any]:
     candidates = asset_candidates_from_artifacts(document.get("parseArtifacts", {}))
-    if candidates and auto_analyze_assets_enabled() and asset_analysis_limit() > 0:
+    has_pdf_fallback = has_pdf_page_visual_asset_fallback(document)
+    if (candidates or has_pdf_fallback) and auto_analyze_assets_enabled() and asset_analysis_limit() > 0:
         return {
             **document,
             "assetAnalysisStatus": "queued",
@@ -303,7 +471,7 @@ def mark_initial_asset_analysis_state(document: dict[str, Any]) -> dict[str, Any
             "assetAnalysisError": "",
             "assetAnalysisUpdatedAt": utc_now(),
         }
-    reason = "auto_disabled" if candidates else "no_assets"
+    reason = "auto_disabled" if candidates or has_pdf_fallback else "no_assets"
     return {
         **document,
         "assetAnalysisStatus": "skipped",
@@ -552,6 +720,48 @@ def build_asset_analysis_chunks(
     return chunks, fallback_count, "; ".join(errors)
 
 
+def build_pdf_page_visual_asset_chunks(document: dict[str, Any], reason: str = "") -> list[dict[str, Any]]:
+    chunks: list[dict[str, Any]] = []
+    source_name = document.get("sourceName") or document.get("fileName") or document["id"]
+    fallback_reason = reason or document.get("parserFallbackReason") or "PDF image assets were unavailable; page visual fallback generated."
+
+    for index, asset in enumerate(pdf_page_visual_asset_candidates(document), start=1):
+        page = asset.get("page")
+        image_count = int(asset.get("imageCount") or 0)
+        text_summary = clean_pdf_page_summary(str(asset.get("pageText") or ""))
+        image_note = f"检测到 {image_count} 个 PDF 内嵌图片对象。" if image_count else "未检测到独立图片对象，按页面文本和页码生成视觉资产。"
+        content = (
+            f"第 {page} 页 PDF 页面视觉资产 fallback。"
+            f"{image_note}"
+            "该片段用于在 MinerU 超时、不可用或未提取到图片资产时，保留维修手册图示页进入审核与知识沉淀链路。"
+            f"页面文本摘要：{text_summary}"
+            "该结果不是生产级图像理解结论，需人工审核后才可作为正式检修依据。"
+        )
+        chunk = build_chunk(
+            document_id=document["id"],
+            file_name=str(document.get("fileName") or document["id"]),
+            source_name=f"{source_name} / {asset['assetName']}",
+            chunk_text=content,
+            chunk_index=index,
+            page=page,
+            analysis_provider="pdf-page-visual-fallback",
+            section=str(asset.get("section") or f"pdf-page-{page}"),
+            review_status="pending_review",
+        )
+        chunk = apply_asset_chunk_metadata(
+            chunk=chunk,
+            document=document,
+            asset=asset,
+            knowledge_type=PDF_PAGE_VISUAL_ASSET_TYPE,
+            chunk_id=f"{document['id']}-asset-pdf-page-{index:03d}",
+            provider="pdf-page-visual-fallback",
+            fallback_reason=fallback_reason,
+        )
+        chunk["assetFallbackType"] = PDF_PAGE_VISUAL_ASSET_TYPE
+        chunks.append(chunk)
+    return chunks
+
+
 def analyze_document_assets(document_id: str, provider: str | None = None) -> dict[str, Any]:
     documents = load_documents()
     document = next((item for item in documents if item.get("id") == document_id), None)
@@ -561,6 +771,32 @@ def analyze_document_assets(document_id: str, provider: str | None = None) -> di
     candidates = asset_candidates_from_artifacts(document.get("parseArtifacts", {}))
     limit = asset_analysis_limit()
     if not candidates or limit <= 0:
+        pdf_fallback_chunks = build_pdf_page_visual_asset_chunks(
+            document,
+            reason="no MinerU image assets" if not candidates else "asset analysis limit is zero",
+        )
+        if pdf_fallback_chunks and limit > 0:
+            chunks = load_document_chunks()
+            preserved_chunks = [
+                chunk
+                for chunk in chunks
+                if not (chunk.get("documentId") == document_id and chunk.get("origin") == ASSET_ANALYSIS_ORIGIN)
+            ]
+            preserved_chunks.extend(pdf_fallback_chunks)
+            save_document_chunks(preserved_chunks)
+
+            documents = load_documents()
+            document = next((item for item in documents if item.get("id") == document_id), document)
+            document_chunks = [chunk for chunk in preserved_chunks if chunk.get("documentId") == document_id]
+            update_document_review_summary(document, document_chunks)
+            document["assetAnalysisStatus"] = "fallback_completed"
+            document["assetAnalysisCount"] = len(pdf_fallback_chunks)
+            document["assetAnalysisFallbackCount"] = int(document.get("assetAnalysisFallbackCount") or 0) + 1
+            document["assetAnalysisError"] = str(document.get("parserFallbackReason") or "PDF page visual asset fallback generated.")
+            document["assetAnalysisUpdatedAt"] = utc_now()
+            save_documents(documents)
+            return {**document, "chunks": pdf_fallback_chunks[:3]}
+
         updated = update_document_asset_analysis_status(
             document_id,
             assetAnalysisStatus="skipped",
@@ -588,6 +824,15 @@ def analyze_document_assets(document_id: str, provider: str | None = None) -> di
             errors.append(reason)
             fallback_count += 1
 
+    if not new_chunks:
+        pdf_fallback_chunks = build_pdf_page_visual_asset_chunks(
+            document,
+            reason="image asset OCR/visual analysis produced no reviewable chunks",
+        )
+        if pdf_fallback_chunks:
+            new_chunks.extend(pdf_fallback_chunks)
+            fallback_count += 1
+
     chunks = load_document_chunks()
     preserved_chunks = [
         chunk
@@ -601,7 +846,8 @@ def analyze_document_assets(document_id: str, provider: str | None = None) -> di
     document = next((item for item in documents if item.get("id") == document_id), document)
     document_chunks = [chunk for chunk in preserved_chunks if chunk.get("documentId") == document_id]
     update_document_review_summary(document, document_chunks)
-    document["assetAnalysisStatus"] = "completed" if new_chunks else "failed"
+    has_pdf_visual_fallback = any(chunk.get("knowledge_type") == PDF_PAGE_VISUAL_ASSET_TYPE for chunk in new_chunks)
+    document["assetAnalysisStatus"] = "fallback_completed" if has_pdf_visual_fallback else ("completed" if new_chunks else "failed")
     document["assetAnalysisCount"] = len(new_chunks)
     document["assetAnalysisFallbackCount"] = fallback_count
     document["assetAnalysisError"] = "; ".join(errors)[:1000]

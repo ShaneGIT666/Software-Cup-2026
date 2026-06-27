@@ -77,6 +77,9 @@ function statusType(status: string) {
 }
 
 function assetStatusText(status?: string) {
+  if (status === "fallback_completed") {
+    return "PDF 页面视觉资产已生成";
+  }
   const statusMap: Record<string, string> = {
     queued: "图片资产待分析",
     running: "图片资产分析中",
@@ -88,7 +91,7 @@ function assetStatusText(status?: string) {
 }
 
 function assetStatusType(status?: string) {
-  if (status === "completed") {
+  if (status === "completed" || status === "fallback_completed") {
     return "success";
   }
   if (status === "queued" || status === "running") {
@@ -101,6 +104,9 @@ function assetStatusType(status?: string) {
 }
 
 function knowledgeTypeText(type?: string) {
+  if (type === "pdf_page_visual_asset") {
+    return "PDF 页面视觉资产";
+  }
   const labels: Record<string, string> = {
     manual_excerpt: "手册文本",
     ocr_result: "OCR 结果",
