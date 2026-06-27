@@ -7,9 +7,19 @@ from uuid import uuid4
 from fastapi import HTTPException
 
 from . import vector_store
-from .data_store import load_cases, load_document_chunks, load_review_events, load_seed_data, save_cases, save_review_events
+from .data_store import (
+    load_cases,
+    load_document_chunks,
+    load_rag_feedback,
+    load_review_events,
+    load_seed_data,
+    save_cases,
+    save_knowledge_graph_cache,
+    save_rag_feedback,
+    save_review_events,
+)
 from .retrieval.pipeline import search_knowledge as run_retrieval_pipeline
-from .schemas import CaseCreateRequest, CaseReviewRequest, SearchRequest
+from .schemas import CaseCreateRequest, CaseReviewRequest, RagFeedbackCreateRequest, RagFeedbackReviewRequest, SearchRequest
 
 
 def utc_now() -> str:
@@ -233,3 +243,86 @@ def review_repair_case(case_id: str, request: CaseReviewRequest) -> dict[str, An
             save_review_events(events)
             return repair_case
     raise HTTPException(status_code=404, detail="案例不存在")
+
+
+def create_rag_feedback(request: RagFeedbackCreateRequest) -> dict[str, Any]:
+    corrected = request.correctedAnswer.strip()
+    labels = unique_items([label.strip() for label in request.labels])
+    reason = request.reason.strip()
+    if not corrected and not labels and not reason:
+        raise HTTPException(status_code=400, detail="提交标注时，修正答案、标签或修正原因至少填写一项")
+
+    feedback_items = load_rag_feedback()
+    now = utc_now()
+    item = {
+        "id": f"ragfb-{uuid4().hex[:8]}",
+        "deviceModel": request.deviceModel,
+        "faultText": request.faultText,
+        "maintenanceLevel": request.maintenanceLevel,
+        "originalAnswer": request.originalAnswer,
+        "correctedAnswer": corrected,
+        "labels": labels,
+        "reason": reason,
+        "status": "pending_review",
+        "reviewer": request.reviewer.strip() or "operator",
+        "reviewNote": "",
+        "createdAt": now,
+        "updatedAt": now,
+        "approvedAt": "",
+    }
+    feedback_items.append(item)
+    save_rag_feedback(feedback_items)
+    return item
+
+
+def list_rag_feedback(status: str | None = None) -> dict[str, Any]:
+    items = load_rag_feedback()
+    if status and status != "all":
+        items = [item for item in items if item.get("status") == status]
+    items = sorted(items, key=lambda item: item.get("updatedAt") or item.get("createdAt", ""), reverse=True)
+    return {"items": items, "total": len(items)}
+
+
+def review_rag_feedback(feedback_id: str, request: RagFeedbackReviewRequest) -> dict[str, Any]:
+    items = load_rag_feedback()
+    status = "approved" if request.action == "approve" else "rejected"
+    note = request.reviewNote.strip()
+    if request.action == "reject" and not note:
+        raise HTTPException(status_code=400, detail="拒绝审核必须填写原因")
+
+    for item in items:
+        if item.get("id") != feedback_id:
+            continue
+        before = dict(item)
+        previous_status = item.get("status", "pending_review")
+        now = utc_now()
+        reviewer = request.reviewer.strip() or "operator"
+        item["status"] = status
+        item["reviewer"] = reviewer
+        item["reviewAction"] = request.action
+        item["reviewNote"] = note
+        item["updatedAt"] = now
+        item["approvedAt"] = now if status == "approved" else ""
+        save_rag_feedback(items)
+
+        events = load_review_events()
+        events.append(
+            {
+                "id": f"review-{uuid4().hex[:8]}",
+                "objectType": "rag_feedback",
+                "objectId": feedback_id,
+                "action": request.action,
+                "beforeStatus": previous_status,
+                "afterStatus": status,
+                "reason": note,
+                "reviewer": reviewer,
+                "reviewTime": now,
+                "before": before,
+                "after": dict(item),
+            }
+        )
+        save_review_events(events)
+        save_knowledge_graph_cache({})
+        return item
+
+    raise HTTPException(status_code=404, detail="RAG 回答修正记录不存在")

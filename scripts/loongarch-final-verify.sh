@@ -22,6 +22,8 @@ TRANSFERABLE_TESTS=(
   tests/test_backend_api.py
   tests/test_evidence_pack.py
   tests/test_multimodal_diagnosis.py
+  tests/test_multimodal_cross_modal_signals.py
+  tests/test_rag_feedback_review_flow.py
   tests/test_maintenance_workflow_guidance.py
   tests/test_case_experience_review_flow.py
   tests/test_chunk_revision_audit.py
@@ -157,7 +159,24 @@ run_api_smoke() {
     -F "maintenanceLevel=emergency" \
     -F "riskLevel=critical" \
     -F "image=@${sample_image};type=image/png;filename=fault.png" \
-    | python3 -c "import sys,json; d=json.load(sys.stdin)['data']; print('diagnosis_provider', d.get('provider'), 'fallback', d.get('fallback'), 'citations', len(d.get('citations', [])), 'level', d.get('queryContext', {}).get('maintenanceLevel'))"
+    | python3 -c "import sys,json; d=json.load(sys.stdin)['data']; s=d.get('multimodalSignals',{}); print('diagnosis_provider', d.get('provider'), 'fallback', d.get('fallback'), 'citations', len(d.get('citations', [])), 'level', d.get('queryContext', {}).get('maintenanceLevel'), 'cross_modal', s.get('matchMode'))"
+
+  local feedback_id
+  feedback_id="$(
+    curl -fsS -X POST "${base_url}/api/rag/feedback" \
+      -H "Content-Type: application/json" \
+      -d '{"deviceModel":"发动机-示例型号 A","faultText":"启动困难 怠速不稳","maintenanceLevel":"normal_repair","originalAnswer":"脚本冒烟原始回答","correctedAnswer":"先复核燃油压力和点火系统，再决定维修步骤。","labels":["脚本冒烟","人工修正"],"reason":"补充检查顺序","reviewer":"loongarch-script"}' \
+      | python3 -c "import sys,json; d=json.load(sys.stdin)['data']; print(d['id'])"
+  )"
+  echo "rag_feedback_created ${feedback_id}"
+  curl -fsS "${base_url}/api/rag/feedback?status=pending_review" \
+    | python3 -c "import sys,json; d=json.load(sys.stdin)['data']; print('pending_feedback', d.get('total'))"
+  curl -fsS -X PATCH "${base_url}/api/rag/feedback/${feedback_id}/review" \
+    -H "Content-Type: application/json" \
+    -d '{"action":"approve","reviewer":"loongarch-reviewer","reviewNote":"script smoke approved"}' \
+    | python3 -c "import sys,json; d=json.load(sys.stdin)['data']; print('rag_feedback_reviewed', d.get('status'))"
+  curl -fsS "${base_url}/api/knowledge/graph" \
+    | FEEDBACK_ID="$feedback_id" python3 -c "import sys,json,os; d=json.load(sys.stdin)['data']; target='rag_feedback:' + os.environ['FEEDBACK_ID']; ids={n.get('id') for n in d.get('nodes', [])}; print('graph_nodes', len(ids), 'approved_only', d.get('approvedOnly'), 'has_feedback', target in ids); raise SystemExit(0 if target in ids else 1)"
 }
 
 docker_cleanup() {

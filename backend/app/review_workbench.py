@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .data_store import load_cases, load_document_chunks, load_documents, load_review_events
+from .data_store import load_cases, load_document_chunks, load_documents, load_rag_feedback, load_review_events
 
 
 def case_review_item(item: dict[str, Any]) -> dict[str, Any]:
@@ -48,6 +48,25 @@ def chunk_review_item(chunk: dict[str, Any], document: dict[str, Any] | None) ->
     }
 
 
+def rag_feedback_review_item(item: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": f"rag_feedback:{item.get('id', '')}",
+        "objectType": "rag_feedback",
+        "objectId": item.get("id", ""),
+        "status": item.get("status", "pending_review"),
+        "title": "RAG 回答标注/修正",
+        "sourceName": "RAG feedback",
+        "deviceModel": item.get("deviceModel", ""),
+        "content": item.get("correctedAnswer") or item.get("originalAnswer", ""),
+        "summary": item.get("reason", ""),
+        "createdAt": item.get("createdAt", ""),
+        "reviewer": item.get("reviewer", ""),
+        "reviewTime": item.get("approvedAt", "") or item.get("updatedAt", ""),
+        "tags": item.get("labels", []),
+        "feedbackId": item.get("id", ""),
+    }
+
+
 def list_review_items(status: str = "pending_review", item_type: str = "all") -> dict[str, Any]:
     documents = {document.get("id"): document for document in load_documents()}
     items: list[dict[str, Any]] = []
@@ -61,6 +80,11 @@ def list_review_items(status: str = "pending_review", item_type: str = "all") ->
         for chunk in load_document_chunks():
             if status == "all" or chunk.get("review_status", "approved") == status:
                 items.append(chunk_review_item(chunk, documents.get(chunk.get("documentId"))))
+
+    if item_type in {"all", "rag_feedback"}:
+        for feedback in load_rag_feedback():
+            if status == "all" or feedback.get("status") == status:
+                items.append(rag_feedback_review_item(feedback))
 
     items.sort(key=lambda item: item.get("createdAt", ""), reverse=True)
     return {"items": items, "total": len(items)}

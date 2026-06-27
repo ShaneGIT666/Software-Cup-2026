@@ -7,6 +7,7 @@ from .data_store import (
     load_document_chunks,
     load_documents,
     load_knowledge_graph_cache,
+    load_rag_feedback,
     load_seed_data,
     save_knowledge_graph_cache,
 )
@@ -94,6 +95,50 @@ def add_terms(
     for term in [item for item in terms if str(item).strip()][:8]:
         term_id = add_node(nodes, "term", term, weight=2)
         add_edge(edges, owner_id, term_id, relation, evidence=evidence or "结构化字段抽取", confidence=0.7)
+
+
+def approved_rag_feedback() -> list[dict[str, Any]]:
+    return [item for item in load_rag_feedback() if item.get("status") == "approved"]
+
+
+def feedback_matches_query(feedback: dict[str, Any], request: SearchRequest) -> bool:
+    haystack = " ".join(
+        str(feedback.get(field, ""))
+        for field in ["deviceModel", "faultText", "correctedAnswer", "reason"]
+    ).lower()
+    for label in feedback.get("labels", []):
+        haystack += f" {str(label).lower()}"
+    query_terms = tokens(request.deviceModel, request.faultText)
+    return not query_terms or any(term in haystack for term in query_terms)
+
+
+def add_rag_feedback_node(
+    nodes: dict[str, dict[str, Any]],
+    edges: dict[str, dict[str, Any]],
+    feedback: dict[str, Any],
+) -> str:
+    feedback_id = add_node(
+        nodes,
+        "rag_feedback",
+        feedback.get("reason") or feedback.get("faultText") or feedback.get("id"),
+        raw_id=f"rag_feedback:{feedback['id']}",
+        weight=4,
+        properties={
+            "status": feedback.get("status", ""),
+            "reviewStatus": feedback.get("status", ""),
+            "maintenanceLevel": feedback.get("maintenanceLevel", ""),
+            "labels": feedback.get("labels", []),
+            "approvedAt": feedback.get("approvedAt", ""),
+        },
+    )
+    if feedback.get("deviceModel"):
+        device_id = add_node(nodes, "device", feedback["deviceModel"], weight=5)
+        add_edge(edges, device_id, feedback_id, "采纳回答修正", evidence=feedback.get("reviewNote", ""), confidence=0.78)
+    if feedback.get("faultText"):
+        fault_id = add_node(nodes, "fault", feedback["faultText"], weight=5)
+        add_edge(edges, fault_id, feedback_id, "修正建议", evidence=feedback.get("correctedAnswer") or feedback.get("reason", ""), confidence=0.8)
+    add_terms(nodes, edges, feedback_id, feedback.get("labels", []), relation="标注标签", evidence=feedback.get("reason", ""))
+    return feedback_id
 
 
 def graph_stats(nodes: dict[str, dict[str, Any]], edges: dict[str, dict[str, Any]]) -> dict[str, Any]:
@@ -203,6 +248,9 @@ def build_global_knowledge_graph() -> dict[str, Any]:
             workflow_id = add_node(nodes, "workflow", f"作业流程 {repair_case['workflowId']}", raw_id=f"workflow:{repair_case['workflowId']}", weight=5)
             add_edge(edges, case_id, workflow_id, "复用流程", evidence="案例关联流程", confidence=0.78)
 
+    for feedback in approved_rag_feedback():
+        add_rag_feedback_node(nodes, edges, feedback)
+
     chunks_by_document: dict[str, list[dict[str, Any]]] = {}
     for chunk in chunks:
         chunks_by_document.setdefault(str(chunk.get("documentId", "")), []).append(chunk)
@@ -300,6 +348,12 @@ def build_knowledge_graph(request: SearchRequest) -> dict[str, Any]:
             provider = chunk["analysisProvider"]
             provider_id = add_node(nodes, "provider", f"{provider} 多模态分析", weight=2)
             add_edge(edges, provider_id, source_id, "生成片段", evidence="资料入库增强层", confidence=0.68)
+
+    for feedback in approved_rag_feedback():
+        if not feedback_matches_query(feedback, request):
+            continue
+        feedback_id = add_rag_feedback_node(nodes, edges, feedback)
+        focus_ids.append(feedback_id)
 
     node_list = sort_nodes(nodes)
     edge_list = sort_edges(edges)

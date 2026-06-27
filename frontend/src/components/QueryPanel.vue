@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ImagePlus, Search, Upload } from "@lucide/vue";
-import type { UploadPayload } from "../api";
+import type { MultimodalSignals, UploadPayload } from "../api";
 
 defineProps<{
   deviceModel: string;
@@ -14,6 +14,7 @@ defineProps<{
   uploading: boolean;
   diagnosisSummary?: string;
   diagnosisFallback?: boolean;
+  multimodalSignals?: MultimodalSignals | null;
 }>();
 
 const emit = defineEmits<{
@@ -106,6 +107,19 @@ function handleDiagnosisFileChange(event: Event) {
     <div v-if="diagnosisSummary" class="diagnosis-result" :class="{ fallback: diagnosisFallback }">
       <strong>{{ diagnosisFallback ? "图片诊断已降级" : "图片诊断线索" }}</strong>
       <span>{{ diagnosisSummary }}</span>
+    </div>
+
+    <div v-if="multimodalSignals" class="cross-modal-box">
+      <strong>图片线索</strong>
+      <p v-if="multimodalSignals.ocrText">OCR：{{ multimodalSignals.ocrText }}</p>
+      <p v-if="multimodalSignals.visualSymptoms.length">
+        视觉症状：{{ multimodalSignals.visualSymptoms.join("、") }}
+      </p>
+      <p v-if="multimodalSignals.detectedComponents.length">
+        识别部件：{{ multimodalSignals.detectedComponents.join("、") }}
+      </p>
+      <p>Fallback：{{ multimodalSignals.fallback ? "是" : "否" }} / 来源：{{ multimodalSignals.signalSource }}</p>
+      <span>匹配说明：图片线索已合并到 queryContext，用于增强 approved-only 检索。</span>
     </div>
 
     <div class="metric-grid">

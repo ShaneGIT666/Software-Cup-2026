@@ -8,14 +8,14 @@
 
 | 项目 | 当前状态 |
 | --- | --- |
-| 后端自动化测试 | `139 passed in 22.98s`，覆盖检索、资料入库、审核状态机、RAG、OCR/MinerU fallback、评测 runner、审计事件和存储恢复 |
+| 后端自动化测试 | 最新全量测试结果为 `174 passed in 729.77s`；本轮新增跨模态信号和 RAG feedback 关键测试已通过 |
 | 前端生产构建 | `npm.cmd run build` 通过；VueUse pure annotation 与 Vite chunk size warning 不阻塞演示 |
 | 本地交付检查 | `run-production-readiness-check.ps1` 通过；`run-json-store-maintenance.ps1` 检查 4 个 JSON 文件健康 |
-| LoongArch / 银河麒麟 | Docker 一体化链路已验证；比赛提供环境到手后需用最新提交重新复验并留证 |
+| LoongArch / 银河麒麟 | 可迁移主测试集、前端构建、search/RAG/multimodal diagnosis offline/mock 冒烟已有复验记录；最终环境建议再运行 `scripts/loongarch-final-verify.sh` |
 | 前端目标环境托管 | 已支持 FastAPI 静态托管 `frontend/dist`，适配无 npm/nginx 的演示环境 |
 | 真实文本大模型 | 支持 OpenAI-compatible provider；比赛演示需重新配置真实 `base_url`、模型和 Key 复验 |
-| Chroma 向量增强 | 可选开启；`hash` embedding 明确为 fallback，占位不冒充生产级语义向量 |
-| 多模态能力 | OCR/多模态链路具备 mock 兜底；真实 provider 需在目标环境通过 validate 接口小样本验收 |
+| 向量增强 | 默认 SQLite python_scan / hash fallback；Chroma、Qdrant、sqlite-vec 均为可选增强 |
+| 多模态能力 | 故障图片经 OCR/多模态语义线索进入检索；真实 provider 需在目标环境通过 validate 接口小样本验收 |
 | 现场兜底 | `REMOTE_API_MODE=off` 可强制本地 mock/检索链路，避免弱网断链 |
 
 ## 参赛信息
@@ -49,8 +49,8 @@
 | 前端 | Vue 3 + TypeScript + Vite + Element Plus |
 | 后端 | Python FastAPI |
 | 开发数据库 | 本地 JSON 文件持久化，后续可迁移 SQLite |
-| 检索方案 | 关键词/字段权重 + 可选 Chroma 向量混合检索，默认只检索 approved 知识 |
-| 向量库 | Chroma MVP，Qdrant 二阶段 |
+| 检索方案 | approved-only 检索 + 关键词/字段权重 + 可选向量增强 + RRF / Evidence Pack |
+| 向量库 | 默认 SQLite python_scan / hash fallback；Chroma、Qdrant、sqlite-vec 均为可选增强 |
 | 模型接入 | OpenAI-compatible Adapter，默认 Mock 模式 |
 | 文档解析 | `parser_router -> mineru_adapter` 优先处理 PDF/DOCX/PPTX/XLSX；PDF 可 fallback 到 pypdf，Office 文档未装 MinerU 时 fallback 到 mock parser |
 | 审核与审计 | 统一审核工作台 + 知识片段状态机 + revision + review audit events |
@@ -113,8 +113,8 @@
 同时必须持续对照 `docs/requirements/official-problem-baseline.md`：
 
 1. LoongArch + 银河麒麟部署要求是最终硬约束，不是可选加分项。
-2. 当前系统仍以文本检索和资料入库 MVP 为主，不能夸大为“已完成多模态跨模态检索”。
-3. 当前知识沉淀能力应表述为“可审核更新的知识库雏形”，不能直接宣称“知识图谱已完成”。
+2. 当前跨模态能力应表述为“故障图片经 OCR/多模态语义线索进入检索”，不能夸大为“生产级图文向量检索”。
+3. 当前知识图谱应表述为“轻量知识关系网络 / 知识图谱原型”，不能直接宣称“完整工业图数据库平台”。
 
 ## 统一启动入口（推荐）
 
@@ -196,12 +196,14 @@ powershell -ExecutionPolicy Bypass -File .\scripts\stop-dev.ps1
 2. FastAPI 后端 API，覆盖检索、诊断、RAG、资料入库、多模态分析、知识关系网络、案例提交、统一审核和审计流水。
 3. 本地 JSON 样例数据、原子写入、`.bak` 恢复和巡检脚本，保留轻量架构和比赛现场兜底能力。
 4. 检索、流程查看、资料上传/入库、pending_review、审核、RAG citations、案例提交、审计追踪、审核后再检索的闭环。
-5. 资料入库支持 `pdf/txt/md/docx/pptx/xlsx/jpg/jpeg/png/webp`；解析或多模态分析生成的片段默认 `pending_review`，审核通过前不进入正式检索、RAG citations 或 Chroma。
-6. RAG provider 支持 `mock/openai/anthropic` 和 OpenAI-compatible 云端服务；真实比赛模型需用最终 Key 与 base_url 复验。
-7. Chroma 可选向量索引已接入；未安装、关闭或查询失败时自动降级，`hash` embedding 是 fallback，占位不冒充真实语义 embedding。
-8. FastAPI 可选静态托管 `frontend/dist`，用于无 npm/nginx 的目标环境演示。
-9. 后端全量测试 `139 passed in 22.98s`；前端生产构建通过；readiness 和 JSON 存储巡检通过。
-10. Coding Agent 动态交接入口：`docs/project-management/agent-startup-context.md`。
+5. 资料入库支持 `pdf/txt/md/docx/pptx/xlsx/jpg/jpeg/png/webp`；解析或多模态分析生成的片段默认 `pending_review`，审核通过前不进入正式检索、RAG citations 或知识关系网络。
+6. `/api/multimodal/diagnosis` 返回 `multimodalSignals`，展示 OCR 文本、视觉症状、识别部件、图片线索和跨模态匹配说明。
+7. `/api/rag/feedback` 支持对 RAG 回答进行标注/修正，默认 `pending_review`，审核通过后进入轻量知识关系网络。
+8. RAG provider 支持 `mock/openai/anthropic` 和 OpenAI-compatible 云端服务；真实比赛模型需用最终 Key 与 base_url 复验。
+9. Chroma、Qdrant、sqlite-vec 均为可选向量增强；未安装、关闭或查询失败时自动降级，`hash` embedding 是 fallback，占位不冒充真实语义 embedding。
+10. FastAPI 可选静态托管 `frontend/dist`，用于无 npm/nginx 的目标环境演示。
+11. 后端全量测试 `174 passed in 729.77s`；前端生产构建通过；readiness 和 JSON 存储巡检通过。
+12. Coding Agent 动态交接入口：`docs/project-management/agent-startup-context.md`。
 
 下一步建议：
 
@@ -236,7 +238,7 @@ MINERU_API_URL=
 
 ```text
 mineru, version 3.2.3
-backend tests: 139 passed in 22.98s
+backend tests: 174 passed in 729.77s
 frontend build: passed
 ```
 # 设备检修知识检索与作业辅助系统

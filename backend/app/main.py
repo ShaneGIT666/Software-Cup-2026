@@ -50,9 +50,20 @@ from .schemas import (
     MultimodalAnalyzeRequest,
     MultimodalValidateRequest,
     RagAnswerRequest,
+    RagFeedbackCreateRequest,
+    RagFeedbackReviewRequest,
     SearchRequest,
 )
-from .services import create_repair_case, find_workflow, list_repair_cases, review_repair_case, search_knowledge
+from .services import (
+    create_rag_feedback,
+    create_repair_case,
+    find_workflow,
+    list_rag_feedback,
+    list_repair_cases,
+    review_rag_feedback,
+    review_repair_case,
+    search_knowledge,
+)
 
 
 UPLOAD_DIR = upload_dir()
@@ -122,6 +133,54 @@ def spa_index_path() -> Path:
     return frontend_dist_dir() / "index.html"
 
 
+def non_empty_strings(values: list[Any]) -> list[str]:
+    return list(dict.fromkeys(str(value).strip() for value in values if str(value).strip()))
+
+
+def cross_modal_terms(*parts: str) -> list[str]:
+    text = " ".join(part for part in parts if part)
+    for separator in ["，", "。", "、", ",", ".", ";", "；", "\n", "\t", "-", "_"]:
+        text = text.replace(separator, " ")
+    return non_empty_strings(text.split(" "))[:16]
+
+
+def build_multimodal_signals(
+    *,
+    ocr_text: str,
+    image_clues: list[str],
+    detected_components: list[str],
+    visual_symptoms: list[str],
+    signal_source: str,
+    fallback: bool,
+) -> dict[str, Any]:
+    matched_terms = non_empty_strings([ocr_text] + image_clues + detected_components + visual_symptoms)[:16]
+    return {
+        "ocrText": ocr_text,
+        "imageClues": image_clues,
+        "detectedComponents": detected_components,
+        "visualSymptoms": visual_symptoms,
+        "matchedQueryTerms": matched_terms,
+        "signalSource": signal_source,
+        "fallback": fallback,
+        "matchMode": "semantic_clue_to_text_retrieval",
+        "description": "故障图片经 OCR/多模态分析转为语义线索，并与设备型号、故障描述共同进入 approved-only 检索链路。",
+    }
+
+
+def annotate_cross_modal_matches(items: list[dict[str, Any]], signals: dict[str, Any]) -> list[dict[str, Any]]:
+    signal_terms = signals.get("matchedQueryTerms", [])
+    annotated: list[dict[str, Any]] = []
+    for item in items:
+        next_item = dict(item)
+        score_breakdown = dict(next_item.get("scoreBreakdown") or {})
+        score_breakdown["multimodalSignals"] = signal_terms
+        score_breakdown["crossModalMatchedFields"] = ["faultText", "snippet", "tags"]
+        score_breakdown["crossModalMatchMode"] = signals.get("matchMode", "semantic_clue_to_text_retrieval")
+        next_item["scoreBreakdown"] = score_breakdown
+        annotated.append(next_item)
+    return annotated
+
+
 @app.exception_handler(HTTPException)
 async def http_exception_handler(_: Any, exc: HTTPException) -> JSONResponse:
     detail = exc.detail if isinstance(exc.detail, str) else "请求处理失败"
@@ -175,6 +234,9 @@ async def multimodal_diagnosis(
 ) -> ApiResponse:
     ocr_text = ""
     image_clues: list[str] = []
+    detected_components: list[str] = []
+    visual_symptoms: list[str] = []
+    signal_source = "none"
     image_analysis: dict[str, Any] = {
         "provider": "none",
         "summary": "",
@@ -198,28 +260,61 @@ async def multimodal_diagnosis(
             temp_file.write(content)
             temp_path = Path(temp_file.name)
         try:
-            ocr_result = analyze_ocr_document(temp_path, image.filename, suffix)
-            analysis = analyze_multimodal_document(temp_path, image.filename, suffix, None)
+            try:
+                ocr_result = analyze_ocr_document(temp_path, image.filename, suffix)
+            except Exception as exc:  # pragma: no cover - provider behavior varies
+                ocr_result = {
+                    "provider": "mock-ocr",
+                    "text": "",
+                    "fallback": True,
+                    "fallbackReason": f"OCR provider failed: {exc}",
+                }
+            try:
+                analysis = analyze_multimodal_document(temp_path, image.filename, suffix, None)
+            except Exception as exc:  # pragma: no cover - provider behavior varies
+                analysis = {
+                    "provider": "mock-vision",
+                    "summary": "",
+                    "observations": [],
+                    "keyComponents": [],
+                    "faultSymptoms": [],
+                    "textSegments": [],
+                    "fallback": True,
+                    "fallbackReason": f"multimodal provider failed: {exc}",
+                }
             ocr_text = str(ocr_result.get("text") or "")
+            detected_components = non_empty_strings(list(analysis.get("keyComponents", [])))
+            visual_symptoms = non_empty_strings(list(analysis.get("faultSymptoms", [])) + list(analysis.get("observations", [])))
             image_clues = [
                 str(item)
                 for item in (
                     [analysis.get("summary", "")]
-                    + list(analysis.get("keyComponents", []))
-                    + list(analysis.get("faultSymptoms", []))
+                    + detected_components
+                    + visual_symptoms
                     + list(analysis.get("textSegments", [])[:3])
                 )
                 if str(item).strip()
             ][:12]
             fallback_used = bool(ocr_result.get("fallback") or analysis.get("fallback"))
+            if ocr_text and image_clues:
+                signal_source = "ocr+multimodal"
+            elif ocr_text:
+                signal_source = "ocr"
+            elif image_clues:
+                signal_source = "multimodal"
+            else:
+                signal_source = "mock" if fallback_used else "none"
             image_analysis = {
                 "provider": analysis.get("provider", "mock"),
                 "summary": analysis.get("summary", ""),
                 "observations": image_clues,
+                "detectedComponents": detected_components,
+                "visualSymptoms": visual_symptoms,
                 "fallback": bool(analysis.get("fallback")),
                 "fallbackReason": analysis.get("fallbackReason", ""),
                 "ocrProvider": ocr_result.get("provider", "mock"),
                 "ocrFallback": bool(ocr_result.get("fallback")),
+                "ocrFallbackReason": ocr_result.get("fallbackReason", ""),
             }
         finally:
             if temp_path and temp_path.exists():
@@ -236,6 +331,15 @@ async def multimodal_diagnosis(
         riskLevel=riskLevel,
     )
     payload = diagnose_with_rag(diagnosis_request)
+    multimodal_signals = build_multimodal_signals(
+        ocr_text=ocr_text,
+        image_clues=image_clues,
+        detected_components=detected_components,
+        visual_symptoms=visual_symptoms,
+        signal_source=signal_source,
+        fallback=fallback_used or bool(payload.get("fallback")),
+    )
+    annotated_citations = annotate_cross_modal_matches(payload.get("citations", []), multimodal_signals)
     return ApiResponse(
         data={
             "queryContext": {
@@ -249,13 +353,15 @@ async def multimodal_diagnosis(
                 "fallbackUsed": fallback_used or bool(payload.get("fallback")),
                 "clueType": "inputClue",
                 "expandedFaultText": expanded_fault_text,
+                "multimodalSignals": multimodal_signals,
             },
+            "multimodalSignals": multimodal_signals,
             "imageAnalysis": image_analysis,
-            "results": payload.get("citations", []),
+            "results": annotated_citations,
             "evidencePack": payload.get("evidencePack", {}),
             "answer": payload.get("answer", ""),
             "structuredAnswer": payload.get("structuredAnswer", {}),
-            "citations": payload.get("citations", []),
+            "citations": annotated_citations,
             "provider": payload.get("provider", "mock"),
             "fallback": fallback_used or bool(payload.get("fallback")),
             "fallbackReason": payload.get("fallbackReason", ""),
@@ -268,6 +374,21 @@ async def multimodal_diagnosis(
 @app.post("/api/rag/answer", response_model=ApiResponse)
 def rag_answer(request: RagAnswerRequest) -> ApiResponse:
     return ApiResponse(data=answer_with_rag(request), message="当前为 Mock RAG 回答")
+
+
+@app.post("/api/rag/feedback", response_model=ApiResponse)
+def create_feedback(request: RagFeedbackCreateRequest) -> ApiResponse:
+    return ApiResponse(data=create_rag_feedback(request), message="回答修正已提交，等待审核")
+
+
+@app.get("/api/rag/feedback", response_model=ApiResponse)
+def get_rag_feedback(status: str | None = None) -> ApiResponse:
+    return ApiResponse(data=list_rag_feedback(status))
+
+
+@app.patch("/api/rag/feedback/{feedback_id}/review", response_model=ApiResponse)
+def review_feedback(feedback_id: str, request: RagFeedbackReviewRequest) -> ApiResponse:
+    return ApiResponse(data=review_rag_feedback(feedback_id, request), message="回答修正审核完成")
 
 
 @app.post("/api/knowledge/graph", response_model=ApiResponse)

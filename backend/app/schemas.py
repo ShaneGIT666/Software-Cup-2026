@@ -41,6 +41,23 @@ class RagAnswerRequest(BaseModel):
     includeGraphContext: bool = True
 
 
+class RagFeedbackCreateRequest(BaseModel):
+    deviceModel: str = ""
+    faultText: str = ""
+    maintenanceLevel: str = "normal_repair"
+    originalAnswer: str = Field(min_length=1)
+    correctedAnswer: str = ""
+    labels: list[str] = Field(default_factory=list)
+    reason: str = ""
+    reviewer: str = "operator"
+
+
+class RagFeedbackReviewRequest(BaseModel):
+    action: Literal["approve", "reject"]
+    reviewer: str = "operator"
+    reviewNote: str = ""
+
+
 class LlmValidateRequest(BaseModel):
     deviceModel: str = "发动机-示例型号 A"
     faultText: str = "启动困难"

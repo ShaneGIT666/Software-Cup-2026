@@ -9,10 +9,12 @@
 1. 资料上传进入解析链路，解析产物默认进入 `pending_review`。
 2. 审核通过后才进入正式检索索引，`pending_review/rejected/deprecated/replaced` 不参与 RAG。
 3. 文本、OCR、多模态/图片资产分析结果都沉淀为可审核知识片段。
-4. `/api/search` 返回关键词与向量检索结果，并保留 `chunkId/sourceDocId/page/section`。
-5. `/api/rag/answer` 基于 Evidence Pack 输出结构化检修建议，证据不足时明确“不确定”。
-6. 真实 LLM 使用 OpenAI-compatible provider 接入，mock/offline 仅作为现场兜底。
-7. 目标环境默认使用 SQLite 向量索引，sqlite-vec/Qdrant/Chroma 作为可选增强，失败时回退本地索引。
+4. 故障图片经 OCR/多模态分析生成 `multimodalSignals`，以语义线索方式参与 approved-only 检索。
+5. `/api/search` 返回关键词与向量检索结果，并保留 `chunkId/sourceDocId/page/section`。
+6. `/api/rag/answer` 基于 Evidence Pack 输出结构化检修建议，证据不足时明确“不确定”。
+7. `/api/rag/feedback` 支持 RAG 回答标注/修正，审核通过后进入轻量知识关系网络。
+8. 真实 LLM 使用 OpenAI-compatible provider 接入，mock/offline 仅作为现场兜底。
+9. 目标环境默认使用 SQLite 向量索引，sqlite-vec/Qdrant/Chroma 作为可选增强，失败时回退本地索引。
 
 ## 核心能力
 
@@ -21,10 +23,12 @@
 | PC Web 可视化 | Vue 3 + Element Plus，支持检索、RAG、资料入库、审核、系统状态展示 |
 | 文档解析 | parser router + MinerU adapter；MinerU 不可用时降级普通解析/mock parser |
 | 图片资产解析 | MinerU assets 自动触发 OCR/多模态/文本 LLM 兜底分析，产物进入 pending_review |
+| 跨模态线索匹配 | 故障图片生成 OCR 文本、视觉症状、识别部件和图片线索，合并到 queryContext 参与检索 |
 | 审核状态机 | `draft/pending_review/approved/rejected/deprecated/replaced` |
 | 检索隔离 | 默认只检索 `approved` 知识片段 |
 | Evidence Pack | 保留 evidence id、chunk id、source doc id、page、section、retrievalSource、scoreBreakdown |
 | RAG 输出 | 固定为初步判断、检查步骤、维修步骤、安全提醒、验收标准、引用证据、不确定信息 |
+| RAG 回答修正 | 支持标注/修正本回答，默认 pending_review，审核通过后进入轻量知识关系网络 |
 | 真实 LLM | 支持 OpenAI-compatible 服务；比赛 Qwen 服务通过 `.env` 配置，不提交 Key |
 | 向量索引 | 默认 SQLite + hash/openai-compatible embedding；LoongArch Docker 已验证 SQLite 可运行 |
 | 可选增强 | sqlite-vec、Qdrant、Chroma 均为可选入口，不作为比赛环境硬依赖 |
@@ -69,4 +73,3 @@ OPENAI_API_KEY=<secret>
 - Chroma 不再作为 LoongArch 主链路依赖，原因见 `docs/research/loongarch-vector-db-alternatives-2026-06-26.md`。
 - hash embedding 只作为 fallback，不宣传为真实语义 embedding。
 - sqlite-vec 和 Qdrant 已预留可选入口；若目标环境现场无法安装，系统仍以 SQLite Python scan 跑完整闭环。
-

@@ -53,7 +53,21 @@ http://<host>:8000
 3. 指出高风险 evidence 会提示人工复核。
 4. 打开 `/api/providers/status` 或状态页，说明真实 LLM/provider/fallback 状态。
 
-## 演示主线三：上传、解析、审核、入库
+## 演示主线三：故障图片诊断与跨模态线索
+
+1. 点击“图片诊断”，上传一张故障图片。
+2. 展示 OCR 文本、视觉症状、识别部件、图片线索和 fallback 状态。
+3. 展示结果中的 `crossModalMatchMode=semantic_clue_to_text_retrieval`。
+4. 说明当前口径是“图片语义线索进入 approved-only 检索”，不是生产级图文向量检索。
+
+## 演示主线四：RAG 回答标注/修正
+
+1. 在 RAG 面板点击“标注/修正本回答”。
+2. 填写修正建议、标签和原因。
+3. 提交后说明记录进入 `pending_review`。
+4. 审核通过后打开知识关系网络，展示 `rag_feedback` 节点。
+
+## 演示主线五：上传、解析、审核、入库
 
 1. 上传 PDF/图片资料。
 2. 解析产物进入 `pending_review`。
@@ -61,7 +75,7 @@ http://<host>:8000
 4. 在审核台批准一个片段。
 5. 再次检索，展示审核通过片段可以被命中并出现在 citation 中。
 
-## 演示主线四：目标环境 fallback
+## 演示主线六：目标环境 fallback
 
 1. 将 `REMOTE_API_MODE=off` 或断开真实模型。
 2. 系统仍可完成首页、检索、审核和模板化 RAG。
@@ -75,8 +89,10 @@ GET  /api/providers/status
 POST /api/providers/llm/validate
 POST /api/search
 POST /api/rag/answer
+POST /api/multimodal/diagnosis
+POST /api/rag/feedback
+PATCH /api/rag/feedback/{id}/review
 POST /api/knowledge/documents/async
 GET  /api/review/items
-GET  /api/system/status
+GET  /api/knowledge/graph
 ```
-

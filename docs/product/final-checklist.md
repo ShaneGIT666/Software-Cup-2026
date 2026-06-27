@@ -14,7 +14,8 @@
 ## 官方主链路
 
 - [x] `/api/multimodal/diagnosis` 已新增并测试。
-- [x] 图片诊断结果进入 `queryContext`，失败时 fallback 不返回 500。
+- [x] 图片诊断结果进入 `queryContext`，返回 `multimodalSignals`，失败时 fallback 不返回 500。
+- [x] citation `scoreBreakdown` 展示 `crossModalMatchMode=semantic_clue_to_text_retrieval`。
 - [x] `maintenanceLevel` / `riskLevel` / `deviceType` 已进入 `SearchRequest`、`DiagnosisRequest`、`RagAnswerRequest`。
 - [x] RAG 输出包含检修等级说明、作业前准备、作业中风险控制、合规校验提醒。
 - [x] RAG 输出保留初步判断、检查步骤、维修步骤、安全提醒、验收标准、引用证据、不确定信息。
@@ -23,13 +24,17 @@
 - [x] chunk revision 有 revision 记录、审计事件和索引同步。
 - [x] approved-only 知识关系网络已测试。
 - [x] 图片诊断临时线索不伪装成正式 knowledge evidence。
+- [x] `/api/rag/feedback` 支持 RAG 回答标注/修正，默认 pending_review。
+- [x] approved RAG feedback 进入轻量知识关系网络，pending/rejected 不进入。
+- [x] `docs/submission/` 五份正式提交文档和提交包清单已准备。
 
 ## 本地验证结果
 
 | 命令 | 结果 |
 | --- | --- |
-| `.\backend\.venv\Scripts\python.exe -m pytest tests\ -q` | `168 passed in 746.08s` |
+| `.\backend\.venv\Scripts\python.exe -m pytest tests\ -q` | `174 passed in 729.77s` |
 | `cd frontend; npm.cmd run build` | 通过；仅有 VueUse pure annotation 和 chunk size warning |
+| 关键补强测试 | `15 passed in 0.70s`，覆盖跨模态线索、RAG feedback、作业指引、案例审核、图谱和官方 smoke |
 | `powershell -ExecutionPolicy Bypass -File .\scripts\run-production-readiness-check.ps1` | `success=true`，health/provider/search/RAG/审核/知识生命周期通过 |
 | `powershell -ExecutionPolicy Bypass -File .\scripts\run-json-store-maintenance.ps1` | `success=true`，4 个 JSON 文件健康，未触发恢复 |
 | 真实 Qwen LLM 临时环境变量验证 | `remoteOk=true`，`fallback=false`，模型 `xopqwen36v35b`，延迟约 `7539ms` |

@@ -25,7 +25,7 @@
 
 最终验证快照：
 
-1. Windows 本地主线后端全量测试：`168 passed in 746.08s`。
+1. Windows 本地主线后端全量测试：`174 passed in 729.77s`。
 2. Windows 前端生产构建通过；仅有 VueUse pure annotation 和 Vite chunk size warning，不阻塞演示。
 3. readiness 检查通过：health/provider/search/RAG/审核/知识生命周期均通过。
 4. JSON 存储巡检通过：4 个 JSON 文件健康，未触发恢复。
@@ -38,7 +38,7 @@
 
 已确认事实：
 
-1. Windows 本地主线后端测试最新结果为 `168 passed in 746.08s`，覆盖 pending_review 审核门槛、资料入库、RAG、上传安全、多模态/OCR mock、向量 fallback、评测 runner、状态机、审计事件和存储恢复。
+1. Windows 本地主线后端测试最新结果为 `174 passed in 729.77s`，覆盖 pending_review 审核门槛、资料入库、RAG、上传安全、多模态/OCR mock、跨模态信号、RAG feedback、向量 fallback、评测 runner、状态机、审计事件和存储恢复。
 2. 前端 `npm.cmd run build` 已通过；存在 VueUse pure annotation 和 Vite chunk size warning，不阻塞比赛演示。
 3. 准生产 readiness 检查和 JSON 存储巡检已通过。
 4. Qwen / DashScope OpenAI-compatible 文本 RAG 已通过本地临时环境变量验收；如果比赛现场更换 Key、base_url 或模型名，仍需在目标环境执行 `/api/providers/llm/validate` 与 `/api/rag/answer` 复验。

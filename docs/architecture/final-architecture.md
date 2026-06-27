@@ -21,12 +21,18 @@ flowchart LR
   RV --> AP["approved chunks"]
   AP --> VS["SQLite Vector Store"]
   API --> KW["Keyword Retriever"]
+  FE --> IMG["Fault Image Diagnosis"]
+  IMG --> SIG["multimodalSignals / queryContext"]
+  SIG --> KW
   API --> VR["Vector Retriever"]
   KW --> RRF["RRF Fusion + Heuristic Rerank"]
   VR --> RRF
   RRF --> EP["Evidence Pack"]
   EP --> LLM["OpenAI-compatible LLM"]
   LLM --> OUT["Structured RAG Output"]
+  OUT --> FB["RAG Feedback / Correction"]
+  FB --> RV
+  RV --> KG["Lightweight Knowledge Graph"]
 ```
 
 ## 后端模块
@@ -39,6 +45,8 @@ flowchart LR
 | `retrieval/*` | query context、metadata filter、keyword/vector retriever、RRF、rerank |
 | `vector_store.py` | SQLite/JSON/Chroma legacy，sqlite-vec/Qdrant 可选增强与 fallback |
 | `evidence_pack.py` | 标准化证据包和结构化 RAG 输出 |
+| `services.py` | 维修案例、RAG feedback、审核事件和业务查询 |
+| `knowledge_graph.py` | approved-only 轻量知识关系网络，包含案例、chunk 和 approved RAG feedback |
 | `provider_policy.py` | LLM/OCR/Embedding/Vector provider 状态与 fallback 记录 |
 | `system_status.py` | 系统状态页数据聚合 |
 
@@ -77,4 +85,5 @@ RAG_VECTOR_FALLBACK_LOCAL=on
 - Evidence Pack 保留来源和检索诊断字段。
 - RAG 输出不得编造参数，证据不足要说明不确定。
 - high/critical 风险要求人工复核。
-
+- 跨模态能力口径为“图片语义线索进入文本检索”，不是生产级图文向量检索。
+- RAG feedback 默认 `pending_review`，审核通过后只进入轻量知识关系网络，不直接污染 RAG 检索索引。

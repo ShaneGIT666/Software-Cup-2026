@@ -1,16 +1,37 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref } from "vue";
+import { ElMessage } from "element-plus";
 import { Bot, CheckCircle2, ClipboardList, FileText, Quote, ShieldAlert, TriangleAlert } from "@lucide/vue";
 import type { EvidenceItem, EvidenceTrace, RagAnswerPayload } from "../api";
 
 const props = defineProps<{
   ragAnswer: RagAnswerPayload | null;
   loading: boolean;
+  deviceModel: string;
+  faultText: string;
+  maintenanceLevel: string;
 }>();
 
 const emit = defineEmits<{
   answer: [];
+  feedback: [
+    payload: {
+      correctedAnswer: string;
+      labels: string[];
+      reason: string;
+      reviewer: string;
+    }
+  ];
 }>();
+
+const feedbackOpen = ref(false);
+const feedbackSubmitting = ref(false);
+const feedbackForm = ref({
+  correctedAnswer: "",
+  labels: "人工修正",
+  reason: "",
+  reviewer: "operator"
+});
 
 function sourceLabel(sourceType: string) {
   const labels: Record<string, string> = {
@@ -116,6 +137,40 @@ function severityLabel(severity: string) {
     critical: "关键风险"
   };
   return labels[severity] ?? severity;
+}
+
+function resetFeedbackForm() {
+  feedbackForm.value = {
+    correctedAnswer: "",
+    labels: "人工修正",
+    reason: "",
+    reviewer: "operator"
+  };
+}
+
+async function submitFeedback() {
+  const labels = feedbackForm.value.labels
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const correctedAnswer = feedbackForm.value.correctedAnswer.trim();
+  const reason = feedbackForm.value.reason.trim();
+  if (!correctedAnswer && !labels.length && !reason) {
+    ElMessage.warning("请填写修正建议、标签或修正原因");
+    return;
+  }
+  feedbackSubmitting.value = true;
+  emit("feedback", {
+    correctedAnswer,
+    labels,
+    reason,
+    reviewer: feedbackForm.value.reviewer.trim() || "operator"
+  });
+  window.setTimeout(() => {
+    feedbackSubmitting.value = false;
+    feedbackOpen.value = false;
+    resetFeedbackForm();
+  }, 300);
 }
 </script>
 
@@ -230,6 +285,37 @@ function severityLabel(severity: string) {
       </div>
 
       <pre v-else class="rag-answer-text">{{ ragAnswer.answer }}</pre>
+
+      <div class="rag-feedback-panel">
+        <div class="rag-feedback-header">
+          <strong>回答标注 / 修正</strong>
+          <el-button size="small" plain @click="feedbackOpen = !feedbackOpen">
+            {{ feedbackOpen ? "收起" : "标注/修正本回答" }}
+          </el-button>
+        </div>
+        <p>
+          标注结果默认进入 pending_review，审核通过后进入轻量知识关系网络，不会直接污染正式 RAG 检索证据。
+        </p>
+        <div v-if="feedbackOpen" class="rag-feedback-form">
+          <el-input
+            v-model="feedbackForm.correctedAnswer"
+            type="textarea"
+            :rows="4"
+            placeholder="填写修正后的检修建议，可保留为空，仅提交标签或原因"
+          />
+          <div class="feedback-grid">
+            <el-input v-model="feedbackForm.labels" placeholder="标签，用英文逗号分隔" />
+            <el-input v-model="feedbackForm.reviewer" placeholder="提交人" />
+          </div>
+          <el-input v-model="feedbackForm.reason" placeholder="修正原因，例如：缺少安全复核或检查顺序不完整" />
+          <div class="action-row">
+            <el-button type="primary" size="small" :loading="feedbackSubmitting" @click="submitFeedback">
+              提交修正
+            </el-button>
+            <span>{{ deviceModel }} / {{ maintenanceLevel }}</span>
+          </div>
+        </div>
+      </div>
 
       <div class="evidence-list">
         <div class="evidence-list-header">

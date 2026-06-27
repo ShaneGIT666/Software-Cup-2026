@@ -48,3 +48,10 @@ The official A1 problem requires deployment on LoongArch CPU and Kylin server OS
 ## Chroma Non-Compatibility Conclusion
 
 Chroma is not rejected because it is weak; it is rejected as the default target dependency because its native HNSW dependency chain does not currently install on the LoongArch/Kylin Docker target. `chroma-hnswlib` provides wheels for x86-64 and ARM64 style platforms, but not LoongArch. In our VM tests, both modern `chromadb>=0.5,<2` and pinned `chromadb==0.5.23` failed during dependency build, including `chroma-hnswlib`. Since this blocks Docker image build, Chroma can only remain optional. The default replacement is SQLite vector index, with JSON vector index as fallback.
+
+## Final Submission Code Findings
+
+- `/api/multimodal/diagnosis` already calls `analyze_ocr_document()` and `analyze_multimodal_document()`, then appends OCR text and image clues into `expandedFaultText` before calling `diagnose_with_rag()`.
+- Existing multimodal response includes `queryContext.imageClues`, `queryContext.ocrText`, `imageAnalysis`, `results`, `citations`, and `evidencePack`, but it does not yet expose a formal `multimodalSignals` object or annotate citations with `crossModalMatchMode`.
+- Existing tests already enforce that image clues enter the diagnostic request and are not promoted to formal evidence. The new work should extend this rather than changing the core retrieval or Evidence Pack contract.
+- There is no existing RAG feedback / corrected-answer API. The safest implementation is a JSON-backed service that defaults feedback to `pending_review`, exposes review endpoints, and only adds approved feedback to the lightweight knowledge graph, not to formal RAG retrieval.

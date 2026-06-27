@@ -11,6 +11,7 @@ import {
   requestRagAnswer,
   searchKnowledge,
   submitCase,
+  submitRagFeedback,
   uploadFaultFile,
   type KnowledgeGraphPayload,
   type MultimodalDiagnosisPayload,
@@ -188,6 +189,34 @@ async function generateRagAnswer() {
   }
 }
 
+async function submitRagAnswerFeedback(payload: {
+  correctedAnswer: string;
+  labels: string[];
+  reason: string;
+  reviewer: string;
+}) {
+  if (!ragAnswer.value) {
+    ElMessage.warning("请先生成 RAG 建议");
+    return;
+  }
+  try {
+    const result = await submitRagFeedback({
+      deviceModel: deviceModel.value,
+      faultText: faultText.value,
+      maintenanceLevel: maintenanceLevel.value,
+      originalAnswer: ragAnswer.value.answer,
+      correctedAnswer: payload.correctedAnswer,
+      labels: payload.labels,
+      reason: payload.reason,
+      reviewer: payload.reviewer
+    });
+    await refreshKnowledgeGraph();
+    ElMessage.success(`已提交修正，等待审核：${result.id}`);
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : "回答修正提交失败");
+  }
+}
+
 async function runMultimodalDiagnosis(file: File | null) {
   diagnosisLoading.value = true;
   ragAnswer.value = null;
@@ -352,6 +381,7 @@ runSearch();
         :uploading="uploading"
         :diagnosis-summary="diagnosisSummary"
         :diagnosis-fallback="multimodalDiagnosis?.fallback ?? false"
+        :multimodal-signals="multimodalDiagnosis?.multimodalSignals ?? null"
         @search="runSearch"
         @upload="uploadFile"
         @diagnose="runMultimodalDiagnosis"
@@ -362,7 +392,15 @@ runSearch();
 
     <section class="secondary-workspace" aria-label="知识维护与增强能力">
       <KnowledgePanel />
-      <RagPanel :rag-answer="ragAnswer" :loading="ragLoading" @answer="generateRagAnswer" />
+      <RagPanel
+        :rag-answer="ragAnswer"
+        :loading="ragLoading"
+        :device-model="deviceModel"
+        :fault-text="faultText"
+        :maintenance-level="maintenanceLevel"
+        @answer="generateRagAnswer"
+        @feedback="submitRagAnswerFeedback"
+      />
       <KnowledgeGraphPanel
         :graph="knowledgeGraph"
         :loading="graphLoading"

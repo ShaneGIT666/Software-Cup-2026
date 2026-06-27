@@ -61,3 +61,19 @@ POST /api/multimodal/diagnosis：mock fallback，4 条 citations，maintenanceLe
 - `tests/test_motorcycle_manual.py` 依赖 Windows 本地路径 `E:/Download/Downloads/摩托车发动机维修手册.pdf`，目标环境没有该文件，因此不纳入 LoongArch 可迁移主测试集。
 - 目标环境 `18000` 端口用于最新代码复验，`8000` 端口已有旧演示服务占用，未强制停止旧服务。
 - 本次 VM 冒烟以离线兜底模式运行，真实 Qwen LLM 仍需按 `docs/testing/llm-provider-final-validation.md` 配置 `.env` 后复验。
+
+## 2026-06-27 本轮补强后的复验说明
+
+本轮新增 `/api/rag/feedback` 和更明确的 `multimodalSignals` 返回字段。Windows 本地已完成完整后端测试、前端构建和 HTTP API 冒烟；本轮未重新连接 LoongArch/Kylin VM 执行脚本，因此最终提交前建议在目标环境重新运行：
+
+```bash
+bash scripts/loongarch-final-verify.sh
+```
+
+如果需要 Docker 交付留证，再运行：
+
+```bash
+bash scripts/loongarch-final-verify.sh --docker
+```
+
+验收重点：确认 `/api/search`、`/api/rag/answer`、`/api/multimodal/diagnosis`、`/api/rag/feedback` 和 `/api/knowledge/graph` 在 offline/mock 默认链路下均可运行。

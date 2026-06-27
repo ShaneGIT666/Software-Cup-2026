@@ -52,7 +52,7 @@ dev restart
 
 1. LoongArch / 银河麒麟 V11 最新主链路已复验：可迁移主测试集 `105 passed in 170.44s`，前端生产构建 `built in 21.41s`，search/RAG/multimodal diagnosis 离线冒烟通过。
 2. 目标 VM 默认依赖路线为 `uvicorn==0.34.0` + `pydantic<2`；`uvicorn[standard]`、Pydantic v2 core 不作为 LoongArch/Kylin 硬依赖。
-3. Windows 本地主线后端全量测试最新结果为 `168 passed in 746.08s`。
+3. Windows 本地主线后端全量测试最新结果为 `174 passed in 729.77s`。
 4. 前端生产构建已通过；存在 VueUse pure annotation 和 Vite chunk size warning，不阻塞。
 5. 准生产 readiness 检查和 JSON 存储巡检已通过。
 6. Qwen / DashScope OpenAI-compatible 文本 RAG 已用临时环境变量完成本地验收：`remoteOk=true`、`fallback=false`、模型 `xopqwen36v35b`、延迟约 `7539ms`；最终目标环境若更换 `base_url`、模型名或 Key 需重新复验。

@@ -45,6 +45,9 @@ export interface SearchScoreBreakdown {
   embeddingProvider?: "hash" | "openai" | string;
   version?: string | number | null;
   riskLevel?: "low" | "medium" | "high" | "critical" | string;
+  multimodalSignals?: string[];
+  crossModalMatchedFields?: string[];
+  crossModalMatchMode?: string;
 }
 
 export interface SearchPayload {
@@ -217,6 +220,7 @@ export function searchKnowledge(deviceModel: string, faultText: string, maintena
 }
 
 export interface MultimodalDiagnosisPayload {
+  multimodalSignals: MultimodalSignals;
   queryContext: {
     deviceModel: string;
     deviceType: string;
@@ -228,6 +232,7 @@ export interface MultimodalDiagnosisPayload {
     fallbackUsed: boolean;
     clueType: "inputClue" | string;
     expandedFaultText: string;
+    multimodalSignals?: MultimodalSignals;
   };
   imageAnalysis: {
     provider: string;
@@ -247,6 +252,18 @@ export interface MultimodalDiagnosisPayload {
   fallback: boolean;
   fallbackReason?: string;
   raw?: RagAnswerPayload;
+}
+
+export interface MultimodalSignals {
+  ocrText: string;
+  imageClues: string[];
+  detectedComponents: string[];
+  visualSymptoms: string[];
+  matchedQueryTerms: string[];
+  signalSource: string;
+  fallback: boolean;
+  matchMode: string;
+  description: string;
 }
 
 export function requestMultimodalDiagnosis(payload: {
@@ -842,6 +859,56 @@ export function requestRagAnswer(deviceModel: string, faultText: string, provide
       topK: 5,
       ...(provider ? { provider } : {})
     })
+  });
+}
+
+export interface RagFeedbackItem {
+  id: string;
+  deviceModel: string;
+  faultText: string;
+  maintenanceLevel: string;
+  originalAnswer: string;
+  correctedAnswer: string;
+  labels: string[];
+  reason: string;
+  status: "pending_review" | "approved" | "rejected" | string;
+  reviewer: string;
+  reviewNote: string;
+  createdAt: string;
+  updatedAt: string;
+  approvedAt: string;
+}
+
+export interface RagFeedbackListPayload {
+  items: RagFeedbackItem[];
+  total: number;
+}
+
+export function submitRagFeedback(payload: {
+  deviceModel: string;
+  faultText: string;
+  maintenanceLevel: string;
+  originalAnswer: string;
+  correctedAnswer?: string;
+  labels?: string[];
+  reason?: string;
+  reviewer?: string;
+}) {
+  return request<RagFeedbackItem>("/api/rag/feedback", {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+}
+
+export function fetchRagFeedback(status?: string) {
+  const query = status ? `?status=${encodeURIComponent(status)}` : "";
+  return request<RagFeedbackListPayload>(`/api/rag/feedback${query}`);
+}
+
+export function reviewRagFeedback(feedbackId: string, action: "approve" | "reject", reviewer = "operator", reviewNote = "") {
+  return request<RagFeedbackItem>(`/api/rag/feedback/${feedbackId}/review`, {
+    method: "PATCH",
+    body: JSON.stringify({ action, reviewer, reviewNote })
   });
 }
 
