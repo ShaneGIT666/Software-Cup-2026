@@ -1,6 +1,6 @@
 # 当前开发交接说明
 
-更新时间：2026-06-25
+更新时间：2026-06-27
 适用对象：后续 Coding Agent、协作者、人工复审人员。
 优先级：任何后续开发前先读本文，再读 `docs/requirements/official-problem-baseline.md`。
 文档规范：本文和后续所有项目文档必须上下文自包含，确保只 clone 仓库的 agent 或开发者也能理解开发进度、软件功能、验证状态、风险边界和下一步任务；不得依赖聊天记录补全含义。
@@ -9,14 +9,41 @@
 
 项目目标仍是完成中国软件杯 A1 赛题“基于多模态大模型技术的设备检修知识检索与作业系统”。当前主线不是生产级重构，而是比赛作品收口：可部署、可演示、可解释、可兜底、可抗追问。
 
+最终主链路：
+
+```text
+设备型号 / 故障描述 / 故障图片 / 检修等级
+-> OCR / 多模态分析线索
+-> approved-only 检索
+-> RRF
+-> Evidence Pack
+-> LLM / mock 结构化作业指引
+-> 案例 / 经验沉淀
+-> pending_review 审核
+-> approved 后进入检索和轻量知识关系网络
+```
+
+最终验证快照：
+
+1. Windows 本地主线后端全量测试：`168 passed in 746.08s`。
+2. Windows 前端生产构建通过；仅有 VueUse pure annotation 和 Vite chunk size warning，不阻塞演示。
+3. readiness 检查通过：health/provider/search/RAG/审核/知识生命周期均通过。
+4. JSON 存储巡检通过：4 个 JSON 文件健康，未触发恢复。
+5. LoongArch / 银河麒麟 V11 可迁移主测试集：`105 passed in 170.44s`。
+6. LoongArch / 银河麒麟 V11 前端生产构建：`built in 21.41s`。
+7. LoongArch / 银河麒麟 V11 offline/mock 模式已完成 `/api/search`、`/api/rag/answer`、`/api/multimodal/diagnosis` 冒烟。
+8. 真实 Qwen 文本 LLM 已用临时环境变量完成本地复验：`remoteOk=true`、`fallback=false`、模型 `xopqwen36v35b`、延迟约 `7539ms`；仓库不提交 API Key。
+9. 真实 OCR/多模态 provider 不作为主链路硬依赖；sqlite-vec/Qdrant/Chroma 为可选增强；hash embedding 是 fallback。
+10. 知识图谱口径为“轻量知识关系网络 / 知识图谱原型”，默认 approved-only。
+
 已确认事实：
 
-1. Windows 本地主线后端测试最新结果为 `139 passed in 22.98s`，覆盖 pending_review 审核门槛、资料入库、RAG、上传安全、多模态/OCR mock、Chroma 降级、评测 runner、状态机、审计事件和存储恢复。
+1. Windows 本地主线后端测试最新结果为 `168 passed in 746.08s`，覆盖 pending_review 审核门槛、资料入库、RAG、上传安全、多模态/OCR mock、向量 fallback、评测 runner、状态机、审计事件和存储恢复。
 2. 前端 `npm.cmd run build` 已通过；存在 VueUse pure annotation 和 Vite chunk size warning，不阻塞比赛演示。
 3. 准生产 readiness 检查和 JSON 存储巡检已通过。
-4. Qwen / DashScope OpenAI-compatible 文本 RAG 历史小样本验收通过；比赛最终模型需要使用目标环境和最终 Key 重新验证。
-5. LoongArch / 银河麒麟 V11 虚拟机已完成后端最小依赖验证和 Docker 一体化验证；比赛提供环境仍需按最新提交重新复验。
-6. 目标 VM 无 npm/git 时，前端采用 Windows 本地构建 `frontend/dist`，再由 FastAPI 静态托管。
+4. Qwen / DashScope OpenAI-compatible 文本 RAG 已通过本地临时环境变量验收；如果比赛现场更换 Key、base_url 或模型名，仍需在目标环境执行 `/api/providers/llm/validate` 与 `/api/rag/answer` 复验。
+5. LoongArch / 银河麒麟 V11 虚拟机已完成最新主链路复验：可迁移主测试集 `105 passed in 170.44s`，前端构建 `built in 21.41s`，search/RAG/multimodal diagnosis 离线冒烟通过。
+6. 目标 VM 默认依赖路线为 `uvicorn==0.34.0` + `pydantic<2`；不要把 `uvicorn[standard]` 或 Pydantic v2 core 作为 LoongArch/Kylin 硬依赖。
 7. 官方样例 PDF `E:/Download/Downloads/摩托车发动机维修手册.pdf` 只作为本地测试/演示输入，不得提交进 Git。
 8. OCR 已作为可选增强接入：`OCR_PROVIDER=mock` 默认兜底，`rapidocr`/`tesseract` 可选；OCR 识别文本会生成 `pending_review` 资料 chunks，审核通过前不进入正式检索、RAG citations、Chroma 或知识关系网络。
 
@@ -24,19 +51,21 @@
 
 后端：
 
-1. `POST /api/search`：关键词加权检索，返回 `matchedTerms`、`reason`、`scoreBreakdown`。
+1. `POST /api/search`：approved-only 检索，关键词/可选向量召回经 RRF 排序，返回 `matchedTerms`、`reason`、`scoreBreakdown`。
 2. `POST /api/diagnosis`：复用检索/RAG 管道生成结构化诊断，返回可能原因、排查动作、安全提醒和 citations，不再是固定硬编码结果。
-3. `POST /api/rag/answer`：基于检索结果生成 RAG 回答，支持 mock/openai/anthropic、citations、上下文裁剪、token 控制和 fallback。
-4. `POST /api/providers/llm/validate`：真实文本 LLM 小样本验收，只读取服务端环境变量，不接收前端 Key。
-5. `GET /api/providers/status`：返回 LLM、多模态、OCR、embedding、reranker、系统知识统计、MinerU、Chroma 和离线兜底状态。
-6. `POST /api/knowledge/documents` / `/api/knowledge/documents/async`：资料同步或异步入库，支持 `pdf/txt/md/docx/pptx/xlsx/jpg/jpeg/png/webp`；PDF/DOCX/PPTX/XLSX 优先走 MinerU，生成片段默认 `pending_review`。
-7. `POST /api/knowledge/documents/{document_id}/analyze`：对 PDF/图片资料做多模态分析和可选 OCR，并生成 `pending_review` chunks。
-8. `POST /api/providers/multimodal/validate`：真实多模态小样本验收入口，失败不影响主链路。
-9. `POST /api/knowledge/graph`：轻量知识关系网络原型。
-10. Chroma 可选向量索引：`RAG_VECTOR_STORE=chroma` 时启用；未安装、关闭、初始化失败或查询失败时会降级为空召回。
-11. FastAPI 可选托管前端：`SERVE_FRONTEND=auto` 且 `frontend/dist/index.html` 存在时，`/` 返回 SPA 页面。
-12. JSON 持久化已使用临时文件 + `os.replace()` 原子替换，支持 `.bak` 恢复和离线巡检/修复脚本。
-13. `GET /api/review/items` / `/api/review/events`：统一审核工作台和审核流水查询。
+3. `POST /api/rag/answer`：基于 Evidence Pack 生成结构化 RAG 作业指引，支持 mock/openai/anthropic、citations、上下文裁剪、token 控制和 fallback；输出包含 `complianceChecks`。
+4. `POST /api/multimodal/diagnosis`：支持设备型号、故障描述、故障图片、检修等级和风险等级；OCR/多模态线索只进入 query context，不绕过审核成为正式 evidence。
+5. `POST /api/providers/llm/validate`：真实文本 LLM 小样本验收，只读取服务端环境变量，不接收前端 Key。
+6. `GET /api/providers/status`：返回 LLM、多模态、OCR、embedding、reranker、系统知识统计、MinerU、Chroma 和离线兜底状态。
+7. `POST /api/knowledge/documents` / `/api/knowledge/documents/async`：资料同步或异步入库，支持 `pdf/txt/md/docx/pptx/xlsx/jpg/jpeg/png/webp`；PDF/DOCX/PPTX/XLSX 优先走 MinerU，生成片段默认 `pending_review`。
+8. `POST /api/knowledge/documents/{document_id}/analyze`：对 PDF/图片资料做多模态分析和可选 OCR，并生成 `pending_review` chunks。
+9. `POST /api/providers/multimodal/validate`：真实多模态小样本验收入口，失败不影响主链路。
+10. `POST /api/cases` / `POST /api/cases/{case_id}/review`：维修案例、经验总结、教训复盘以 `pending_review` 进入审核，通过后同步为可检索知识。
+11. `POST /api/knowledge/graph`：轻量知识关系网络原型，默认 approved-only。
+12. Chroma 可选向量索引：`RAG_VECTOR_STORE=chroma` 时启用；未安装、关闭、初始化失败或查询失败时会降级为空召回。
+13. FastAPI 可选托管前端：`SERVE_FRONTEND=auto` 且 `frontend/dist/index.html` 存在时，`/` 返回 SPA 页面。
+14. JSON 持久化已使用临时文件 + `os.replace()` 原子替换，支持 `.bak` 恢复和离线巡检/修复脚本。
+15. `GET /api/review/items` / `/api/review/events`：统一审核工作台和审核流水查询。
 
 前端：
 
@@ -126,7 +155,7 @@ OCR_LANG=ch
 
 ## 5. 推荐下一步
 
-1. 使用比赛提供环境和最终模型配置复验真实 LLM，至少保留一次 `fallback=false` 的 RAG 回答证据。
+1. 使用比赛提供环境和最终模型配置复验真实 LLM，至少保留一次 `fallback=false` 的 RAG 回答证据；本地已验证 `xopqwen36v35b` 可用。
 2. 在目标环境上传最新 release 包，验证 `/`、`/api/health`、`/api/providers/status`、`/api/search`、`/api/rag/answer` 和上传审核链路。
 3. 整理最终产品说明书、演示 runbook、PPT 大纲和 7 分钟视频脚本。
 4. 扩充评测样例并保存最终评测报告，明确真实模型结果与 fallback 结果。

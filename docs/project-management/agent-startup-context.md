@@ -17,7 +17,7 @@ dev restart
 
 启动后默认访问 `http://127.0.0.1:5173/`，后端健康检查为 `http://127.0.0.1:8000/api/health`。
 
-更新时间：2026-06-25
+更新时间：2026-06-27
 用途：所有后续 Coding Agent 在没有对话上下文时的第一阅读入口。
 规则：如果本文与其他历史文档冲突，以本文和 `docs/project-management/current-handoff.md` 为准。
 文档规范：后续所有文档必须在不依赖聊天记录或隐含上下文的情况下，让 agent 和开发者清晰了解当前开发进度、软件功能、验证状态、风险边界和下一步任务；若变更 API、数据状态、部署方式、演示路径、风险口径或任务优先级，必须同步更新本文和 `current-handoff.md`。
@@ -26,32 +26,52 @@ dev restart
 
 本项目是中国软件杯 A1 赛题“基于多模态大模型技术的设备检修知识检索与作业系统”的比赛作品。当前目标是两天内完成比赛交付收口：资料入库、检索、RAG 引用、作业流程、知识沉淀、审核审计、真实模型复验、弱网兜底和 LoongArch/Kylin 部署链路。
 
+最终主链路：
+
+```text
+设备型号 / 故障描述 / 故障图片 / 检修等级
+-> OCR / 多模态分析线索
+-> approved-only 检索
+-> RRF
+-> Evidence Pack
+-> LLM / mock 结构化作业指引
+-> 案例 / 经验沉淀
+-> pending_review 审核
+-> approved 后进入检索和轻量知识关系网络
+```
+
+风险边界：
+
+- 真实 Qwen 文本 LLM 已用临时环境变量完成本地复验；仓库不提交 Key，目标环境变更配置时仍需复验。
+- 真实 OCR/多模态 provider 不作为主链路硬依赖。
+- sqlite-vec/Qdrant/Chroma 是可选增强。
+- hash embedding 是 fallback。
+- 知识图谱口径是轻量知识关系网络 / 知识图谱原型，不宣传为完整工业知识图谱平台。
+
 ## 2. 最新事实
 
-1. LoongArch / 银河麒麟 V11 后端最小依赖和 Docker 一体化部署均已验证；比赛提供环境需要使用最新提交重新复验并留证。
-2. 目标 VM 无 npm/git 时，前端采用 Windows 本地构建 `frontend/dist`，再由 FastAPI 静态托管。
-3. Windows 本地主线后端全量测试最新结果为 `139 passed in 22.98s`。
+1. LoongArch / 银河麒麟 V11 最新主链路已复验：可迁移主测试集 `105 passed in 170.44s`，前端生产构建 `built in 21.41s`，search/RAG/multimodal diagnosis 离线冒烟通过。
+2. 目标 VM 默认依赖路线为 `uvicorn==0.34.0` + `pydantic<2`；`uvicorn[standard]`、Pydantic v2 core 不作为 LoongArch/Kylin 硬依赖。
+3. Windows 本地主线后端全量测试最新结果为 `168 passed in 746.08s`。
 4. 前端生产构建已通过；存在 VueUse pure annotation 和 Vite chunk size warning，不阻塞。
 5. 准生产 readiness 检查和 JSON 存储巡检已通过。
-6. Qwen / DashScope OpenAI-compatible 文本 RAG 历史小样本验收通过；比赛最终模型需用目标环境、最终 `base_url`、模型名和 Key 重新复验。
-7. Chroma 是可选向量索引增强；hash embedding 是断网和无 Key 场景的 fallback/占位，不是生产级语义 embedding。
+6. Qwen / DashScope OpenAI-compatible 文本 RAG 已用临时环境变量完成本地验收：`remoteOk=true`、`fallback=false`、模型 `xopqwen36v35b`、延迟约 `7539ms`；最终目标环境若更换 `base_url`、模型名或 Key 需重新复验。
+7. Chroma/Qdrant/sqlite-vec 是可选向量索引增强；hash embedding 是断网和无 Key 场景的 fallback/占位，不是生产级语义 embedding。
 8. 真实多模态 API 有小样本验收接口，但默认演示仍可使用 mock 兜底。
 9. OCR 已新增可选 provider 层：默认 `OCR_PROVIDER=mock`，可选 `rapidocr` 或 `tesseract`；OCR/多模态文本会并入资料分析 chunks，但默认 `review_status=pending_review`，审核通过后才进入检索、RAG citations、Chroma 和知识关系网络。真实 OCR 依赖需单独安装 `backend/requirements-ocr.txt` 并记录 LoongArch/Kylin 兼容性。
 
 ## 3. 核心闭环
 
 ```text
-输入设备型号和故障现象
--> 检索手册、历史案例、已审核入库资料和可选 Chroma 召回
--> 查看命中原因、来源、排序分和 citations
--> 生成 RAG 辅助建议
--> 查看标准化作业流程
--> 上传维修手册、现场图片或经验资料
--> parser_router/MinerU/OCR/多模态分析资料并生成 pending_review 知识片段
--> 统一审核工作台通过后进入正式检索/RAG/Chroma
--> 提交维修案例
--> 审核通过后再次检索命中新案例
--> 审计流水记录 reviewer/action/reason/before/after
+输入设备型号、故障现象、故障图片和检修等级
+-> OCR / 多模态分析提取输入线索
+-> approved-only 检索手册、历史案例、已审核资料和可选向量增强
+-> RRF 排序与去重
+-> 构建 Evidence Pack 与可追溯 citations
+-> LLM / mock 生成结构化作业指引
+-> 上传资料、提交案例 / 经验总结
+-> pending_review 审核与 revision 审计
+-> approved 后进入正式检索、RAG citations 和轻量知识关系网络
 ```
 
 ## 4. 关键文件
