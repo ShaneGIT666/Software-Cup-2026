@@ -53,7 +53,7 @@ function statusText(status: string) {
     analyzed: "多模态已分析",
     analyzing: "分析中",
     needs_multimodal_analysis: "待多模态分析",
-    needs_parser: "待解析器",
+    needs_parser: "待解析",
     needs_ocr: "待 OCR",
     empty: "无可解析文本"
   };
@@ -128,8 +128,8 @@ async function loadDocuments() {
   try {
     const payload = await fetchKnowledgeDocuments();
     documents.value = payload.items;
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : "资料列表加载失败");
+  } catch {
+    ElMessage.error("资料列表加载失败，请确认后端服务已启动。");
   } finally {
     loading.value = false;
   }
@@ -146,8 +146,8 @@ async function handleFileChange(event: Event) {
     lastUploaded.value = await uploadKnowledgeDocument(file, sourceName.value);
     ElMessage.success(`资料已进入审核队列：${lastUploaded.value.fileName}`);
     await loadDocuments();
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : "资料入库失败");
+  } catch {
+    ElMessage.error("资料上传失败，请检查文件格式或大小。");
   } finally {
     input.value = "";
     uploading.value = false;
@@ -160,8 +160,8 @@ async function handleAnalyze(document: KnowledgeDocument) {
     lastUploaded.value = await analyzeKnowledgeDocument(document.id);
     ElMessage.success(`资料分析已完成：${lastUploaded.value.fileName}`);
     await loadDocuments();
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : "资料分析失败");
+  } catch {
+    ElMessage.error("资料分析失败，请稍后重试。");
   } finally {
     analyzingId.value = "";
   }
@@ -198,8 +198,8 @@ async function openRevisionDialog(document: KnowledgeDocument) {
     documentChunks.value = chunksPayload.items;
     documentRevisions.value = revisionsPayload.items;
     fillRevisionForm(documentChunks.value[0], document);
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : "知识片段读取失败");
+  } catch {
+    ElMessage.error("知识片段读取失败，请稍后重试。");
   } finally {
     revisionLoading.value = false;
   }
@@ -214,11 +214,11 @@ function handleChunkSelection(chunkId: string) {
 
 async function saveRevision() {
   if (!selectedDocument.value || !selectedChunkId.value) {
-    ElMessage.warning("请选择需要修正的知识片段");
+    ElMessage.warning("请选择需要修正的知识片段。");
     return;
   }
   if (!revisionForm.value.content.trim()) {
-    ElMessage.warning("修正内容不能为空");
+    ElMessage.warning("修正内容不能为空。");
     return;
   }
   revisionSaving.value = true;
@@ -232,11 +232,11 @@ async function saveRevision() {
       reason: revisionForm.value.reason,
       reviewer: revisionForm.value.reviewer
     });
-    ElMessage.success("知识片段修正已保存，并重新同步索引");
+    ElMessage.success("知识片段修正已保存，并重新同步索引。");
     await openRevisionDialog(selectedDocument.value);
     await loadDocuments();
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : "知识片段修正失败");
+  } catch {
+    ElMessage.error("知识片段修正失败，请稍后重试。");
   } finally {
     revisionSaving.value = false;
   }
@@ -244,15 +244,15 @@ async function saveRevision() {
 
 async function saveChunkStatus() {
   if (!selectedDocument.value || !selectedChunkId.value) {
-    ElMessage.warning("请选择需要维护状态的知识片段");
+    ElMessage.warning("请选择需要维护状态的知识片段。");
     return;
   }
   if (["rejected", "deprecated", "replaced"].includes(lifecycleForm.value.status) && !lifecycleForm.value.reason.trim()) {
-    ElMessage.warning("拒绝、废弃或替换片段必须填写原因");
+    ElMessage.warning("拒绝、废弃或替换片段必须填写原因。");
     return;
   }
   if (lifecycleForm.value.status === "replaced" && !lifecycleForm.value.replacementChunkId.trim()) {
-    ElMessage.warning("替换片段必须填写 replacementChunkId");
+    ElMessage.warning("替换片段必须填写 replacementChunkId。");
     return;
   }
   statusSaving.value = true;
@@ -263,11 +263,11 @@ async function saveChunkStatus() {
       reviewer: lifecycleForm.value.reviewer,
       replacementChunkId: lifecycleForm.value.replacementChunkId || null
     });
-    ElMessage.success("知识片段状态已更新，并同步检索索引");
+    ElMessage.success("知识片段状态已更新，并同步检索索引。");
     await openRevisionDialog(selectedDocument.value);
     await loadDocuments();
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : "知识片段状态更新失败");
+  } catch {
+    ElMessage.error("知识片段状态更新失败，请稍后重试。");
   } finally {
     statusSaving.value = false;
   }
@@ -282,10 +282,11 @@ defineExpose({ loadDocuments });
   <section class="knowledge-panel panel-highlight">
     <div class="section-title">
       <Database :size="18" />
-      <span>资料入库与审核 / Knowledge Dock</span>
+      <span>资料入库</span>
     </div>
     <p class="panel-note">
-      上传 PDF、Office、Markdown 或图片资料。解析结果默认进入 pending_review，审核通过前不会参与正式检索；若 MinerU 提取到图片资产，系统会自动生成 OCR 和图片分析片段。
+      上传 PDF、Office、Markdown 或图片资料。解析结果默认进入待审核，审核通过前不会参与正式检索；
+      若 MinerU 提取到图片资产，系统会生成 OCR 和图片分析片段。
     </p>
 
     <div class="knowledge-upload">
@@ -389,8 +390,8 @@ defineExpose({ loadDocuments });
             <el-tag size="small" effect="plain">
               {{ knowledgeTypeText(documentChunks.find((item) => item.id === selectedChunkId)?.knowledge_type) }}
             </el-tag>
-            <span v-if="chunkAssetName(documentChunks.find((item) => item.id === selectedChunkId)!)">
-              {{ chunkAssetName(documentChunks.find((item) => item.id === selectedChunkId)!) }}
+            <span v-if="chunkAssetName(documentChunks.find((item) => item.id === selectedChunkId))">
+              {{ chunkAssetName(documentChunks.find((item) => item.id === selectedChunkId)) }}
             </span>
           </div>
           <div class="revision-grid">

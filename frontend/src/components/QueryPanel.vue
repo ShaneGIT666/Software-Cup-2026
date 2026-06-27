@@ -24,6 +24,7 @@ const emit = defineEmits<{
   search: [];
   upload: [file: File];
   diagnose: [file: File | null];
+  demo: [];
 }>();
 
 function handleFileChange(event: Event) {
@@ -46,10 +47,10 @@ function handleDiagnosisFileChange(event: Event) {
   <aside class="query-panel panel-accent">
     <div class="section-title">
       <Search :size="18" />
-      <span>检索诊断</span>
+      <span>步骤 1：描述故障</span>
     </div>
     <p class="panel-note">
-      输入设备型号、故障现象和检修等级。可上传现场图片触发 OCR/多模态分析，图片线索只用于扩展诊断上下文，审核前不会直接进入正式知识库。
+      输入设备型号、故障现象和检修等级；可上传现场故障图片，系统会提取图片识别线索辅助诊断。
     </p>
 
     <el-form label-position="top">
@@ -84,8 +85,9 @@ function handleDiagnosisFileChange(event: Event) {
       <div class="action-row">
         <el-button type="primary" :loading="loading" @click="emit('search')">
           <Search :size="16" />
-          开始检索
+          开始诊断
         </el-button>
+        <el-button plain @click="emit('demo')">使用演示样例</el-button>
         <label class="upload-button" :class="{ disabled: uploading }">
           <Upload :size="16" />
           <span>{{ uploading ? "上传中" : "上传资料" }}</span>
@@ -101,31 +103,31 @@ function handleDiagnosisFileChange(event: Event) {
 
     <div v-if="uploadResult" class="upload-result">
       <strong>{{ uploadResult.fileName }}</strong>
-      <span>{{ uploadResult.id }} / {{ uploadResult.url }}</span>
+      <span>资料已上传，可在管理中心继续审核入库。</span>
     </div>
 
     <div v-if="diagnosisSummary" class="diagnosis-result" :class="{ fallback: diagnosisFallback }">
-      <strong>{{ diagnosisFallback ? "图片诊断已降级" : "图片诊断线索" }}</strong>
+      <strong>{{ diagnosisFallback ? "图片诊断已降级完成" : "图片识别线索" }}</strong>
       <span>{{ diagnosisSummary }}</span>
     </div>
 
     <div v-if="multimodalSignals" class="cross-modal-box">
-      <strong>图片线索</strong>
+      <strong>图片识别线索</strong>
       <p v-if="multimodalSignals.ocrText">OCR：{{ multimodalSignals.ocrText }}</p>
       <p v-if="multimodalSignals.visualSymptoms.length">
-        视觉症状：{{ multimodalSignals.visualSymptoms.join("、") }}
+        视觉现象：{{ multimodalSignals.visualSymptoms.join("、") }}
       </p>
       <p v-if="multimodalSignals.detectedComponents.length">
         识别部件：{{ multimodalSignals.detectedComponents.join("、") }}
       </p>
-      <p>Fallback：{{ multimodalSignals.fallback ? "是" : "否" }} / 来源：{{ multimodalSignals.signalSource }}</p>
-      <span>匹配说明：图片线索已合并到 queryContext，用于增强 approved-only 检索。</span>
+      <p>降级：{{ multimodalSignals.fallback ? "是" : "否" }} / 来源：{{ multimodalSignals.signalSource }}</p>
+      <span>说明：图片线索只用于增强当前诊断上下文，正式建议仍基于已审核资料。</span>
     </div>
 
     <div class="metric-grid">
       <div>
         <strong>{{ resultCount }}</strong>
-        <span>证据结果</span>
+        <span>参考依据</span>
       </div>
       <div>
         <strong>{{ stepCount }}</strong>

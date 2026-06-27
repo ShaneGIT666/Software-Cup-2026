@@ -19,6 +19,9 @@ function typeLabel(value: string) {
   if (value === "knowledge_revision") {
     return "人工修正";
   }
+  if (value === "rag_feedback") {
+    return "回答修正";
+  }
   return value || "未知对象";
 }
 
@@ -61,8 +64,8 @@ async function loadEvents() {
       })
     ).items;
     loaded.value = true;
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : "审计流水加载失败");
+  } catch {
+    ElMessage.error("审核记录加载失败，请稍后重试。");
   } finally {
     loading.value = false;
   }
@@ -75,24 +78,25 @@ onMounted(loadEvents);
   <section class="review-events-panel">
     <div class="section-title">
       <History :size="18" />
-      <span>审核流水 / Audit Trail</span>
+      <span>审核记录</span>
       <el-select v-model="objectType" size="small" class="audit-filter" @change="loadEvents">
         <el-option label="全部" value="all" />
         <el-option label="案例" value="case" />
         <el-option label="片段" value="knowledge_chunk" />
         <el-option label="修正" value="knowledge_revision" />
+        <el-option label="回答修正" value="rag_feedback" />
       </el-select>
-      <el-button size="small" :loading="loading" title="刷新审核流水" aria-label="刷新审核流水" @click="loadEvents">
+      <el-button size="small" :loading="loading" title="刷新审核记录" aria-label="刷新审核记录" @click="loadEvents">
         <RefreshCw :size="14" />
       </el-button>
     </div>
 
     <div v-if="loading" class="loading-hint processing-card">
-      <span>正在加载审计流水...</span>
+      <span>正在加载审核记录...</span>
     </div>
 
     <div v-if="loaded && !loading && events.length === 0" class="empty-hint">
-      <span>暂无审计记录。</span>
+      <span>暂无审核记录。</span>
     </div>
 
     <div v-if="loaded && !loading && events.length > 0" class="audit-list">

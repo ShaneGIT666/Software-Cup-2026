@@ -1,75 +1,72 @@
-# 最终交付摘要
+# 最终交付总结
 
-## 交付定位
+版本日期：2026-06-27
 
-本项目面向中国软件杯 A1 赛题，交付形态是可在 PC Web 访问、可在 LoongArch/银河麒麟目标环境部署的“设备检修知识检索与作业辅助系统”准生产级原型。
+## 1. 交付定位
 
-本轮最终收口不再扩大功能边界，重点保证以下主链路可以演示和答辩：
+本项目已收口为中国软件杯 A1 赛题的可演示、可部署、可答辩版本。系统不是简单 RAG Demo，而是围绕设备检修场景形成了资料入库、审核、检索、作业指引、RAG 建议、回答修正、案例回流和知识关系图的闭环。
 
-1. 资料上传进入解析链路，解析产物默认进入 `pending_review`。
-2. 审核通过后才进入正式检索索引，`pending_review/rejected/deprecated/replaced` 不参与 RAG。
-3. 文本、OCR、多模态/图片资产分析结果都沉淀为可审核知识片段。
-4. 故障图片经 OCR/多模态分析生成 `multimodalSignals`，以语义线索方式参与 approved-only 检索。
-5. `/api/search` 返回关键词与向量检索结果，并保留 `chunkId/sourceDocId/page/section`。
-6. `/api/rag/answer` 基于 Evidence Pack 输出结构化检修建议，证据不足时明确“不确定”。
-7. `/api/rag/feedback` 支持 RAG 回答标注/修正，审核通过后进入轻量知识关系网络。
-8. 真实 LLM 使用 OpenAI-compatible provider 接入，mock/offline 仅作为现场兜底。
-9. 目标环境默认使用 SQLite 向量索引，sqlite-vec/Qdrant/Chroma 作为可选增强，失败时回退本地索引。
+## 2. 前端交付形态
 
-## 核心能力
+前端已从功能堆砌式工作台优化为任务导向结构：
 
-| 能力 | 当前交付状态 |
-| --- | --- |
-| PC Web 可视化 | Vue 3 + Element Plus，支持检索、RAG、资料入库、审核、系统状态展示 |
-| 文档解析 | parser router + MinerU adapter；MinerU 不可用时降级普通解析/mock parser |
-| 图片资产解析 | MinerU assets 自动触发 OCR/多模态/文本 LLM 兜底分析，产物进入 pending_review |
-| 跨模态线索匹配 | 故障图片生成 OCR 文本、视觉症状、识别部件和图片线索，合并到 queryContext 参与检索 |
-| 审核状态机 | `draft/pending_review/approved/rejected/deprecated/replaced` |
-| 检索隔离 | 默认只检索 `approved` 知识片段 |
-| Evidence Pack | 保留 evidence id、chunk id、source doc id、page、section、retrievalSource、scoreBreakdown |
-| RAG 输出 | 固定为初步判断、检查步骤、维修步骤、安全提醒、验收标准、引用证据、不确定信息 |
-| RAG 回答修正 | 支持标注/修正本回答，默认 pending_review，审核通过后进入轻量知识关系网络 |
-| 真实 LLM | 支持 OpenAI-compatible 服务；比赛 Qwen 服务通过 `.env` 配置，不提交 Key |
-| 向量索引 | 默认 SQLite + hash/openai-compatible embedding；LoongArch Docker 已验证 SQLite 可运行 |
-| 可选增强 | sqlite-vec、Qdrant、Chroma 均为可选入口，不作为比赛环境硬依赖 |
+- 检修助手：默认首页，面向一线检修人员。
+- 管理中心：面向管理员、班组长和知识维护人员。
+- 系统状态：面向运维、部署复验和答辩展示。
 
-## 部署策略
+检修助手按 5 步组织：
 
-比赛环境采用 Docker 优先：
-
-```bash
-docker build -t software-cup-demo:final .
-docker run --rm -p 8000:8000 --env-file .env software-cup-demo:final
+```text
+描述故障 -> 查看依据 -> 生成指引 -> 复核修正 -> 提交经验
 ```
 
-默认生产兜底配置：
+## 3. 本轮新增产品化能力
 
-```env
-REMOTE_API_MODE=off
-LLM_PROVIDER=mock
-MULTIMODAL_PROVIDER=mock
-OCR_PROVIDER=mock
-RAG_VECTOR_STORE=sqlite
-RAG_VECTOR_SQLITE_ENGINE=python_scan
-RAG_VECTOR_ENHANCER=off
-RAG_VECTOR_FALLBACK_LOCAL=on
-MINERU_ENABLED=false
-```
+- 首次使用引导。
+- 一键演示样例。
+- 关键动作后的下一步提示。
+- 用户化空状态和错误提示。
+- 管理功能从默认首页分离。
+- 系统状态页增加初始化配置指引。
+- 知识关系图增加摘要、图例、SVG 网络图、节点详情和典型关系路径。
 
-真实模型演示时打开：
+## 4. 初始化配置
 
-```env
-REMOTE_API_MODE=auto
-LLM_PROVIDER=openai
-OPENAI_BASE_URL=<competition-compatible-base-url>
-OPENAI_MODEL=<competition-chat-model>
-OPENAI_API_STYLE=chat_completions
-OPENAI_API_KEY=<secret>
-```
+新增：
 
-## 交付边界
+- `scripts/init-config.ps1`
+- `scripts/init-config.sh`
+- `scripts/validate-provider.ps1`
+- `scripts/validate-provider.sh`
 
-- 不提交 `.env`、API Key、上传运行数据、`node_modules`、`.venv`、`frontend/dist`。
-- Chroma 不再作为 LoongArch 主链路依赖，原因见 `docs/research/loongarch-vector-db-alternatives-2026-06-26.md`。
-- hash embedding 只作为 fallback，不宣传为真实语义 embedding。
-- sqlite-vec 和 Qdrant 已预留可选入口；若目标环境现场无法安装，系统仍以 SQLite Python scan 跑完整闭环。
+初始化脚本支持离线演示模式和真实 LLM 模式。真实 LLM 采用 OpenAI-compatible 配置，API Key 只写入本地 `.env`，脚本输出只显示脱敏形式。
+
+## 5. 核心功能闭环
+
+- 多模态输入：文本、设备型号、故障图片、维修资料。
+- 文档解析：MinerU adapter 可选，未安装时优雅降级。
+- 知识状态机：pending_review、approved、rejected 等状态隔离。
+- 检索：正式建议默认只使用 approved 资料。
+- RAG：输出结构化检修建议和引用来源。
+- 审核：资料片段、案例和回答修正均进入审核流程。
+- 知识关系图：只展示 approved 资料、案例和回答修正。
+
+## 6. 当前验证结果
+
+- 后端全量测试：`174 passed in 729.77s`。
+- 前端构建：`npm.cmd run build` 通过，本轮构建耗时约 `4.61s`。
+- readiness：通过。
+- JSON 巡检：通过。
+- API 冒烟：health、search、RAG、multimodal、feedback、knowledge graph 已验证。
+
+## 7. 风险边界
+
+- 真实 LLM 能力以目标环境 provider 验证为准。
+- 图片能力当前是图片识别线索进入检索上下文，不宣称生产级图文向量检索。
+- 知识关系图是轻量知识关系网络原型，不宣称完整工业图数据库平台。
+- mock、hash、fallback 是现场稳定性兜底，不作为真实模型能力宣传。
+- 最终提交前建议在 LoongArch / 银河麒麟目标环境再跑 `scripts/loongarch-final-verify.sh`。
+
+## 8. 是否建议交付
+
+建议用于最终演示和提交。若比赛现场还有时间，应优先补充目标环境截图、真实 LLM provider status 截图和知识关系图节点详情截图。

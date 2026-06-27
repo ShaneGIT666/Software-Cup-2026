@@ -2,7 +2,7 @@
 import { ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { Check, Eye, X } from "@lucide/vue";
-import { fetchReviewItems, reviewCase, reviewKnowledgeChunk, type ReviewItem } from "../api";
+import { fetchReviewItems, reviewCase, reviewKnowledgeChunk, reviewRagFeedback, type ReviewItem } from "../api";
 
 const items = ref<ReviewItem[]>([]);
 const loading = ref(false);
@@ -15,6 +15,9 @@ function typeLabel(item: ReviewItem) {
   }
   if (item.objectType === "case") {
     return "维修案例";
+  }
+  if (item.objectType === "rag_feedback") {
+    return "回答修正";
   }
   return item.objectType;
 }
@@ -29,8 +32,8 @@ async function loadCases() {
   try {
     items.value = (await fetchReviewItems("pending_review")).items;
     loaded.value = true;
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : "待审核内容加载失败");
+  } catch {
+    ElMessage.error("待审核内容加载失败，请确认后端服务已启动。");
   } finally {
     loading.value = false;
   }
@@ -41,12 +44,12 @@ async function confirmReview(item: ReviewItem, action: "approve" | "reject") {
   if (action === "reject") {
     try {
       const result = await ElMessageBox.prompt(
-        `请填写拒绝「${item.title}」的原因。`,
+        `请填写拒绝“${item.title}”的原因。`,
         `${typeLabel(item)}审核：${label}`,
         {
           confirmButtonText: label,
           cancelButtonText: "取消",
-          inputPlaceholder: "例如：来源不清晰、内容与设备型号不匹配、需要重新 OCR",
+          inputPlaceholder: "例如：来源不清楚、内容与设备型号不匹配、需要重新 OCR",
           inputValidator: (value) => Boolean(value.trim()) || "拒绝审核必须填写原因",
           type: "warning"
         }
@@ -58,7 +61,7 @@ async function confirmReview(item: ReviewItem, action: "approve" | "reject") {
   }
 
   try {
-    await ElMessageBox.confirm(`确认通过「${item.title}」？`, `${typeLabel(item)}审核：${label}`, {
+    await ElMessageBox.confirm(`确认通过“${item.title}”？`, `${typeLabel(item)}审核：${label}`, {
       confirmButtonText: label,
       cancelButtonText: "取消",
       type: "success"
@@ -81,13 +84,15 @@ async function handleReview(item: ReviewItem, action: "approve" | "reject") {
       await reviewCase(item.caseId || item.objectId, action, reason, "operator");
     } else if (item.objectType === "knowledge_chunk" && item.documentId && item.chunkId) {
       await reviewKnowledgeChunk(item.documentId, item.chunkId, { action, reason, reviewer: "operator" });
+    } else if (item.objectType === "rag_feedback") {
+      await reviewRagFeedback(item.objectId, action, "operator", reason);
     } else {
-      throw new Error("该审核对象暂不支持操作");
+      throw new Error("该审核对象暂不支持前端操作。");
     }
     ElMessage.success(`${typeLabel(item)}已${action === "approve" ? "通过" : "拒绝"}`);
     items.value = items.value.filter((candidate) => candidate.id !== item.id);
-  } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : "审核操作失败");
+  } catch {
+    ElMessage.error("审核操作失败，请稍后重试。");
   } finally {
     reviewing.value[item.id] = false;
   }
@@ -100,11 +105,11 @@ defineExpose({ loadCases });
   <section class="review-panel">
     <div class="section-title">
       <Eye :size="18" />
-      <span>审核入库 / Quality Gate</span>
+      <span>待审核内容</span>
       <el-button size="small" :loading="loading" @click="loadCases">刷新</el-button>
     </div>
     <p class="panel-note">
-      统一查看维修案例和资料片段。通过后进入正式检索链路，拒绝时必须留下原因，便于后续修正和追溯。
+      统一审核维修案例和资料片段。通过后进入正式检索链路；拒绝时必须留下原因，便于后续修正和追溯。
     </p>
 
     <div v-if="!loaded && !loading" class="empty-hint">
@@ -116,7 +121,7 @@ defineExpose({ loadCases });
     </div>
 
     <div v-if="loaded && !loading && items.length === 0" class="empty-hint">
-      <span>暂无待审核内容。</span>
+      <span>当前没有待审核内容。</span>
     </div>
 
     <div v-if="loaded && !loading && items.length > 0" class="review-list">

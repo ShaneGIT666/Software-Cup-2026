@@ -22,16 +22,16 @@ const emit = defineEmits<{
   <section class="case-panel">
     <div class="section-title">
       <ClipboardCheck :size="18" />
-      <span>经验沉淀 / Field Case</span>
+      <span>步骤 5：提交处理经验</span>
     </div>
     <p class="panel-note">
-      将现场处置经验提交到审核队列，审核通过后进入检索结果和 RAG 引用链路，形成知识沉淀闭环。
+      将现场处理经验提交审核。审核通过后会沉淀到知识库，后续检索和智能建议可继续复用。
     </p>
     <el-form label-position="top">
-      <el-form-item label="可能原因">
+      <el-form-item label="故障原因">
         <el-input :model-value="cause" @update:model-value="emit('update:cause', String($event))" />
       </el-form-item>
-      <el-form-item label="处理方案">
+      <el-form-item label="处理方法">
         <el-input
           :model-value="solution"
           type="textarea"
@@ -42,12 +42,12 @@ const emit = defineEmits<{
       <el-form-item label="处理结果">
         <el-input :model-value="result" @update:model-value="emit('update:result', String($event))" />
       </el-form-item>
-      <el-form-item label="标签">
+      <el-form-item label="经验标签">
         <el-input :model-value="tags" placeholder="多个标签用英文逗号分隔" @update:model-value="emit('update:tags', String($event))" />
       </el-form-item>
       <el-button type="success" :loading="submitting" @click="emit('submit')">
         <Send :size="16" />
-        提交审核
+        提交处理经验
       </el-button>
     </el-form>
   </section>

@@ -1,44 +1,42 @@
-# 官方赛题符合度矩阵（最终交付版）
+# 赛题要求符合性矩阵
 
-更新时间：2026-06-27
+版本日期：2026-06-27
 
-## 状态口径
+## 1. 总体结论
 
-状态列只使用以下枚举：
+当前系统已覆盖赛题要求的 PC Web 可视化、多模态知识检索、标准化作业指引、知识沉淀与更新、真实/本地大模型接入和国产化环境部署复验路径。系统仍定位为比赛交付原型，对未达到生产级的部分保留明确边界说明。
 
-- 已完成
-- 已完成但需复验
-- 部分完成
-- 未完成
-- 不适用
+## 2. 符合性矩阵
 
-## 结论
+| 赛题要求 | 当前实现 | 状态 |
+| --- | --- | --- |
+| 支持本地部署大模型服务或云端大模型服务 | 通过 OpenAI-compatible adapter 支持真实 LLM；mock/offline 作为兜底 | 已完成 |
+| 具备 PC Web 或 App 可视化界面 | Vue PC Web，已优化为检修助手、管理中心、系统状态三大区域 | 已完成 |
+| 支持文本、故障图片、设备型号等输入 | 支持设备型号、故障描述、检修等级、图片上传、资料上传 | 已完成 |
+| 精准语义检索与跨模态匹配 | 当前为 approved-only 检索 + 图片识别线索进入查询上下文；可选向量增强 | 原型完成 |
+| 快速调取检修手册等资源 | 支持手册、案例、资料片段和图片资产分析结果检索 | 已完成 |
+| 提供步骤化操作指引 | WorkflowPanel 展示标准作业步骤，RAG 输出检查和维修步骤 | 已完成 |
+| 合规校验提醒 | RAG 输出安全提醒、风险复核、验收标准和合规检查 | 已完成 |
+| 根据设备类型和检修等级推送流程 | 查询携带设备型号和检修等级，匹配流程和建议 | 已完成 |
+| 支持上传检修案例、经验总结 | CasePanel 提交处理经验，进入审核流程 | 已完成 |
+| 审核后纳入知识图谱 | 案例、资料片段、回答修正审核通过后进入轻量知识关系图 | 已完成 |
+| 支持手动标注与修正大模型输出 | RagPanel 提交回答标注/修正，默认 pending_review | 已完成 |
+| 支持知识实时更新 | 资料、片段、案例、revision 和审核后索引同步 | 已完成 |
+| 国产化环境运行 | 已保留 LoongArch / 银河麒麟复验脚本和部署文档 | 已完成，建议最终复跑 |
 
-本项目按“设备检修知识检索与作业辅助系统”交付。主链路覆盖资料入库、解析、pending_review 审核隔离、approved-only 检索、跨模态语义线索匹配、Evidence Pack、结构化 RAG 作业指引、案例/经验沉淀、RAG 回答标注/修正、审计流水、轻量知识关系网络和 LoongArch/Kylin 目标环境复验。增强能力全部保留 fallback，不把真实 LLM、真实 OCR、真实多模态、Chroma、Qdrant、sqlite-vec 或 MinerU 作为比赛演示硬依赖。
+## 3. 本轮补充的符合性说明
 
-## 符合度矩阵
+前端已从功能堆砌式工作台优化为“检修助手 + 管理中心 + 系统状态”的任务导向结构。默认首页面向一线检修人员，以线性作业链路组织故障诊断、依据查看、检修建议、复核修正和经验沉淀。
 
-| 赛题要求 | 当前实现 | 关键接口/文件 | 验证方式 | 状态 |
-|---|---|---|---|---|
-| 支持本地或云端大模型服务 | OpenAI-compatible LLM，可接比赛 Qwen 服务；mock/offline 为兜底 | `backend/app/llm_adapter.py`、`/api/providers/status`、`/api/providers/llm/validate` | 历史 Qwen 小样本通过；最终 Key 需现场复验 | 已完成但需复验 |
-| PC Web 或 App 可视化界面 | Vue + Element Plus PC Web 工作台，展示检索、资料、审核、RAG、图谱 | `frontend/src/App.vue` | Windows 和 LoongArch/Kylin 前端构建通过 | 已完成 |
-| 文本、故障图片、设备型号输入 | 支持设备型号、故障描述、检修等级、故障图片；图片走 OCR/多模态线索分析 | `/api/search`、`/api/rag/answer`、`/api/multimodal/diagnosis` | `tests/test_multimodal_diagnosis.py`、API 冒烟 | 已完成 |
-| 精准语义检索与跨模态匹配 | 已实现原型级跨模态语义线索匹配：故障图片经 OCR/多模态分析生成视觉症状、识别部件、OCR 文本等语义线索，与设备型号和故障描述共同进入 approved-only 检索链路；生产级图文向量检索为后续增强 | `/api/multimodal/diagnosis`、`backend/app/retrieval/`、`vector_store.py` | `tests/test_multimodal_cross_modal_signals.py`、搜索冒烟、fallback 测试 | 已完成 |
-| 快速调取检修手册等资源 | approved 手册、文档 chunk、案例可检索并保留 citation | `backend/app/services.py`、`evidence_pack.py` | 后端全量测试、RAG smoke | 已完成 |
-| 标准化作业指引 | RAG 输出初步判断、检修等级说明、作业前准备、检查步骤、维修步骤、风险控制、合规校验、安全、验收、引用、不确定信息 | `backend/app/evidence_pack.py`、`maintenance_guidance.py` | `tests/test_maintenance_workflow_guidance.py` | 已完成 |
-| 按设备类型与检修等级个性化推送流程 | `maintenanceLevel` / `riskLevel` / `deviceType` 进入请求模型，影响作业前准备、风险控制、合规校验 | `schemas.py`、`rag.py`、`llm_adapter.py` | RAG smoke、官方 smoke | 已完成 |
-| 降低操作失误率 | high/critical 风险提示人工复核；证据不足明确“不确定”；禁止编造参数 | `evidence_pack.py`、`llm_adapter.py` | evidence pack 测试 | 已完成 |
-| 一线人员上传案例/经验总结 | 案例提交支持 `experienceSummary`、`lessonsLearned`、`maintenanceLevel`，默认 pending_review | `services.py`、`CaseCreateRequest` | `tests/test_case_experience_review_flow.py` | 已完成 |
-| 审核后纳入知识库/知识图谱 | 案例、chunk 审核通过后进入检索；轻量关系网络只纳入 approved 对象 | `review_workbench.py`、`knowledge.py`、`knowledge_graph.py` | 审核流、approved-only 图谱测试 | 已完成 |
-| 手动标注与修正大模型输出 | 支持知识片段人工 revision；支持 RAG 回答标注/修正，默认 pending_review，审核通过后进入轻量知识关系网络 | `knowledge.py`、`services.py`、`/api/rag/feedback` | `tests/test_chunk_revision_audit.py`、`tests/test_rag_feedback_review_flow.py` | 已完成 |
-| 知识图谱能力 | 轻量知识关系网络/知识图谱原型，节点含 device、component、fault、chunk、case、document、review | `knowledge_graph.py` | `tests/test_knowledge_graph_approved_only.py` | 已完成 |
-| LoongArch / 银河麒麟部署运行 | 默认依赖改为 `uvicorn==0.34.0` + `pydantic<2`；VM 可迁移主测试集、前端构建和 API 冒烟已通过 | `scripts/loongarch-final-verify.sh`、`docs/testing/loongarch-final-verification.md` | `105 passed in 170.44s`，前端 `built in 21.41s` | 已完成但需复验 |
+知识关系图增加摘要、图例、轻量 SVG 可视化和节点详情，便于演示设备、故障、资料、案例、流程、术语和回答修正之间的关系。
 
-## 风险边界
+系统提供初始化配置脚本，支持离线演示模式和真实 LLM 模式，便于部署人员完成初次配置。Web 前端不保存 API Key，不新增密钥保存接口。
 
-- 真实 LLM：已具备 OpenAI-compatible 接入能力，但最终比赛现场必须使用目标 Key 复验。
-- 真实 OCR/多模态：当前不作为主链路硬依赖；不可用时 mock/OCR fallback 保证诊断和审核链路不断。
-- 跨模态匹配：当前已实现原型级 OCR/多模态语义线索到文本检索链路；生产级图文向量检索是后续增强，不在本次硬承诺内。
-- 向量能力：SQLite/hash fallback 是比赛稳定兜底；Qdrant、sqlite-vec、Chroma 均为可选增强。
-- 知识图谱：当前是轻量知识关系网络/知识图谱原型，不宣称完整工业知识图谱平台。
-- 外部维修 PDF：只做本地临时测试，不提交官方 PDF 或来源不明资料。
+同时补充首次使用引导、一键演示样例、下一步提示和空状态优化，提升易用性。
+
+## 4. 边界说明
+
+- 当前跨模态能力应表述为“故障图片经 OCR/多模态语义线索进入检索上下文”，不宣称生产级图文向量检索。
+- 当前知识关系图是轻量知识关系网络原型，不宣称完整工业图数据库平台。
+- 当前向量增强为可选能力，LoongArch / Kylin 主链路不硬依赖 Chroma。
+- mock、hash、fallback 是现场稳定性兜底，不作为真实模型能力宣传。

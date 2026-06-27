@@ -1,124 +1,28 @@
 # 设备检修知识检索与作业辅助系统
 
-本项目为第十五届中国软件杯 A 组赛题 A1“基于多模态大模型技术的设备检修知识检索与作业系统”的参赛作品仓库。
+本仓库是中国软件杯 A 组 A1 赛题“基于多模态大模型技术的设备检修知识检索与作业系统”的参赛作品。系统面向设备检修现场，提供资料入库、审核、知识检索、图片识别线索、标准作业步骤、智能检修建议、回答修正和经验沉淀闭环。
 
-系统面向工业、能源、制造等场景中的设备检修作业，目标是通过多模态大模型、知识检索、标准化作业流程和经验案例沉淀，帮助一线检修人员更快查找资料、诊断故障、规范作业，并让维修经验持续进入知识库。
+当前版本定位为可演示、可部署、可答辩的准生产级原型。默认主链路优先保证 LoongArch / 银河麒麟环境可运行；真实 LLM、MinerU、向量增强和多模态 provider 均可配置，失败时保留离线兜底能力。
 
-## 当前验证状态
+## 前端入口
 
-| 项目 | 当前状态 |
-| --- | --- |
-| 后端自动化测试 | 最新全量测试结果为 `174 passed in 729.77s`；本轮新增跨模态信号和 RAG feedback 关键测试已通过 |
-| 前端生产构建 | `npm.cmd run build` 通过；VueUse pure annotation 与 Vite chunk size warning 不阻塞演示 |
-| 本地交付检查 | `run-production-readiness-check.ps1` 通过；`run-json-store-maintenance.ps1` 检查 4 个 JSON 文件健康 |
-| LoongArch / 银河麒麟 | 可迁移主测试集、前端构建、search/RAG/multimodal diagnosis offline/mock 冒烟已有复验记录；最终环境建议再运行 `scripts/loongarch-final-verify.sh` |
-| 前端目标环境托管 | 已支持 FastAPI 静态托管 `frontend/dist`，适配无 npm/nginx 的演示环境 |
-| 真实文本大模型 | 支持 OpenAI-compatible provider；比赛演示需重新配置真实 `base_url`、模型和 Key 复验 |
-| 向量增强 | 默认 SQLite python_scan / hash fallback；Chroma、Qdrant、sqlite-vec 均为可选增强 |
-| 多模态能力 | 故障图片经 OCR/多模态语义线索进入检索；真实 provider 需在目标环境通过 validate 接口小样本验收 |
-| 现场兜底 | `REMOTE_API_MODE=off` 可强制本地 mock/检索链路，避免弱网断链 |
+前端已调整为三个任务区域：
 
-## 参赛信息
+1. 检修助手：默认首页，面向一线检修人员。
+2. 管理中心：面向管理员、班组长和知识维护人员。
+3. 系统状态：面向运维、部署复验和答辩展示。
 
-| 项目 | 内容 |
-| --- | --- |
-| 参赛编号 | 65013181 |
-| 队名 | �錕斤拷錕斤拷��� |
-| 题号 | A1 |
-| 队长 | 刘子翔 |
-| 队伍成员 | 张倬然、周梓聪 |
-| 指导老师 | 焦新涛 |
-| 学校 | 华南师范大学 |
-
-## 项目目标
-
-第一阶段优先完成一个可演示、可部署、文档完整的 B/S 系统原型，覆盖以下核心能力：
-
-1. 多模态知识检索：支持文本、设备型号、故障描述、图片等输入。
-2. 标准化作业指引：按设备、故障和检修等级输出步骤化作业流程。
-3. 知识沉淀更新：支持维修案例提交、审核、标注和入库。
-4. 大模型辅助诊断：通过可替换模型适配层提供诊断建议和作业提醒。
-5. 国产化部署说明：面向 LoongArch 架构和银河麒麟高级服务器操作系统保留适配记录。
-
-## 推荐技术路线
-
-根据前期调研，本项目推荐采用轻量、可替换、便于三人协作的架构：
-
-| 模块 | 推荐方案 |
-| --- | --- |
-| 前端 | Vue 3 + TypeScript + Vite + Element Plus |
-| 后端 | Python FastAPI |
-| 开发数据库 | 本地 JSON 文件持久化，后续可迁移 SQLite |
-| 检索方案 | approved-only 检索 + 关键词/字段权重 + 可选向量增强 + RRF / Evidence Pack |
-| 向量库 | 默认 SQLite python_scan / hash fallback；Chroma、Qdrant、sqlite-vec 均为可选增强 |
-| 模型接入 | OpenAI-compatible Adapter，默认 Mock 模式 |
-| 文档解析 | `parser_router -> mineru_adapter` 优先处理 PDF/DOCX/PPTX/XLSX；PDF 可 fallback 到 pypdf，Office 文档未装 MinerU 时 fallback 到 mock parser |
-| 审核与审计 | 统一审核工作台 + 知识片段状态机 + revision + review audit events |
-| 部署 | 本地脚本 + FastAPI 静态托管 + Docker/LoongArch 兜底部署 |
-
-完整调研结论见：`docs/research/open-source-architecture-research.md`
-
-## 仓库结构
+检修助手按 5 步组织主流程：
 
 ```text
-.
-├── backend/                  # 后端 API、检索、模型适配、数据访问
-├── frontend/                 # Web 前端页面、组件、接口调用
-├── data/
-│   ├── examples/             # 演示样例和种子数据
-│   ├── knowledge/            # 运行期资料入库和知识片段（不提交 Git）
-│   ├── manuals/              # 检修手册和知识资料
-│   └── uploads/              # 开发期上传文件
-├── deploy/                   # 部署配置和发布材料
-├── docs/
-│   ├── deployment/           # 本地运行、安装部署、国产化适配
-│   ├── design/               # API、数据模型、系统设计
-│   ├── product/              # 产品说明、演示脚本、PPT 材料
-│   ├── project-management/   # 开发流程、任务分工、看板
-│   ├── requirements/         # 需求分析、MVP 范围、样例数据计划
-│   ├── research/             # 开源项目与技术架构调研
-│   └── testing/              # 测试计划和测试报告
-├── scripts/                  # 初始化、构建、测试等辅助脚本
-└── tests/                    # 自动化测试和接口测试
+描述故障 -> 查看依据 -> 生成指引 -> 复核修正 -> 提交经验
 ```
 
-## 开发前必读
+管理中心集中放置资料入库、待审核内容、审核记录和知识关系图。系统状态集中展示模型服务、OCR、多模态、向量检索、离线兜底、MinerU/Chroma 状态和初始化配置指引。
 
-建议团队成员按以下顺序阅读和确认：
+## 快速启动
 
-0. `docs/requirements/official-problem-baseline.md`：官方赛题基线，固定题面、硬约束、当前对齐与差距。
-1. `docs/project-management/agent-startup-context.md`：Coding Agent 第一入口，记录最新状态、风险、验证和下一步。
-2. `docs/pre-development-index.md`：开发前期准备总览。
-3. `docs/project-management/development-plan.md`：后续开发阶段、任务分流与验收计划。
-4. `docs/project-management/model-task-classification.md`：高智能模型任务与普通模型任务分流。
-5. `docs/project-management/ordinary-agent-development-guide.md`：普通模型 Agent 交接、执行边界与风险管理。
-6. `docs/design/api-contract-draft.md`：前后端接口契约草案。
-7. `docs/research/open-source-architecture-research.md`：开源项目与架构调研结论。
-
-## MVP 演示主线
-
-第一版系统优先跑通以下闭环：
-
-```text
-输入设备型号和故障描述
--> 返回知识检索结果、相关手册和历史案例
--> 查看标准化作业步骤、安全提醒和验收标准
--> 提交维修经验案例
--> 审核后进入知识库
--> 再次检索时可复用新案例
-```
-
-比赛交付前，优先保证“能打开、能搜索、能看步骤、能提交案例、能审核资料、能展示真实模型或稳定兜底、能在目标环境复验”。完整权限系统、数据库迁移和生产级视觉诊断不纳入两天交付范围。
-
-同时必须持续对照 `docs/requirements/official-problem-baseline.md`：
-
-1. LoongArch + 银河麒麟部署要求是最终硬约束，不是可选加分项。
-2. 当前跨模态能力应表述为“故障图片经 OCR/多模态语义线索进入检索”，不能夸大为“生产级图文向量检索”。
-3. 当前知识图谱应表述为“轻量知识关系网络 / 知识图谱原型”，不能直接宣称“完整工业图数据库平台”。
-
-## 统一启动入口（推荐）
-
-本地开发优先使用根目录 `dev.bat` 统一管理前后端。它会在后台启动 FastAPI 与 Vite，记录 PID 和日志，并提供状态检查、健康检查、日志查看和停止能力。
+推荐使用统一开发入口：
 
 ```bat
 dev start
@@ -126,126 +30,9 @@ dev status
 dev verify
 dev logs
 dev stop
-dev restart
 ```
 
-启动后访问：
-
-```text
-http://127.0.0.1:5173/
-```
-
-常用命令说明：
-
-1. `dev start`：启动后端 `127.0.0.1:8000` 和前端 `127.0.0.1:5173`。
-2. `dev status`：查看进程、端口和访问地址。
-3. `dev verify`：检查 `/api/health` 与前端首页是否可访问。
-4. `dev logs`：查看最近的后端和前端日志。
-5. `dev stop`：停止保存的进程，并清理 8000/5173 端口残留服务。
-
-PowerShell 直连方式：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\dev.ps1 -Action start -OpenBrowser
-```
-
-`start-dev.bat` 和 `stop-dev.bat` 已保留为兼容入口，内部会转发到统一管理脚本。
-
-## 本地运行
-
-一键启动前后端开发服务：
-
-```bat
-start-dev.bat
-```
-
-或使用 PowerShell 脚本版本：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\start-dev.ps1
-```
-
-如果使用 `start-dev.bat`，会自动打开前后端两个独立 PowerShell 窗口。
-如果使用 `scripts/start-dev.ps1`，当前 PowerShell 窗口会被占用，请保持窗口打开，停止时按 `Ctrl+C`。
-
-启动后访问：
-
-```text
-http://localhost:5173
-```
-
-停止后台服务：
-
-```bat
-stop-dev.bat
-```
-
-或使用 PowerShell：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\stop-dev.ps1
-```
-
-如果需要分别启动，也可以使用 `scripts/start-backend.ps1` 和 `scripts/start-frontend.ps1`。
-
-## 当前状态
-
-当前仓库已完成：
-
-1. Vue 3 + TypeScript + Vite + Element Plus 工业检修指挥台界面。
-2. FastAPI 后端 API，覆盖检索、诊断、RAG、资料入库、多模态分析、知识关系网络、案例提交、统一审核和审计流水。
-3. 本地 JSON 样例数据、原子写入、`.bak` 恢复和巡检脚本，保留轻量架构和比赛现场兜底能力。
-4. 检索、流程查看、资料上传/入库、pending_review、审核、RAG citations、案例提交、审计追踪、审核后再检索的闭环。
-5. 资料入库支持 `pdf/txt/md/docx/pptx/xlsx/jpg/jpeg/png/webp`；解析或多模态分析生成的片段默认 `pending_review`，审核通过前不进入正式检索、RAG citations 或知识关系网络。
-6. `/api/multimodal/diagnosis` 返回 `multimodalSignals`，展示 OCR 文本、视觉症状、识别部件、图片线索和跨模态匹配说明。
-7. `/api/rag/feedback` 支持对 RAG 回答进行标注/修正，默认 `pending_review`，审核通过后进入轻量知识关系网络。
-8. RAG provider 支持 `mock/openai/anthropic` 和 OpenAI-compatible 云端服务；真实比赛模型需用最终 Key 与 base_url 复验。
-9. Chroma、Qdrant、sqlite-vec 均为可选向量增强；未安装、关闭或查询失败时自动降级，`hash` embedding 是 fallback，占位不冒充真实语义 embedding。
-10. FastAPI 可选静态托管 `frontend/dist`，用于无 npm/nginx 的目标环境演示。
-11. 后端全量测试 `174 passed in 729.77s`；前端生产构建通过；readiness 和 JSON 存储巡检通过。
-12. Coding Agent 动态交接入口：`docs/project-management/agent-startup-context.md`。
-
-下一步建议：
-
-1. 在比赛提供环境上复验最新提交，记录系统信息、部署命令、接口结果和截图。
-2. 配置真实 OpenAI-compatible LLM，至少完成一次 `fallback=false` 的 RAG 回答验收。
-3. 整理最终产品说明书、演示 runbook、PPT 大纲和视频脚本。
-4. 扩充评测样例并保存最终评测报告，明确真实模型结果与 fallback 结果。
-5. 打包最终交付物，确认不包含 `.env`、上传资料、运行数据、`node_modules`、`.venv` 和 Key。
-## 最新补充：MinerU 文档解析主链路（2026-06-09）
-
-项目已在 Windows 本地后端虚拟环境中安装并验证 MinerU 3.2.3。PDF / DOCX / PPTX / XLSX 上传时优先通过 `parser_router -> mineru_adapter` 解析，成功后保存 `raw_parse_result.json`、`parsed.md` 和 `assets/`，并生成 `review_status=pending_review` 的知识片段。审核通过前，这些片段不会进入正式 RAG 检索或 Chroma 同步。
-
-部署和验收说明见：`docs/deployment/mineru-document-parsing.md`。
-
-关键配置：
-
-```env
-MINERU_ENABLED=true
-MINERU_BACKEND=pipeline
-MINERU_LANG=ch
-MINERU_TIMEOUT_SECONDS=180
-MINERU_API_URL=
-```
-
-安装命令：
-
-```powershell
-.\backend\.venv\Scripts\python.exe -m pip install -r backend\requirements-mineru.txt
-```
-
-当前验证：
-
-```text
-mineru, version 3.2.3
-backend tests: 174 passed in 729.77s
-frontend build: passed
-```
-# 设备检修知识检索与作业辅助系统
-
-> 最终交付状态：本仓库已收口为中国软件杯 A1 赛题可演示、可部署、可答辩版本。主链路为 FastAPI + Vue 3 + SQLite 向量索引 + approved-only RAG；真实大模型通过 OpenAI-compatible 配置接入，mock/offline 仅作为现场兜底。LoongArch/银河麒麟环境默认不硬依赖 Chroma，sqlite-vec 与 Qdrant 作为可选增强，失败时自动回退本地 SQLite 检索。
-
-## 快速启动
+也可以手动启动：
 
 ```powershell
 .\backend\.venv\Scripts\python.exe -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
@@ -253,26 +40,96 @@ cd frontend
 npm.cmd run dev
 ```
 
-Docker 交付环境默认配置：
+访问：
 
-```env
-REMOTE_API_MODE=off
-LLM_PROVIDER=mock
-MULTIMODAL_PROVIDER=mock
-OCR_PROVIDER=mock
-RAG_VECTOR_STORE=sqlite
-RAG_VECTOR_SQLITE_ENGINE=python_scan
-RAG_VECTOR_ENHANCER=off
-RAG_VECTOR_FALLBACK_LOCAL=on
+```text
+http://127.0.0.1:5173/
 ```
 
-最终交付文档：
+生产演示时可由 FastAPI 静态托管 `frontend/dist`。
 
-- `docs/product/final-delivery-summary.md`
+## 初始化配置脚本
+
+Windows：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\init-config.ps1
+```
+
+Linux / Kylin / LoongArch：
+
+```bash
+bash scripts/init-config.sh
+```
+
+脚本支持两种模式：
+
+- 离线演示模式：写入 `REMOTE_API_MODE=off`、`LLM_PROVIDER=mock`、`MULTIMODAL_PROVIDER=mock`、`OCR_PROVIDER=mock` 和本地检索兜底配置。
+- 真实 LLM 模式：写入 OpenAI-compatible `OPENAI_BASE_URL`、`OPENAI_MODEL`、`OPENAI_API_KEY`、`OPENAI_API_STYLE=chat_completions` 等配置。
+
+`.env` 已被 `.gitignore` 忽略。脚本在覆盖前会备份旧 `.env`，并且只脱敏显示 API Key。
+
+验证模型服务：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\validate-provider.ps1
+```
+
+或：
+
+```bash
+bash scripts/validate-provider.sh
+```
+
+## 核心能力
+
+- 多类型输入：设备型号、故障描述、检修等级、现场图片和维修资料。
+- 图片识别线索：OCR / 多模态结果进入当前诊断上下文，用于增强检索，不直接作为未审核正式依据。
+- approved-only 检索：正式检索、RAG 引用和知识关系图默认只使用已审核内容。
+- 标准作业步骤：按设备、故障和检修等级展示检查步骤、安全提醒和验收标准。
+- 智能检修建议：输出初步判断、检查步骤、维修步骤、安全提醒、验收标准、引用来源和不确定信息。
+- 知识沉淀：资料片段、维修案例、回答修正均进入审核流程，通过后沉淀到知识库或轻量知识关系图。
+- 知识关系图：展示设备、故障、资料、案例、流程、术语和回答修正之间的关系，提供摘要、图例、SVG 图谱和节点详情。
+- 现场兜底：真实模型、OCR、向量或解析服务不可用时，系统仍可通过离线演示模式完成主流程。
+
+## 技术路线
+
+| 模块 | 当前方案 |
+| --- | --- |
+| 前端 | Vue 3 + TypeScript + Vite + Element Plus |
+| 后端 | FastAPI |
+| 存储 | JSON 原子写入与备份，运行数据不提交 |
+| 检索 | approved-only 关键词检索 + 可选向量增强 + Evidence Pack |
+| 向量 | 默认 SQLite python_scan / hash fallback，Chroma/Qdrant/sqlite-vec 为可选增强 |
+| LLM | OpenAI-compatible adapter，mock/offline 仅作兜底 |
+| 文档解析 | parser_router + MinerU adapter，未安装时优雅降级 |
+| 多模态 | OCR/视觉 provider 可选，失败时降级到 OCR/文本 LLM/本地兜底 |
+| 部署 | Docker 优先，venv + FastAPI 静态托管兜底 |
+
+## 当前验证状态
+
+| 项目 | 结果 |
+| --- | --- |
+| 后端全量测试 | `174 passed in 729.77s` |
+| 前端生产构建 | `npm.cmd run build` 通过，本轮构建耗时约 `4.61s` |
+| readiness | `success=true` |
+| JSON 巡检 | `success=true`，`issueCount=0` |
+| API 冒烟 | health、search、RAG、multimodal、feedback、knowledge graph 已验证 |
+| LoongArch / Kylin | 已有主链路复验记录，最终提交前建议再跑 `scripts/loongarch-final-verify.sh` |
+
+## 交付文档
+
+- `docs/submission/01-软件功能需求分析文档.md`
+- `docs/submission/02-软件功能设计文档.md`
+- `docs/submission/03-软件产品说明书.md`
+- `docs/submission/04-软件功能测试报告.md`
+- `docs/submission/05-软件安装包及部署文档.md`
 - `docs/product/demo-runbook-final.md`
-- `docs/product/defense-qa-final.md`
-- `docs/architecture/final-architecture.md`
-- `docs/architecture/loongarch-sqlite-vec-qdrant-final-roadmap.md`
-- `docs/product/final-checklist.md`
+- `docs/product/final-delivery-summary.md`
+- `docs/ppt-assets/final-demo-script-7min.md`
+- `docs/ppt-assets/screenshot-checklist-final.md`
+- `docs/project-management/final-engineering-test-report.md`
 
----
+## 安全边界
+
+不要提交 `.env`、API Key、上传资料、运行知识库、日志、压缩包、视频、截图、`.venv`、`node_modules` 或 `frontend/dist`。真实模型能力以目标环境的 provider 验证结果为准；mock、hash、fallback 和轻量知识关系图不能包装成生产级能力。

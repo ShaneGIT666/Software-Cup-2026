@@ -1,92 +1,80 @@
 # 最终演示 Runbook
 
-## 启动
+版本日期：2026-06-27
 
-1. 准备 `.env`，不要提交：
+## 1. 启动前准备
 
-```env
-APP_ENV=production
-SERVE_FRONTEND=auto
-REMOTE_API_MODE=auto
-LLM_PROVIDER=openai
-OPENAI_BASE_URL=<base-url>
-OPENAI_MODEL=<model>
-OPENAI_API_STYLE=chat_completions
-OPENAI_API_KEY=<secret>
-RAG_VECTOR_STORE=sqlite
-RAG_VECTOR_SQLITE_ENGINE=python_scan
-RAG_VECTOR_ENHANCER=off
-RAG_VECTOR_FALLBACK_LOCAL=on
-MINERU_ENABLED=false
+1. 确认 `.env` 不提交到仓库。
+2. 如果需要真实 LLM，运行初始化脚本：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\init-config.ps1
 ```
 
-2. Docker 启动：
+Linux / Kylin / LoongArch：
 
 ```bash
-docker run --rm -p 8000:8000 --env-file .env software-cup-demo:final
+bash scripts/init-config.sh
 ```
 
-3. 浏览器访问：
+3. 启动后端和前端，或使用 Docker / FastAPI 静态托管路径。
 
-```text
-http://<host>:8000
+## 2. 演示主线一：检修助手
+
+1. 打开系统，默认进入“检修助手”。
+2. 展示首次使用引导：描述故障 -> 查看依据 -> 生成指引 -> 复核修正 -> 提交经验。
+3. 点击“使用演示样例”，填入设备型号、故障现象和检修等级。
+4. 点击“开始诊断”。
+5. 展示“参考依据”，强调系统仅使用已审核资料。
+6. 如有图片，点击“图片诊断”，展示 OCR、视觉现象、识别部件和图片识别线索。
+7. 点击“生成智能检修建议”，展示：
+   - 初步判断。
+   - 检查步骤。
+   - 维修步骤。
+   - 安全提醒。
+   - 验收标准。
+   - 引用来源。
+   - 不确定信息。
+8. 打开“回答标注 / 修正”，提交一条修正，说明默认进入待审核。
+9. 在“提交处理经验”填写故障原因、处理方法、处理结果并提交。
+
+## 3. 演示主线二：管理中心
+
+1. 切换到“管理中心”。
+2. 展示“资料入库”：上传维修手册、PDF、Office、Markdown 或图片资料。
+3. 展示图片资产分析状态：待分析、分析中、已完成、降级次数。
+4. 展示“待审核内容”：审核资料片段、维修案例或回答修正。
+5. 展示“审核记录”：说明 reviewer、时间、动作和状态变化可追溯。
+6. 展示“知识关系图”：
+   - 摘要统计。
+   - 图例。
+   - SVG 网络图。
+   - 点击节点显示详情。
+   - 典型关系路径。
+   - approved-only 说明。
+
+## 4. 演示主线三：系统状态
+
+1. 切换到“系统状态”。
+2. 展示当前运行模式、模型服务、OCR、多模态、向量检索和离线兜底状态。
+3. 展示初始化配置命令：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\init-config.ps1
 ```
 
-## 演示主线一：检索诊断与证据追溯
+```bash
+bash scripts/init-config.sh
+```
 
-1. 打开首页，输入设备型号和故障描述。
-2. 点击检索，展示命中资料、案例和知识片段。
-3. 展开结果，说明 `chunkId/sourceDocId/page/section` 可以追溯。
-4. 说明检索结果只包含 `approved`，待审核内容不会进入正式回答。
+4. 说明真实 LLM 使用 OpenAI-compatible 配置接入，Key 只写本地 `.env`，不通过 Web 保存。
+5. 说明 LoongArch / Kylin 部署策略：Docker 优先，venv + FastAPI 静态托管兜底。
 
-## 演示主线二：RAG 建议
-
-1. 使用同一故障问题调用 RAG 回答。
-2. 展示固定结构：
-   - 初步判断
-   - 建议检查步骤
-   - 建议维修步骤
-   - 安全提醒
-   - 验收标准
-   - 引用证据
-   - 不确定信息
-3. 指出高风险 evidence 会提示人工复核。
-4. 打开 `/api/providers/status` 或状态页，说明真实 LLM/provider/fallback 状态。
-
-## 演示主线三：故障图片诊断与跨模态线索
-
-1. 点击“图片诊断”，上传一张故障图片。
-2. 展示 OCR 文本、视觉症状、识别部件、图片线索和 fallback 状态。
-3. 展示结果中的 `crossModalMatchMode=semantic_clue_to_text_retrieval`。
-4. 说明当前口径是“图片语义线索进入 approved-only 检索”，不是生产级图文向量检索。
-
-## 演示主线四：RAG 回答标注/修正
-
-1. 在 RAG 面板点击“标注/修正本回答”。
-2. 填写修正建议、标签和原因。
-3. 提交后说明记录进入 `pending_review`。
-4. 审核通过后打开知识关系网络，展示 `rag_feedback` 节点。
-
-## 演示主线五：上传、解析、审核、入库
-
-1. 上传 PDF/图片资料。
-2. 解析产物进入 `pending_review`。
-3. 如果 PDF 包含图片 assets，后台资产分析会生成 `ocr_result/image_analysis` 片段。
-4. 在审核台批准一个片段。
-5. 再次检索，展示审核通过片段可以被命中并出现在 citation 中。
-
-## 演示主线六：目标环境 fallback
-
-1. 将 `REMOTE_API_MODE=off` 或断开真实模型。
-2. 系统仍可完成首页、检索、审核和模板化 RAG。
-3. 说明 mock/offline 只用于现场稳定性兜底，真实能力以 provider validate 和真实 LLM 回答为准。
-
-## 关键接口
+## 5. 关键接口
 
 ```text
 GET  /api/health
 GET  /api/providers/status
-POST /api/providers/llm/validate
 POST /api/search
 POST /api/rag/answer
 POST /api/multimodal/diagnosis
@@ -96,3 +84,10 @@ POST /api/knowledge/documents/async
 GET  /api/review/items
 GET  /api/knowledge/graph
 ```
+
+## 6. 答辩边界口径
+
+- 图片能力当前是“图片识别线索进入检索上下文”，不夸大为生产级图文向量检索。
+- 知识关系图是轻量知识关系网络原型，不宣称完整工业图数据库平台。
+- mock、hash、fallback 是现场稳定性兜底，不作为真实模型能力宣传。
+- 真实 LLM 能力以目标环境 provider 验证为准。

@@ -16,7 +16,7 @@ function sourceLabel(sourceType: SearchResult["sourceType"]) {
     manual: "手册",
     case: "案例",
     document: "资料",
-    document_asset: "图片资产"
+    document_asset: "图片资料"
   };
   return labels[sourceType] ?? sourceType;
 }
@@ -26,8 +26,10 @@ function sourceLabel(sourceType: SearchResult["sourceType"]) {
   <section class="results-panel">
     <div class="section-title">
       <FileText :size="18" />
-      <span>证据检索 / Evidence</span>
+      <span>步骤 2：查看参考依据</span>
     </div>
+    <p class="panel-note">系统仅使用已审核资料生成正式建议，未审核内容不会进入检修依据。</p>
+
     <template v-if="searchPayload && searchPayload.results.length">
       <p class="summary">{{ searchPayload.summary }}</p>
       <div class="result-list">
@@ -42,11 +44,11 @@ function sourceLabel(sourceType: SearchResult["sourceType"]) {
             <strong>{{ item.title }}</strong>
             <span class="source-pill">{{ sourceLabel(item.sourceType) }}</span>
           </div>
-          <span class="source-line">{{ item.sourceName }} {{ item.chapter ? ` / ${item.chapter}` : "" }}</span>
+          <span class="source-line">{{ item.sourceName }}{{ item.chapter ? ` / ${item.chapter}` : "" }}</span>
           <p>{{ item.snippet }}</p>
           <small v-if="item.reason" class="reason-line">{{ item.reason }}</small>
           <small>
-            置信度 {{ Math.round(item.confidence * 100) }}%
+            可信度 {{ Math.round(item.confidence * 100) }}%
             {{ item.scoreBreakdown ? ` / 排序分 ${item.scoreBreakdown.score}` : "" }}
             {{ item.page ? ` / p.${item.page}` : "" }}
           </small>
@@ -54,10 +56,10 @@ function sourceLabel(sourceType: SearchResult["sourceType"]) {
       </div>
     </template>
     <div v-else-if="searchPayload && searchPayload.results.length === 0" class="empty-hint">
-      <span>未找到匹配结果，可调整故障描述或更换设备型号。</span>
+      <span>暂无参考依据，请尝试补充设备型号、故障现象，或在管理中心上传相关资料。</span>
     </div>
     <div v-else class="empty-hint">
-      <span>输入设备型号和故障现象后开始检索。</span>
+      <span>请先描述故障并点击“开始诊断”，系统会匹配已审核资料作为参考依据。</span>
     </div>
   </section>
 </template>

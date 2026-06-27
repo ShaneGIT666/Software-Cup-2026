@@ -38,7 +38,7 @@ function sourceLabel(sourceType: string) {
     manual: "手册",
     case: "案例",
     document: "资料",
-    document_asset: "图片资产"
+    document_asset: "图片资料"
   };
   return labels[sourceType] ?? sourceType;
 }
@@ -84,11 +84,11 @@ const evidenceItems = computed<EvidenceItem[]>(() => {
 const evidenceSummary = computed(() => {
   const pack = props.ragAnswer?.evidencePack;
   if (!pack) {
-    return `${evidenceItems.value.length} 条引用证据`;
+    return `${evidenceItems.value.length} 条引用来源`;
   }
-  const status = pack.approvedOnly ? "仅 approved" : "含待复核";
-  const risk = pack.riskReviewRequired ? "需人工复核" : "未标记高风险";
-  return `${pack.evidenceCount} 条证据 / ${status} / ${risk}`;
+  const status = pack.approvedOnly ? "仅使用已审核资料" : "包含待复核内容";
+  const risk = pack.riskReviewRequired ? "需要人工复核" : "未标记高风险";
+  return `${pack.evidenceCount} 条依据 / ${status} / ${risk}`;
 });
 
 function traceText(trace: EvidenceTrace) {
@@ -124,7 +124,7 @@ function correctiveActionLabel(action: string) {
   const labels: Record<string, string> = {
     answer: "证据充分",
     answer_with_caution: "谨慎回答",
-    needs_more_evidence: "需要补充证据"
+    needs_more_evidence: "需要补充依据"
   };
   return labels[action] ?? action;
 }
@@ -156,7 +156,7 @@ async function submitFeedback() {
   const correctedAnswer = feedbackForm.value.correctedAnswer.trim();
   const reason = feedbackForm.value.reason.trim();
   if (!correctedAnswer && !labels.length && !reason) {
-    ElMessage.warning("请填写修正建议、标签或修正原因");
+    ElMessage.warning("请填写修正建议、标签或修正原因。");
     return;
   }
   feedbackSubmitting.value = true;
@@ -178,20 +178,20 @@ async function submitFeedback() {
   <section class="rag-panel panel-highlight">
     <div class="section-title">
       <Bot :size="18" />
-      <span>RAG 建议与证据 / Assisted Answer</span>
+      <span>步骤 3 / 4：智能检修建议与复核修正</span>
     </div>
     <p class="panel-note">
-      基于当前检索证据生成检修建议，保留 chunk、来源、页码和不确定信息，便于现场复核。
+      基于当前参考依据生成检修建议，保留引用来源、页码、资料片段和不确定信息，便于现场人员复核。
     </p>
 
     <div class="action-row">
       <el-button type="primary" :loading="loading" @click="emit('answer')">
         <Bot :size="16" />
-        生成检修建议
+        生成智能检修建议
       </el-button>
-      <el-tag v-if="ragAnswer?.fallback" type="warning">本地兜底</el-tag>
-      <el-tag v-if="ragAnswer && !ragAnswer.fallback" type="success">云端增强</el-tag>
-      <el-tag v-if="ragAnswer?.llmAnswerUsed" type="success">真实 LLM 结构化回答</el-tag>
+      <el-tag v-if="ragAnswer?.fallback" type="warning">离线兜底</el-tag>
+      <el-tag v-if="ragAnswer && !ragAnswer.fallback" type="success">真实模型增强</el-tag>
+      <el-tag v-if="ragAnswer?.llmAnswerUsed" type="success">结构化回答已采纳</el-tag>
       <el-tag v-if="ragAnswer" type="info">{{ ragAnswer.provider }} / requested {{ ragAnswer.requestedProvider }}</el-tag>
       <el-tag v-if="ragAnswer?.model" type="info">{{ ragAnswer.model }} / {{ ragAnswer.apiStyle }}</el-tag>
       <el-tag v-if="ragAnswer?.contextCount !== undefined" type="info">
@@ -200,19 +200,19 @@ async function submitFeedback() {
     </div>
 
     <div v-if="loading" class="loading-hint processing-card">
-      <span>正在组织检索上下文、引用来源和检修建议...</span>
+      <span>正在组织参考依据、引用来源和检修建议...</span>
     </div>
 
     <article v-else-if="ragAnswer" class="rag-answer">
       <div v-if="ragAnswer.riskReviewRequired" class="risk-banner">
         <ShieldAlert :size="17" />
-        <span>包含 high / critical 风险证据，执行前必须人工复核。</span>
+        <span>包含 high / critical 风险依据，执行前必须人工复核。</span>
       </div>
 
       <div v-if="correctiveRag && correctiveRag.action !== 'answer'" class="corrective-panel">
         <div class="corrective-panel-header">
           <TriangleAlert :size="17" />
-          <strong>Corrective RAG：{{ correctiveActionLabel(correctiveRag.action) }}</strong>
+          <strong>依据充分性检查：{{ correctiveActionLabel(correctiveRag.action) }}</strong>
           <span>质量分 {{ Math.round(correctiveRag.qualityScore * 100) }}%</span>
         </div>
         <ul v-if="correctiveRag.reasons.length">
@@ -226,7 +226,7 @@ async function submitFeedback() {
       <div v-if="safetyRules && safetyRules.findings.length" class="safety-rules-panel">
         <div class="safety-rules-header">
           <ShieldAlert :size="17" />
-          <strong>安全规则：{{ severityLabel(safetyRules.highestSeverity) }}</strong>
+          <strong>安全提醒：{{ severityLabel(safetyRules.highestSeverity) }}</strong>
           <span v-if="safetyRules.blocking">阻断复核</span>
           <span v-else-if="safetyRules.manualReviewRequired">人工复核</span>
         </div>
@@ -249,14 +249,14 @@ async function submitFeedback() {
         </section>
 
         <section class="structured-section">
-          <h3><FileText :size="16" /> 建议检查步骤</h3>
+          <h3><FileText :size="16" /> 检查步骤</h3>
           <ol>
             <li v-for="step in structuredAnswer.inspectionSteps" :key="step">{{ step }}</li>
           </ol>
         </section>
 
         <section class="structured-section">
-          <h3><CheckCircle2 :size="16" /> 建议维修步骤</h3>
+          <h3><CheckCircle2 :size="16" /> 维修步骤</h3>
           <ol>
             <li v-for="step in structuredAnswer.repairSteps" :key="step">{{ step }}</li>
           </ol>
@@ -290,18 +290,18 @@ async function submitFeedback() {
         <div class="rag-feedback-header">
           <strong>回答标注 / 修正</strong>
           <el-button size="small" plain @click="feedbackOpen = !feedbackOpen">
-            {{ feedbackOpen ? "收起" : "标注/修正本回答" }}
+            {{ feedbackOpen ? "收起" : "标注/修正本次回答" }}
           </el-button>
         </div>
         <p>
-          标注结果默认进入 pending_review，审核通过后进入轻量知识关系网络，不会直接污染正式 RAG 检索证据。
+          发现建议不准确或缺少安全提醒时，可提交修正。修正默认进入待审核，审核通过后进入知识关系图，不会直接污染正式检索依据。
         </p>
         <div v-if="feedbackOpen" class="rag-feedback-form">
           <el-input
             v-model="feedbackForm.correctedAnswer"
             type="textarea"
             :rows="4"
-            placeholder="填写修正后的检修建议，可保留为空，仅提交标签或原因"
+            placeholder="填写修正后的检修建议，可留空并只提交标签或原因"
           />
           <div class="feedback-grid">
             <el-input v-model="feedbackForm.labels" placeholder="标签，用英文逗号分隔" />
@@ -321,7 +321,7 @@ async function submitFeedback() {
         <div class="evidence-list-header">
           <strong>
             <Quote :size="15" />
-            引用证据
+            引用来源
           </strong>
           <span>{{ evidenceSummary }}</span>
         </div>
@@ -330,7 +330,7 @@ async function submitFeedback() {
             <span class="source-pill">{{ sourceLabel(item.sourceType) }}</span>
             <strong>{{ item.evidenceId }} / {{ item.title }}</strong>
             <el-tag size="small" :type="item.reviewStatus === 'approved' ? 'success' : 'warning'">
-              {{ item.reviewStatus }}
+              {{ item.reviewStatus === "approved" ? "已审核" : item.reviewStatus }}
             </el-tag>
           </div>
           <small>{{ item.sourceName }}{{ evidenceMeta(item) ? ` / ${evidenceMeta(item)}` : "" }}</small>
@@ -347,7 +347,7 @@ async function submitFeedback() {
     </article>
 
     <div v-else class="empty-hint">
-      <span>先完成检索或资料入库，再生成带引用的辅助建议。</span>
+      <span>请先完成故障描述和参考依据匹配，再生成智能检修建议。</span>
     </div>
   </section>
 </template>

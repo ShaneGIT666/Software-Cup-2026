@@ -1,89 +1,100 @@
-# 最终架构
+# 最终架构说明
 
-## 总体链路
+版本日期：2026-06-27
 
-```mermaid
-flowchart LR
-  U["PC Web 用户"] --> FE["Vue 3 前端"]
-  FE --> API["FastAPI 后端"]
-  API --> P["Parser Router"]
-  P --> MU["MinerU Adapter"]
-  P --> FP["Fallback Parser"]
-  MU --> A["assets"]
-  A --> OCR["OCR Adapter"]
-  A --> MM["Multimodal Adapter"]
-  A --> TLLM["Text LLM Fallback"]
-  OCR --> PR["pending_review chunks"]
-  MM --> PR
-  TLLM --> PR
-  FP --> PR
-  PR --> RV["Review Workbench"]
-  RV --> AP["approved chunks"]
-  AP --> VS["SQLite Vector Store"]
-  API --> KW["Keyword Retriever"]
-  FE --> IMG["Fault Image Diagnosis"]
-  IMG --> SIG["multimodalSignals / queryContext"]
-  SIG --> KW
-  API --> VR["Vector Retriever"]
-  KW --> RRF["RRF Fusion + Heuristic Rerank"]
-  VR --> RRF
-  RRF --> EP["Evidence Pack"]
-  EP --> LLM["OpenAI-compatible LLM"]
-  LLM --> OUT["Structured RAG Output"]
-  OUT --> FB["RAG Feedback / Correction"]
-  FB --> RV
-  RV --> KG["Lightweight Knowledge Graph"]
+## 1. 架构目标
+
+系统以比赛可交付为优先，围绕设备检修形成“输入 -> 检索 -> 指引 -> 审核 -> 沉淀 -> 再检索”的闭环。架构要求是轻量、可部署、可降级、可解释，并能在 LoongArch / 银河麒麟目标环境中尽量保持主链路可运行。
+
+## 2. 前端结构
+
+前端为 Vue 3 + Element Plus PC Web，采用单页内部状态切换，不引入 Vue Router。
+
+顶层区域：
+
+- 检修助手：默认首页，面向一线人员。
+- 管理中心：面向管理员、班组长和知识维护人员。
+- 系统状态：面向运维和答辩展示。
+
+检修助手链路：
+
+```text
+描述故障 -> 查看依据 -> 生成指引 -> 复核修正 -> 提交经验
 ```
 
-## 后端模块
+## 3. 后端结构
 
-| 模块 | 责任 |
-| --- | --- |
-| `parser_router` / `mineru_adapter` | 根据文件类型选择 MinerU 或 fallback parser |
-| `knowledge.py` | 文档入库、解析产物、图片 assets 分析、知识片段状态机 |
-| `review` 接口 | 审核通过、拒绝、修正 revision、同步索引 |
-| `retrieval/*` | query context、metadata filter、keyword/vector retriever、RRF、rerank |
-| `vector_store.py` | SQLite/JSON/Chroma legacy，sqlite-vec/Qdrant 可选增强与 fallback |
-| `evidence_pack.py` | 标准化证据包和结构化 RAG 输出 |
-| `services.py` | 维修案例、RAG feedback、审核事件和业务查询 |
-| `knowledge_graph.py` | approved-only 轻量知识关系网络，包含案例、chunk 和 approved RAG feedback |
-| `provider_policy.py` | LLM/OCR/Embedding/Vector provider 状态与 fallback 记录 |
-| `system_status.py` | 系统状态页数据聚合 |
+后端为 FastAPI，主要模块：
 
-## 向量检索策略
+- `main.py`：API 路由。
+- `services.py`：业务服务。
+- `retrieval/`：检索流程。
+- `rag.py`：RAG 回答。
+- `knowledge.py`：资料入库、解析和资产分析。
+- `review_workbench.py`：审核工作台。
+- `knowledge_graph.py`：轻量知识关系图。
+- `provider_policy.py` / adapters：LLM、OCR、多模态和 embedding provider。
 
-默认：
+## 4. 数据流
 
-```env
-RAG_VECTOR_STORE=sqlite
-RAG_VECTOR_SQLITE_ENGINE=python_scan
-RAG_VECTOR_ENHANCER=off
-RAG_VECTOR_FALLBACK_LOCAL=on
+```text
+故障输入 / 图片 / 资料
+-> OCR / 多模态线索 / 文档解析
+-> pending_review
+-> 人工审核
+-> approved 知识片段 / 案例 / 回答修正
+-> approved-only 检索
+-> Evidence Pack
+-> 智能检修建议
+-> 回答修正和案例回流
+-> 知识关系图
 ```
 
-增强：
+## 5. 知识关系图
 
-```env
-RAG_VECTOR_SQLITE_ENGINE=sqlite_vec
-SQLITE_VEC_EXTENSION_PATH=/path/to/sqlite-vec
-```
+知识关系图由 approved 内容生成，包含：
 
-或：
+- 设备。
+- 故障。
+- 手册。
+- 资料片段。
+- 案例。
+- 流程。
+- 术语。
+- 回答修正。
+- 模型分析来源。
 
-```env
-RAG_VECTOR_ENHANCER=qdrant
-RAG_QDRANT_URL=http://127.0.0.1:6333
-RAG_QDRANT_COLLECTION=repair_knowledge_chunks
-RAG_VECTOR_FALLBACK_LOCAL=on
-```
+前端使用原生 SVG 绘制轻量网络图，最多展示 24 个重要节点，保留完整节点和关系列表。点击节点可查看属性和相关关系。
 
-增强不可用时，系统记录 `LAST_FALLBACK["vector"]` 并继续使用本地 SQLite 检索。
+## 6. Provider 与降级策略
 
-## 安全边界
+真实 LLM 通过 OpenAI-compatible 配置接入。默认允许离线演示：
 
-- 正式检索只使用 `approved`。
-- Evidence Pack 保留来源和检索诊断字段。
-- RAG 输出不得编造参数，证据不足要说明不确定。
-- high/critical 风险要求人工复核。
-- 跨模态能力口径为“图片语义线索进入文本检索”，不是生产级图文向量检索。
-- RAG feedback 默认 `pending_review`，审核通过后只进入轻量知识关系网络，不直接污染 RAG 检索索引。
+- LLM 不可用时回退 mock/offline。
+- OCR 或多模态不可用时回退 OCR/mock/文本线索。
+- 向量增强不可用时回退本地轻量检索。
+- MinerU 不可用时回退普通解析或 mock parser。
+
+系统状态页展示当前 provider、fallback 和初始化配置指引，但不保存 API Key。
+
+## 7. 初始化配置
+
+新增脚本：
+
+- `scripts/init-config.ps1`
+- `scripts/init-config.sh`
+- `scripts/validate-provider.ps1`
+- `scripts/validate-provider.sh`
+
+脚本支持离线演示模式和真实 LLM 模式。写入 `.env` 前备份旧文件，API Key 只脱敏显示。
+
+## 8. 国产化部署边界
+
+LoongArch / 银河麒麟环境以主链路可运行为硬约束。Chroma、Qdrant、sqlite-vec、MinerU 和真实多模态 provider 均视目标环境可用性启用，不作为不可降级硬依赖。Docker 优先，venv + FastAPI 静态托管作为兜底。
+
+## 9. 安全边界
+
+- 正式检索和 RAG 引用默认只使用 approved 内容。
+- pending_review、rejected、deprecated、replaced 不进入正式检索。
+- API Key 不通过 Web 保存，不提交到仓库。
+- mock、hash、fallback 不夸大为生产级能力。
