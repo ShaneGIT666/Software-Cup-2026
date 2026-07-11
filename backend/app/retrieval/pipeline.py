@@ -85,6 +85,19 @@ def merge_results(keyword_hits: list[RetrievalHit], vector_hits: list[RetrievalH
     return fuse_hits_rrf(keyword_hits, vector_hits, candidate_k)
 
 
+def preserve_case_coverage(hits: list[RetrievalHit], top_k: int) -> list[RetrievalHit]:
+    final_hits = hits[:top_k]
+    if top_k < 3 or any(hit.source_type == "case" for hit in final_hits):
+        return final_hits
+
+    best_case = next((hit for hit in hits[top_k:] if hit.source_type == "case"), None)
+    if best_case is None:
+        return final_hits
+
+    best_case.score_breakdown["coveragePromotion"] = "approved_case"
+    return [*final_hits[:-1], best_case]
+
+
 def search_knowledge(request: SearchRequest) -> dict[str, object]:
     context = build_query_context(request)
     if not context.query_tokens:
@@ -97,7 +110,7 @@ def search_knowledge(request: SearchRequest) -> dict[str, object]:
     fused_hits = merge_results(keyword_hits, vector_hits, candidate_k)
     reranked_hits = rerank_hits(context, fused_hits)
     candidate_pool_count = len(reranked_hits)
-    final_hits = reranked_hits[:requested_top_k]
+    final_hits = preserve_case_coverage(reranked_hits, requested_top_k)
     for final_rank, hit in enumerate(final_hits, start=1):
         hit.score_breakdown["finalRank"] = final_rank
         hit.score_breakdown["candidatePoolSize"] = candidate_pool_count

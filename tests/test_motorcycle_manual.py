@@ -33,6 +33,8 @@ def approve_document_chunks(document_id: str) -> None:
         if chunk.get("documentId") != document_id:
             continue
         chunk["review_status"] = "approved"
+        chunk["is_current"] = True
+        chunk["replaced_by"] = None
         chunk["updated_at"] = now
         chunk["updatedAt"] = now
         approved_chunks.append(chunk)
@@ -135,8 +137,11 @@ def test_ingest_motorcycle_manual_produces_searchable_chunks(tmp_path, monkeypat
 
     for chunk in chunks["items"]:
         assert chunk["documentId"] == doc_id
-        assert chunk["sourceType"] == "document"
-        assert chunk["sourceName"] == "摩托车发动机维修手册"
+        assert chunk["sourceType"] in {"document", "document_asset"}
+        if chunk["sourceType"] == "document_asset":
+            assert chunk["sourceName"].startswith("摩托车发动机维修手册")
+        else:
+            assert chunk["sourceName"] == "摩托车发动机维修手册"
         assert chunk["review_status"] == "pending_review"
         assert len(chunk["content"]) > 0
         assert len(chunk["snippet"]) > 0

@@ -52,7 +52,7 @@ Execute the 2026-07-11 full-trust hardening plan in `E:/Download/Downloads/Softw
 3. [complete] T03-T04 knowledge review governance: version revised chunks and make approved-only filtering fail closed.
 4. [complete] T05-T06 RAG answer safety: preserve safety-processed structured output as the only final answer and refuse concrete steps without approved evidence.
 5. [complete] T07-T08 business metadata and role protection.
-6. [in_progress] T09-T15 metadata, Chinese query expansion, corrective retrieval, structured validation, multimodal consistency, and safety rules.
+6. [pending] T09-T15 metadata, Chinese query expansion, corrective retrieval, structured validation, multimodal consistency, and safety rules.
 7. [pending] T16-T17 JSON transaction protection and index/task recovery.
 8. [pending] T18-T19 evaluation dataset, runner, ablation modes, and hard gates.
 9. [pending] T20-T21 frontend contract, deployment config, README, and submission docs.

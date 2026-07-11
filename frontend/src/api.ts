@@ -170,6 +170,13 @@ export interface SystemStatusPayload {
     llmFallbackEnabled: boolean;
     ocrFallbackEnabled: boolean;
   };
+  auth?: {
+    mode: string;
+    enabled: boolean;
+    operatorConfigured: boolean;
+    reviewerConfigured: boolean;
+    adminConfigured: boolean;
+  };
   warnings: string[];
 }
 
@@ -188,13 +195,25 @@ export interface ProviderStatusPayload {
   system?: SystemStatusPayload;
 }
 
+function authHeaders(): Record<string, string> {
+  const storageToken =
+    typeof window !== "undefined" ? window.localStorage.getItem("softwareCupAuthToken")?.trim() : "";
+  const envToken = (import.meta.env.VITE_API_AUTH_TOKEN as string | undefined)?.trim();
+  const token = storageToken || envToken || "";
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const isFormData = options?.body instanceof FormData;
   const response = await fetch(path, {
     headers: isFormData
-      ? options?.headers
+      ? {
+          ...authHeaders(),
+          ...options?.headers
+        }
       : {
           "Content-Type": "application/json",
+          ...authHeaders(),
           ...options?.headers
         },
     ...options

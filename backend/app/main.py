@@ -92,7 +92,6 @@ app.add_middleware(
 )
 
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
-app.mount("/knowledge", StaticFiles(directory=KNOWLEDGE_DIR), name="knowledge")
 
 
 def error_response(status_code: int, message: str) -> JSONResponse:
@@ -599,6 +598,8 @@ def frontend_asset(asset_path: str) -> FileResponse:
 @app.get("/{full_path:path}", include_in_schema=False)
 def frontend_spa(full_path: str) -> HTMLResponse:
     if full_path.startswith(("api", "uploads", "knowledge")):
+        raise HTTPException(status_code=404, detail="resource not found")
+    if Path(full_path).suffix:
         raise HTTPException(status_code=404, detail="resource not found")
     index = spa_index_path()
     if not serve_frontend_enabled() or not index.exists():

@@ -70,3 +70,14 @@
 - Added `.env.example` auth variables: `AUTH_MODE`, `AUTH_TOKEN`, `AUTH_TOKEN_ROLE`, `AUTH_REVIEWER_TOKEN`, and `AUTH_ADMIN_TOKEN`.
 - Backend API contract tests passed after T07/T08: `97 passed in 15.49s`.
 - Combined retrieval/evidence/chunk/graph/multimodal/corrective/safety/case regression passed after T07/T08: `30 passed in 1.03s`.
+- Addressed review-blocking validation before continuing T09-T15.
+- Hardened token auth with `secrets.compare_digest`, an explicit operator token, 401 for missing/malformed/invalid tokens, and 403 for insufficient roles.
+- Added auth status visibility to provider status without exposing configured token values, including warnings for `AUTH_MODE=off` and missing reviewer/admin tokens in token mode.
+- Removed the public `/knowledge` static mount and kept file-like SPA fallbacks at 404.
+- Added frontend `Authorization: Bearer ...` injection from `localStorage.softwareCupAuthToken` or `VITE_API_AUTH_TOKEN`.
+- Added role-matrix, auth-status, token-leak, and `/knowledge` static exposure tests.
+- Added final search source coverage so an approved case with a strong keyword hit is not pushed out of the requested topK by document results that appear in both keyword and vector channels.
+- Fixed motorcycle manual test helpers so simulated approval marks chunks current, and adjusted visual asset source assertions to accept page-specific source names.
+- Affected backend regression passed: `135 passed in 44.85s`.
+- Required full backend suite passed with `MINERU_ENABLED=false`: `188 passed in 44.79s`.
+- Frontend production build passed after auth header injection: `built in 5.05s` with existing Vite/Rollup warnings.

@@ -11,6 +11,7 @@ from backend.app.schemas import SearchRequest
 def make_hit(
     hit_id: str,
     *,
+    source_type: str | None = None,
     chunk_id: str | None = None,
     device_model: str | None = None,
     keyword_rank: int | None = None,
@@ -30,7 +31,7 @@ def make_hit(
         content=hit_id,
         source_id=hit_id,
         source_name="unit",
-        source_type="document" if chunk_id else "manual",
+        source_type=source_type or ("document" if chunk_id else "manual"),
         confidence=0.8,
         snippet=hit_id,
         reason="unit",
@@ -177,6 +178,19 @@ def test_candidate_pool_expands_before_heuristic_rerank(monkeypatch) -> None:
     assert len(result_ids) == 3
     assert response["results"][0]["scoreBreakdown"]["candidatePoolSize"] == 6
     assert response["results"][0]["scoreBreakdown"]["requestedTopK"] == 3
+
+
+def test_final_results_preserve_approved_case_coverage() -> None:
+    hits = [
+        make_hit(f"doc-{index}", source_type="document", fusion_score=0.04 - index * 0.001)
+        for index in range(5)
+    ]
+    case_hit = make_hit("case-1", source_type="case", fusion_score=0.01, keyword_score=18)
+
+    final_hits = pipeline.preserve_case_coverage([*hits, case_hit], top_k=5)
+
+    assert [hit.id for hit in final_hits] == ["doc-0", "doc-1", "doc-2", "doc-3", "case-1"]
+    assert case_hit.score_breakdown["coveragePromotion"] == "approved_case"
 
 
 def test_reranker_none_preserves_rrf_order(monkeypatch) -> None:

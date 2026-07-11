@@ -1005,6 +1005,7 @@ def test_review_events_api_filters_audit_log(tmp_path, monkeypatch) -> None:
 
 def test_token_auth_protects_review_and_admin_routes(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("AUTH_MODE", "token")
+    monkeypatch.setenv("AUTH_OPERATOR_TOKEN", "operator-token")
     monkeypatch.setenv("AUTH_REVIEWER_TOKEN", "review-token")
     monkeypatch.setenv("AUTH_ADMIN_TOKEN", "admin-token")
     client = make_client(tmp_path, monkeypatch)
@@ -1021,7 +1022,21 @@ def test_token_auth_protects_review_and_admin_routes(tmp_path, monkeypatch) -> N
         headers={"Authorization": "Bearer wrong-token"},
         json={"action": "approve", "reviewNote": "bad token"},
     )
-    assert invalid.status_code == 403
+    assert invalid.status_code == 401
+
+    malformed = client.patch(
+        f"/api/cases/{pending_case['id']}/review",
+        headers={"Authorization": "Token review-token"},
+        json={"action": "approve", "reviewNote": "bad bearer"},
+    )
+    assert malformed.status_code == 401
+
+    operator = client.patch(
+        f"/api/cases/{pending_case['id']}/review",
+        headers={"Authorization": "Bearer operator-token"},
+        json={"action": "approve", "reviewNote": "operator blocked"},
+    )
+    assert operator.status_code == 403
 
     reviewer = client.patch(
         f"/api/cases/{pending_case['id']}/review",
@@ -1041,6 +1056,99 @@ def test_token_auth_protects_review_and_admin_routes(tmp_path, monkeypatch) -> N
         headers={"Authorization": "Bearer admin-token"},
     )
     assert admin.status_code == 200
+
+
+def test_token_auth_role_matrix_and_status_visibility(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("AUTH_MODE", "token")
+    monkeypatch.setenv("AUTH_OPERATOR_TOKEN", "operator-token")
+    monkeypatch.setenv("AUTH_REVIEWER_TOKEN", "review-token")
+    monkeypatch.setenv("AUTH_ADMIN_TOKEN", "admin-token")
+    client = make_client(tmp_path, monkeypatch)
+    pending_case = create_pending_case(client)
+    save_pending_review_chunk()
+
+    # Public read and submission paths remain available by design.
+    assert client.post("/api/search", json={"faultText": "review pending fixture"}).status_code == 200
+    assert client.post(
+        "/api/rag/answer",
+        json={"deviceModel": "engine", "faultText": "review pending fixture", "provider": "mock"},
+    ).status_code == 200
+    assert create_pending_case(client)["status"] == "pending_review"
+
+    matrix = [
+        ("case reviewer denied anonymous", "PATCH", f"/api/cases/{pending_case['id']}/review", None, 401),
+        ("case reviewer denied operator", "PATCH", f"/api/cases/{pending_case['id']}/review", "operator-token", 403),
+        ("case reviewer allowed reviewer", "PATCH", f"/api/cases/{pending_case['id']}/review", "review-token", 200),
+        (
+            "chunk review denied operator",
+            "PATCH",
+            "/api/knowledge/documents/kdoc-review-001/chunks/kdoc-review-001-chunk-001/review",
+            "operator-token",
+            403,
+        ),
+        (
+            "chunk review allowed reviewer",
+            "PATCH",
+            "/api/knowledge/documents/kdoc-review-001/chunks/kdoc-review-001-chunk-001/review",
+            "review-token",
+            200,
+        ),
+        (
+            "status update denied reviewer",
+            "PATCH",
+            "/api/knowledge/documents/kdoc-review-001/chunks/kdoc-review-001-chunk-001/status",
+            "review-token",
+            403,
+        ),
+        (
+            "status update allowed admin",
+            "PATCH",
+            "/api/knowledge/documents/kdoc-review-001/chunks/kdoc-review-001-chunk-001/status",
+            "admin-token",
+            200,
+        ),
+        ("graph rebuild denied reviewer", "POST", "/api/knowledge/graph/rebuild", "review-token", 403),
+        ("graph rebuild allowed admin", "POST", "/api/knowledge/graph/rebuild", "admin-token", 200),
+        ("delete denied reviewer", "DELETE", "/api/knowledge/documents/kdoc-review-001", "review-token", 403),
+        ("delete allowed admin", "DELETE", "/api/knowledge/documents/kdoc-review-001", "admin-token", 200),
+    ]
+    for _label, method, path, token, expected_status in matrix:
+        headers = {"Authorization": f"Bearer {token}"} if token else {}
+        json_body = {"action": "approve", "reviewNote": "ok", "reason": "ok", "status": "approved"}
+        response = client.request(method, path, headers=headers, json=json_body)
+        assert response.status_code == expected_status
+
+    status = client.get("/api/providers/status").json()["data"]
+    auth = status["system"]["auth"]
+    assert auth == {
+        "mode": "token",
+        "enabled": True,
+        "operatorConfigured": True,
+        "reviewerConfigured": True,
+        "adminConfigured": True,
+    }
+    assert "operator-token" not in str(status)
+    assert "review-token" not in str(status)
+    assert "admin-token" not in str(status)
+
+
+def test_auth_mode_off_is_explicit_in_status(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("AUTH_MODE", "off")
+    client = make_client(tmp_path, monkeypatch)
+
+    status = client.get("/api/providers/status").json()["data"]
+
+    assert status["system"]["auth"]["mode"] == "off"
+    assert status["system"]["auth"]["enabled"] is False
+    assert any("AUTH_MODE=off" in item for item in status["system"]["warnings"])
+
+
+def test_knowledge_directory_is_not_public_static_mount(tmp_path, monkeypatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+
+    assert client.get("/knowledge/files/kdoc-review-001.pdf").status_code == 404
+    assert client.get("/knowledge/../examples/repair-cases.json").status_code == 404
+    assert client.get("/knowledge/%2E%2E/examples/repair-cases.json").status_code == 404
 
 
 def save_pending_review_chunk() -> None:
