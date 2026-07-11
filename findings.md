@@ -55,3 +55,12 @@ Chroma is not rejected because it is weak; it is rejected as the default target 
 - Existing multimodal response includes `queryContext.imageClues`, `queryContext.ocrText`, `imageAnalysis`, `results`, `citations`, and `evidencePack`, but it does not yet expose a formal `multimodalSignals` object or annotate citations with `crossModalMatchMode`.
 - Existing tests already enforce that image clues enter the diagnostic request and are not promoted to formal evidence. The new work should extend this rather than changing the core retrieval or Evidence Pack contract.
 - There is no existing RAG feedback / corrected-answer API. The safest implementation is a JSON-backed service that defaults feedback to `pending_review`, exposes review endpoints, and only adds approved feedback to the lightweight knowledge graph, not to formal RAG retrieval.
+
+## Full Trust Hardening Findings
+
+- The 2026-07-11 hardening plan requires strict T00 baseline protection before functional changes.
+- Current branch at start was `main`; hardening work moved to `codex/full-trust-hardening-20260711`.
+- The worktree was already dirty before hardening: `data/examples/repair-cases.json` modified and `tmp/` untracked. These are preserved as user changes.
+- Baseline targeted backend tests passed: `21 passed in 2.70s`.
+- Baseline frontend build passed. Existing build warnings are Rollup/Vite annotation and chunk-size warnings, not hard failures.
+- The local shell does not expose `python` on PATH, but `backend/.venv/Scripts/python.exe` works and should be used for project scripts.

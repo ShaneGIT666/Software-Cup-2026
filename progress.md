@@ -39,3 +39,18 @@
 | Looked for `frontend/src/style.css` | Frontend style inspection | Corrected to `frontend/src/styles.css` |
 | Cross-modal signal test expected raw `OCR_LOW_FUEL_PRESSURE`, code split it into tokens | First targeted test run | Preserved raw image/OCR signal strings in `matchedQueryTerms` |
 | API smoke `POST /api/rag/feedback` returned 500 | First smoke run used repository `data/knowledge` runtime directory | Restarted uvicorn with temporary `APP_EXAMPLES_DIR`, `APP_KNOWLEDGE_DIR`, and `APP_UPLOAD_DIR`; smoke passed |
+
+## 2026-07-11 Full trust hardening
+
+- Read the external full-trust hardening execution plan from `E:/Download/Downloads/Software-Cup-2026_GPT-5.5-High_Agent全量整改执行计划.md`.
+- Ran starting git checks in `E:/Software/Software-Cup-2026`: branch `main`, HEAD `09f9b3a0cd485e12b51a289996f4e3a44e0ae542`, dirty worktree with `data/examples/repair-cases.json` and `tmp/`.
+- Created hardening branch `codex/full-trust-hardening-20260711` without stashing, resetting, cleaning, or overwriting existing changes.
+- Confirmed runtimes: `backend/.venv/Scripts/python.exe` is Python `3.12.13`, Node `v24.15.0`, npm `11.12.1`; system `python` is not on PATH.
+- Ran T00 targeted backend baseline tests: `21 passed in 2.70s`.
+- Ran T00 frontend production build: passed in `5.88s` with existing Vite/Rollup warnings.
+- Added `docs/project-management/full-trust-hardening-baseline.md` and appended this hardening task set to the persistent planning files.
+- Completed T01/T02 retrieval hardening: `fusion_score` is now the first RRF sort key, score breakdown records `scoreKind=rrf_display`, RRF K is configurable with invalid-value fallback, and search expands to a configurable candidate pool before rerank and final `topK` clipping.
+- Updated retrieval tests to cover RRF-over-keyword ordering, three-route RRF accumulation, duplicate chunk merge, single-route stability, `top_k` formula independence, invalid `RAG_RRF_K`, and candidate-pool rerank recovery.
+- Targeted retrieval test passed: `12 passed in 0.44s`.
+- Expanded T00-related backend regression passed after retrieval changes: `26 passed in 0.62s`.
+- `git diff --check` passed with only CRLF conversion warnings.

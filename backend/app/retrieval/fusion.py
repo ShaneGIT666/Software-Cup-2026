@@ -1,14 +1,26 @@
 from __future__ import annotations
 
+import os
+
 from .models import RetrievalHit
 
 
 RRF_K = 60
 
 
-def reciprocal_rank(rank: int | None, k: int = RRF_K) -> float:
+def configured_rrf_k() -> int:
+    raw_value = os.getenv("RAG_RRF_K", str(RRF_K))
+    try:
+        value = int(raw_value)
+    except (TypeError, ValueError):
+        return RRF_K
+    return value if value > 0 else RRF_K
+
+
+def reciprocal_rank(rank: int | None, k: int | None = None) -> float:
     if not rank or rank <= 0:
         return 0.0
+    k = configured_rrf_k() if k is None else k
     return 1.0 / (k + rank)
 
 
@@ -63,6 +75,7 @@ def apply_fusion_score(hit: RetrievalHit) -> RetrievalHit:
     hit.score_breakdown.update(
         {
             "score": round(fusion_score * 10000, 4),
+            "scoreKind": "rrf_display",
             "retrievalMode": "rrf",
             "retrievalSource": hit.retrieval_source,
             "sourceRetrievers": source_retrievers,
@@ -73,7 +86,7 @@ def apply_fusion_score(hit: RetrievalHit) -> RetrievalHit:
             "keywordScore": hit.keyword_score,
             "vectorScore": hit.vector_score,
             "qdrantScore": hit.qdrant_score,
-            "fusionScore": round(fusion_score, 8),
+            "fusionScore": fusion_score,
             "matchedFields": hit.matched_fields,
         }
     )
@@ -100,13 +113,19 @@ def fuse_hit_groups_rrf(hit_groups: dict[str, list[RetrievalHit]], top_k: int) -
                 merged[key] = hit
 
     fused = [apply_fusion_score(hit) for hit in merged.values()]
+
+    def best_original_rank(item: RetrievalHit) -> int:
+        ranks = [rank for rank in (item.keyword_rank, item.vector_rank, item.qdrant_rank) if rank is not None]
+        return min(ranks) if ranks else 1_000_000
+
     fused.sort(
         key=lambda item: (
-            item.keyword_score or 0,
-            item.fusion_score or 0,
-            item.vector_score or 0,
-            item.qdrant_score or 0,
+            item.fusion_score or 0.0,
+            -best_original_rank(item),
             item.confidence,
+            item.keyword_score or 0.0,
+            item.vector_score or 0.0,
+            item.qdrant_score or 0.0,
         ),
         reverse=True,
     )

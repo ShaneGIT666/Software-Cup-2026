@@ -40,3 +40,29 @@ Complete the last pre-submission round without broad refactors. The required res
 - Latest commit at start: `952e5a9 finalize delivery verification docs`
 - Worktree at start: clean
 - Initial catchup note: `python` was not on PATH; reran planning catchup with `backend/.venv/Scripts/python.exe` successfully.
+
+## Full Trust Hardening Goal
+
+Execute the 2026-07-11 full-trust hardening plan in `E:/Download/Downloads/Software-Cup-2026_GPT-5.5-High_Agent全量整改执行计划.md`. Preserve existing user changes, avoid broad refactors, keep the FastAPI + Vue + lightweight retrieval architecture, and make claims match verified LoongArch/Kylin/offline behavior.
+
+## Full Trust Hardening Steps
+
+1. [complete] T00 baseline protection: record branch, HEAD, dirty worktree, runtime versions, targeted backend tests, and frontend build.
+2. [complete] T01-T02 retrieval hardening: make RRF fusion the primary sort key and retrieve an expanded candidate pool before rerank/final topK clipping.
+3. [in_progress] T03-T04 knowledge review governance: version revised chunks and make approved-only filtering fail closed.
+4. [pending] T05-T06 RAG answer safety: preserve safety-processed structured output as the only final answer and refuse concrete steps without approved evidence.
+5. [pending] T07-T08 business metadata and role protection.
+6. [pending] T09-T15 metadata, Chinese query expansion, corrective retrieval, structured validation, multimodal consistency, and safety rules.
+7. [pending] T16-T17 JSON transaction protection and index/task recovery.
+8. [pending] T18-T19 evaluation dataset, runner, ablation modes, and hard gates.
+9. [pending] T20-T21 frontend contract, deployment config, README, and submission docs.
+10. [pending] T22 final full verification and execution report.
+
+## Full Trust Hardening Starting State
+
+- Branch before switch: `main`
+- Hardening branch: `codex/full-trust-hardening-20260711`
+- HEAD: `09f9b3a0cd485e12b51a289996f4e3a44e0ae542`
+- Pre-existing user changes: `data/examples/repair-cases.json`, `tmp/`
+- Baseline targeted backend tests: `21 passed in 2.70s`
+- Baseline frontend build: passed in `5.88s`

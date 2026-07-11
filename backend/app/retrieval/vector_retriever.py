@@ -34,7 +34,8 @@ def retrieve_vector_hits(context: QueryContext) -> list[RetrievalHit]:
     if not context.vector_query:
         return hits
 
-    for index, vector_match in enumerate(vector_store.search_similar_chunks(context.vector_query, context.top_k), start=1):
+    candidate_k = context.candidate_k or context.top_k
+    for index, vector_match in enumerate(vector_store.search_similar_chunks(context.vector_query, candidate_k), start=1):
         embedding_provider = vector_match.get("embeddingProvider", "hash")
         retrieval_source = str(vector_match.get("retrievalSource") or vector_store.vector_store_kind())
         breakdown = vector_score_breakdown(vector_match.get("distance", 1.0), embedding_provider, retrieval_source)
