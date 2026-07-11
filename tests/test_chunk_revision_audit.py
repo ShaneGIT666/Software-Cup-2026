@@ -19,6 +19,31 @@ def make_client(tmp_path, monkeypatch) -> TestClient:
     return TestClient(app)
 
 
+def upload_and_approve_chunk(client: TestClient) -> tuple[str, str]:
+    upload = client.post(
+        "/api/knowledge/documents",
+        files={"file": ("field-note.txt", b"old pressure note", "text/plain")},
+        data={"source_name": "field"},
+    ).json()["data"]
+    document_id = upload["id"]
+    chunk_id = upload["chunks"][0]["id"]
+    approve = client.patch(
+        f"/api/knowledge/documents/{document_id}/chunks/{chunk_id}/review",
+        json={"action": "approve", "reviewer": "reviewer-a"},
+    )
+    assert approve.status_code == 200
+    return document_id, chunk_id
+
+
+def propose_revision(client: TestClient, document_id: str, chunk_id: str, content: str = "new pressure note") -> str:
+    revision = client.patch(
+        f"/api/knowledge/documents/{document_id}/chunks/{chunk_id}",
+        json={"content": content, "reason": "line review correction", "reviewer": "reviewer-a"},
+    )
+    assert revision.status_code == 200
+    return revision.json()["data"]["proposedChunk"]["id"]
+
+
 def test_chunk_revision_creates_pending_version_and_replaces_after_approval(tmp_path, monkeypatch) -> None:
     sync_calls: list[list[dict[str, Any]]] = []
     deleted_documents: list[str] = []
@@ -106,6 +131,23 @@ def test_chunk_revision_creates_pending_version_and_replaces_after_approval(tmp_
     assert original_after["replaced_by"] == proposed_id
     assert proposed_after["review_status"] == "approved"
     assert proposed_after["is_current"] is True
+    assert len(
+        [
+            chunk
+            for chunk in chunks_after_approval
+            if (chunk.get("logical_chunk_id") or chunk.get("id")) == chunk_id
+            and chunk.get("review_status") == "approved"
+            and chunk.get("is_current") is True
+        ]
+    ) == 1
+
+    revisions_after_approval = data_store.load_knowledge_revisions()
+    approved_revision = next(item for item in revisions_after_approval if item["proposedChunkId"] == proposed_id)
+    assert approved_revision["status"] == "approved"
+    assert approved_revision["reviewedAt"]
+    assert approved_revision["reviewedBy"] == "reviewer-b"
+    assert approved_revision["approvedChunkId"] == proposed_id
+    assert approved_revision["replacedChunkId"] == chunk_id
 
     old_search_after = client.post("/api/search", json={"faultText": "old pressure note", "topK": 5}).json()["data"]
     new_search_after = client.post("/api/search", json={"faultText": "new pressure note", "topK": 5}).json()["data"]
@@ -148,3 +190,92 @@ def test_rejecting_revision_keeps_original_current(tmp_path, monkeypatch) -> Non
     assert original["is_current"] is True
     assert proposed["review_status"] == "rejected"
     assert proposed["is_current"] is False
+
+    revisions = data_store.load_knowledge_revisions()
+    rejected_revision = next(item for item in revisions if item["proposedChunkId"] == proposed_id)
+    assert rejected_revision["status"] == "rejected"
+    assert rejected_revision["reviewedAt"]
+    assert rejected_revision["reviewedBy"] == "reviewer-b"
+    assert rejected_revision["reviewNote"] == "not grounded"
+
+
+def test_non_current_chunk_cannot_be_revised(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(knowledge, "sync_chunks", lambda chunks: None)
+    monkeypatch.setattr(knowledge, "delete_vector_document", lambda document_id: None)
+    client = make_client(tmp_path, monkeypatch)
+    document_id, chunk_id = upload_and_approve_chunk(client)
+    proposed_id = propose_revision(client, document_id, chunk_id)
+
+    approve_v2 = client.patch(
+        f"/api/knowledge/documents/{document_id}/chunks/{proposed_id}/review",
+        json={"action": "approve", "reviewer": "reviewer-b"},
+    )
+    assert approve_v2.status_code == 200
+
+    revise_old = client.patch(
+        f"/api/knowledge/documents/{document_id}/chunks/{chunk_id}",
+        json={"content": "another stale correction", "reason": "stale", "reviewer": "reviewer-c"},
+    )
+
+    assert revise_old.status_code == 409
+    assert revise_old.json()["message"] == "Only current approved knowledge chunk can be revised"
+
+
+def test_duplicate_pending_revision_is_rejected(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(knowledge, "sync_chunks", lambda chunks: None)
+    monkeypatch.setattr(knowledge, "delete_vector_document", lambda document_id: None)
+    client = make_client(tmp_path, monkeypatch)
+    document_id, chunk_id = upload_and_approve_chunk(client)
+    propose_revision(client, document_id, chunk_id)
+
+    duplicate = client.patch(
+        f"/api/knowledge/documents/{document_id}/chunks/{chunk_id}",
+        json={"content": "duplicate correction", "reason": "duplicate", "reviewer": "reviewer-c"},
+    )
+
+    assert duplicate.status_code == 409
+    assert duplicate.json()["message"] == "A pending revision already exists for this knowledge chunk"
+
+
+def test_stale_revision_proposal_cannot_be_approved(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(knowledge, "sync_chunks", lambda chunks: None)
+    monkeypatch.setattr(knowledge, "delete_vector_document", lambda document_id: None)
+    client = make_client(tmp_path, monkeypatch)
+    document_id, chunk_id = upload_and_approve_chunk(client)
+    proposed_id = propose_revision(client, document_id, chunk_id)
+
+    chunks = data_store.load_document_chunks()
+    original = next(chunk for chunk in chunks if chunk["id"] == chunk_id)
+    original["is_current"] = False
+    original["replaced_by"] = "external-current"
+    data_store.save_document_chunks(chunks)
+
+    approve = client.patch(
+        f"/api/knowledge/documents/{document_id}/chunks/{proposed_id}/review",
+        json={"action": "approve", "reviewer": "reviewer-b"},
+    )
+
+    assert approve.status_code == 409
+    assert approve.json()["message"] == "Superseded knowledge chunk is no longer current"
+    unchanged = next(chunk for chunk in data_store.load_document_chunks() if chunk["id"] == proposed_id)
+    assert unchanged["review_status"] == "pending_review"
+
+
+def test_revision_proposal_cannot_be_approved_twice(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(knowledge, "sync_chunks", lambda chunks: None)
+    monkeypatch.setattr(knowledge, "delete_vector_document", lambda document_id: None)
+    client = make_client(tmp_path, monkeypatch)
+    document_id, chunk_id = upload_and_approve_chunk(client)
+    proposed_id = propose_revision(client, document_id, chunk_id)
+
+    first = client.patch(
+        f"/api/knowledge/documents/{document_id}/chunks/{proposed_id}/review",
+        json={"action": "approve", "reviewer": "reviewer-b"},
+    )
+    second = client.patch(
+        f"/api/knowledge/documents/{document_id}/chunks/{proposed_id}/review",
+        json={"action": "approve", "reviewer": "reviewer-b"},
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 409

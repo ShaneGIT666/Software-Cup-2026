@@ -81,3 +81,6 @@
 - Affected backend regression passed: `135 passed in 44.85s`.
 - Required full backend suite passed with `MINERU_ENABLED=false`: `188 passed in 44.79s`.
 - Frontend production build passed after auth header injection: `built in 5.05s` with existing Vite/Rollup warnings.
+- Started R01-R08 review-blocker closure on branch `codex/full-trust-hardening-20260711` at `e9d1303`; preserved existing user changes in `data/examples/repair-cases.json` and `tmp/`.
+- R01 closed knowledge revision state gaps: only current approved chunks can be revised, duplicate pending proposals are rejected, stale proposal approval fails with 409, status transitions are explicit, revision review fields sync on approve/reject, and a logical chunk can have only one current approved version.
+- R01 targeted regression passed: `10 passed in 1.11s` across chunk revision audit, approved-only knowledge graph, and evidence pack tests.

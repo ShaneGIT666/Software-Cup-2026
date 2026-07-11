@@ -39,7 +39,7 @@ from .ocr_adapter import analyze_ocr_document
 from .parser_router import parse_document, save_parse_artifacts
 from .provider_policy import configured_llm_provider, key_configured, record_fallback, remote_api_disabled
 from .schemas import KnowledgeChunkReviewRequest, KnowledgeChunkRevisionRequest, KnowledgeChunkStatusRequest
-from .review_policy import is_current_approved_chunk
+from .review_policy import is_current_approved_chunk, normalize_review_status
 from .vector_store import delete_document as delete_vector_document
 from .vector_store import sync_chunks
 
@@ -1177,6 +1177,103 @@ def update_document_review_summary(document: dict[str, Any], chunks: list[dict[s
                 break
 
 
+def chunk_logical_id(chunk: dict[str, Any]) -> str:
+    return str(chunk.get("logical_chunk_id") or chunk.get("id") or "")
+
+
+def find_pending_revision(chunks: list[dict[str, Any]], previous: dict[str, Any]) -> dict[str, Any] | None:
+    logical_chunk_id = chunk_logical_id(previous)
+    previous_id = str(previous.get("id") or "")
+    return next(
+        (
+            chunk
+            for chunk in chunks
+            if chunk_logical_id(chunk) == logical_chunk_id
+            and chunk.get("supersedes") == previous_id
+            and normalize_review_status(chunk.get("review_status")) == "pending_review"
+        ),
+        None,
+    )
+
+
+def current_approved_chunks_for_logical_id(chunks: list[dict[str, Any]], logical_chunk_id: str) -> list[dict[str, Any]]:
+    return [chunk for chunk in chunks if chunk_logical_id(chunk) == logical_chunk_id and is_current_approved_chunk(chunk)]
+
+
+def validate_chunk_transition(
+    previous: dict[str, Any],
+    next_status: str,
+    action: str,
+    replacement_chunk_id: str | None = None,
+) -> None:
+    previous_status = normalize_review_status(previous.get("review_status"))
+    if next_status in {"approved", "rejected"}:
+        if previous_status != "pending_review":
+            raise HTTPException(status_code=409, detail="Only pending review knowledge chunk can be reviewed")
+        return
+    if next_status in {"deprecated", "replaced"}:
+        if not is_current_approved_chunk(previous):
+            raise HTTPException(status_code=409, detail="Only current approved knowledge chunk can be deprecated or replaced")
+        if next_status == "replaced" and not (replacement_chunk_id or "").strip():
+            raise HTTPException(status_code=400, detail="replacementChunkId is required")
+        return
+    if action.startswith("set_") and next_status == "pending_review" and previous_status == "draft":
+        return
+    raise HTTPException(status_code=409, detail="Invalid knowledge chunk status transition")
+
+
+def validate_revision_approval(chunks: list[dict[str, Any]], proposal: dict[str, Any]) -> dict[str, Any]:
+    if normalize_review_status(proposal.get("review_status")) != "pending_review":
+        raise HTTPException(status_code=409, detail="Only pending revision can be approved")
+    superseded_id = str(proposal.get("supersedes") or "")
+    if not superseded_id:
+        return {}
+    superseded = next((chunk for chunk in chunks if chunk.get("id") == superseded_id), None)
+    if superseded is None:
+        raise HTTPException(status_code=409, detail="Superseded knowledge chunk is missing")
+    if superseded.get("documentId") != proposal.get("documentId"):
+        raise HTTPException(status_code=409, detail="Revision supersedes a chunk from a different document")
+    if chunk_logical_id(superseded) != chunk_logical_id(proposal):
+        raise HTTPException(status_code=409, detail="Revision logical chunk mismatch")
+    if not is_current_approved_chunk(superseded):
+        raise HTTPException(status_code=409, detail="Superseded knowledge chunk is no longer current")
+    approved_current = [
+        chunk
+        for chunk in current_approved_chunks_for_logical_id(chunks, chunk_logical_id(proposal))
+        if chunk.get("id") != superseded_id
+    ]
+    if approved_current:
+        raise HTTPException(status_code=409, detail="Another current approved revision already exists")
+    return superseded
+
+
+def sync_revision_review_status(
+    revisions: list[dict[str, Any]],
+    chunk_id: str,
+    status: str,
+    review_time: str,
+    reviewer: str,
+    reason: str,
+    replaced_chunk_id: str | None = None,
+) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
+    synced_revision: dict[str, Any] | None = None
+    updated_revisions: list[dict[str, Any]] = []
+    for revision in revisions:
+        updated = dict(revision)
+        if updated.get("proposedChunkId") == chunk_id or updated.get("chunkId") == chunk_id:
+            updated["status"] = status
+            updated["reviewedAt"] = review_time
+            updated["reviewedBy"] = reviewer
+            updated["reviewNote"] = reason
+            if status == "approved":
+                updated["approvedChunkId"] = chunk_id
+            if replaced_chunk_id:
+                updated["replacedChunkId"] = replaced_chunk_id
+            synced_revision = updated
+        updated_revisions.append(updated)
+    return updated_revisions, synced_revision
+
+
 def transition_knowledge_chunk_status(
     document_id: str,
     chunk_id: str,
@@ -1213,6 +1310,11 @@ def transition_knowledge_chunk_status(
         raise HTTPException(status_code=404, detail="replacement knowledge chunk not found")
 
     previous = dict(chunks[chunk_index])
+    validate_chunk_transition(previous, next_status, action, replacement_chunk_id)
+    superseded_previous: dict[str, Any] | None = None
+    if next_status == "approved" and previous.get("supersedes"):
+        superseded_previous = validate_revision_approval(chunks, previous)
+
     review_time = utc_now()
     reviewer = reviewer.strip() or "operator"
 
@@ -1234,20 +1336,37 @@ def transition_knowledge_chunk_status(
         updated.pop("replaced_by", None)
     chunks[chunk_index] = updated
 
-    superseded_previous: dict[str, Any] | None = None
     if next_status == "approved" and updated.get("supersedes"):
         superseded_id = str(updated["supersedes"])
         superseded_index = next((index for index, chunk in enumerate(chunks) if chunk.get("id") == superseded_id), None)
-        if superseded_index is not None:
-            superseded_previous = dict(chunks[superseded_index])
-            superseded = dict(chunks[superseded_index])
-            superseded["review_status"] = "replaced"
-            superseded["is_current"] = False
-            superseded["replaced_by"] = updated["id"]
-            superseded["updated_at"] = review_time
-            superseded["updatedAt"] = review_time
-            chunks[superseded_index] = superseded
+        if superseded_index is None:
+            raise HTTPException(status_code=409, detail="Superseded knowledge chunk is missing")
+        superseded = dict(chunks[superseded_index])
+        superseded["review_status"] = "replaced"
+        superseded["is_current"] = False
+        superseded["replaced_by"] = updated["id"]
+        superseded["updated_at"] = review_time
+        superseded["updatedAt"] = review_time
+        chunks[superseded_index] = superseded
+
+    revisions = load_knowledge_revisions()
+    synced_revision: dict[str, Any] | None = None
+    if previous.get("supersedes") or any(
+        revision.get("proposedChunkId") == chunk_id or revision.get("chunkId") == chunk_id for revision in revisions
+    ):
+        revisions, synced_revision = sync_revision_review_status(
+            revisions,
+            chunk_id=chunk_id,
+            status=next_status,
+            review_time=review_time,
+            reviewer=reviewer,
+            reason=reason,
+            replaced_chunk_id=str(updated.get("supersedes") or "") or None,
+        )
+
     save_document_chunks(chunks)
+    if synced_revision:
+        save_knowledge_revisions(revisions)
 
     document_chunks = [chunk for chunk in chunks if chunk.get("documentId") == document_id]
     update_document_review_summary(document, document_chunks)
@@ -1278,6 +1397,9 @@ def transition_knowledge_chunk_status(
         event["supersedes"] = updated.get("supersedes")
         event["replacedChunkBefore"] = superseded_previous
         event["replacedChunkAfter"] = next((chunk for chunk in chunks if chunk.get("id") == updated.get("supersedes")), None)
+    if synced_revision:
+        event["revisionId"] = synced_revision.get("id")
+        event["revision"] = synced_revision
     if replacement_chunk_id:
         event["replacementChunkId"] = replacement_chunk_id
     events = load_review_events()
@@ -1342,6 +1464,11 @@ def revise_knowledge_chunk(document_id: str, request: KnowledgeChunkRevisionRequ
         raise HTTPException(status_code=404, detail="knowledge chunk not found")
 
     previous = dict(chunks[chunk_index])
+    if not is_current_approved_chunk(previous):
+        raise HTTPException(status_code=409, detail="Only current approved knowledge chunk can be revised")
+    if find_pending_revision(chunks, previous) is not None:
+        raise HTTPException(status_code=409, detail="A pending revision already exists for this knowledge chunk")
+
     revision_time = utc_now()
     logical_chunk_id = previous.get("logical_chunk_id") or previous.get("id")
     existing_versions = [
