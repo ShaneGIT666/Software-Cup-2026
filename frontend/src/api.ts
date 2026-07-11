@@ -174,9 +174,11 @@ export interface SystemStatusPayload {
   auth?: {
     mode: string;
     enabled: boolean;
+    valid?: boolean;
     operatorConfigured: boolean;
     reviewerConfigured: boolean;
     adminConfigured: boolean;
+    errors?: string[];
   };
   warnings: string[];
 }

@@ -203,12 +203,15 @@ def get_provider_status() -> ApiResponse:
 
 
 @app.post("/api/providers/llm/validate", response_model=ApiResponse)
-def validate_llm(request: LlmValidateRequest) -> ApiResponse:
+def validate_llm(request: LlmValidateRequest, _auth: dict[str, Any] = Depends(require_role("admin"))) -> ApiResponse:
     return ApiResponse(data=validate_llm_provider(request))
 
 
 @app.post("/api/providers/multimodal/validate", response_model=ApiResponse)
-def validate_multimodal(request: MultimodalValidateRequest) -> ApiResponse:
+def validate_multimodal(
+    request: MultimodalValidateRequest,
+    _auth: dict[str, Any] = Depends(require_role("admin")),
+) -> ApiResponse:
     return ApiResponse(data=validate_multimodal_provider(request))
 
 
@@ -377,12 +380,18 @@ def rag_answer(request: RagAnswerRequest) -> ApiResponse:
 
 
 @app.post("/api/rag/feedback", response_model=ApiResponse)
-def create_feedback(request: RagFeedbackCreateRequest) -> ApiResponse:
+def create_feedback(
+    request: RagFeedbackCreateRequest,
+    _auth: dict[str, Any] = Depends(require_role("operator")),
+) -> ApiResponse:
     return ApiResponse(data=create_rag_feedback(request), message="回答修正已提交，等待审核")
 
 
 @app.get("/api/rag/feedback", response_model=ApiResponse)
-def get_rag_feedback(status: str | None = None) -> ApiResponse:
+def get_rag_feedback(
+    status: str | None = None,
+    _auth: dict[str, Any] = Depends(require_role("reviewer")),
+) -> ApiResponse:
     return ApiResponse(data=list_rag_feedback(status))
 
 
@@ -416,7 +425,10 @@ def get_workflow(workflow_id: str) -> ApiResponse:
 
 
 @app.post("/api/cases", response_model=ApiResponse)
-def create_case(request: CaseCreateRequest) -> ApiResponse:
+def create_case(
+    request: CaseCreateRequest,
+    _auth: dict[str, Any] = Depends(require_role("operator")),
+) -> ApiResponse:
     return ApiResponse(
         data=create_repair_case(request),
         message="案例已提交，等待审核",
@@ -424,7 +436,10 @@ def create_case(request: CaseCreateRequest) -> ApiResponse:
 
 
 @app.get("/api/cases", response_model=ApiResponse)
-def list_cases(status: str | None = None) -> ApiResponse:
+def list_cases(
+    status: str | None = None,
+    _auth: dict[str, Any] = Depends(require_role("reviewer")),
+) -> ApiResponse:
     return ApiResponse(data=list_repair_cases(status))
 
 
@@ -438,7 +453,11 @@ def review_case(
 
 
 @app.get("/api/review/items", response_model=ApiResponse)
-def get_review_items(status: str = "pending_review", item_type: str = "all") -> ApiResponse:
+def get_review_items(
+    status: str = "pending_review",
+    item_type: str = "all",
+    _auth: dict[str, Any] = Depends(require_role("reviewer")),
+) -> ApiResponse:
     return ApiResponse(data=list_review_items(status, item_type))
 
 
@@ -448,12 +467,16 @@ def get_review_events(
     object_id: str | None = None,
     action: str | None = None,
     limit: int = 100,
+    _auth: dict[str, Any] = Depends(require_role("reviewer")),
 ) -> ApiResponse:
     return ApiResponse(data=list_review_events(object_type, object_id, action, limit))
 
 
 @app.post("/api/uploads", response_model=ApiResponse)
-async def upload_file(file: UploadFile = File(...)) -> ApiResponse:
+async def upload_file(
+    file: UploadFile = File(...),
+    _auth: dict[str, Any] = Depends(require_role("operator")),
+) -> ApiResponse:
     suffix = Path(file.filename or "").suffix.lower().lstrip(".")
     if not suffix or suffix not in ALLOWED_UPLOAD_TYPES:
         logger.warning("Rejected upload with unsupported extension: %s", file.filename)
@@ -497,7 +520,7 @@ async def upload_knowledge_document(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     source_name: str | None = Form(default=None),
-    _auth: dict[str, Any] = Depends(require_role("admin")),
+    _auth: dict[str, Any] = Depends(require_role("operator")),
 ) -> ApiResponse:
     document = await ingest_knowledge_document(file, source_name)
     if should_enqueue_asset_analysis(document):
@@ -513,7 +536,7 @@ async def upload_knowledge_document_async(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     source_name: str | None = Form(default=None),
-    _auth: dict[str, Any] = Depends(require_role("admin")),
+    _auth: dict[str, Any] = Depends(require_role("operator")),
 ) -> ApiResponse:
     task = await create_knowledge_parse_task(file, source_name)
     background_tasks.add_task(process_knowledge_parse_task, task["id"])
@@ -521,32 +544,47 @@ async def upload_knowledge_document_async(
 
 
 @app.get("/api/knowledge/documents", response_model=ApiResponse)
-def get_knowledge_documents() -> ApiResponse:
+def get_knowledge_documents(_auth: dict[str, Any] = Depends(require_role("reviewer"))) -> ApiResponse:
     return ApiResponse(data=list_knowledge_documents())
 
 
 @app.get("/api/knowledge/parse-tasks", response_model=ApiResponse)
-def get_knowledge_parse_tasks(status: str | None = None) -> ApiResponse:
+def get_knowledge_parse_tasks(
+    status: str | None = None,
+    _auth: dict[str, Any] = Depends(require_role("reviewer")),
+) -> ApiResponse:
     return ApiResponse(data=list_knowledge_parse_tasks(status))
 
 
 @app.get("/api/knowledge/parse-tasks/{task_id}", response_model=ApiResponse)
-def get_knowledge_parse_task_detail(task_id: str) -> ApiResponse:
+def get_knowledge_parse_task_detail(
+    task_id: str,
+    _auth: dict[str, Any] = Depends(require_role("reviewer")),
+) -> ApiResponse:
     return ApiResponse(data=get_knowledge_parse_task(task_id))
 
 
 @app.get("/api/knowledge/documents/{document_id}", response_model=ApiResponse)
-def get_knowledge_document_detail(document_id: str) -> ApiResponse:
+def get_knowledge_document_detail(
+    document_id: str,
+    _auth: dict[str, Any] = Depends(require_role("reviewer")),
+) -> ApiResponse:
     return ApiResponse(data=get_knowledge_document(document_id))
 
 
 @app.get("/api/knowledge/documents/{document_id}/chunks", response_model=ApiResponse)
-def get_knowledge_document_chunks(document_id: str) -> ApiResponse:
+def get_knowledge_document_chunks(
+    document_id: str,
+    _auth: dict[str, Any] = Depends(require_role("reviewer")),
+) -> ApiResponse:
     return ApiResponse(data=list_knowledge_document_chunks(document_id))
 
 
 @app.get("/api/knowledge/documents/{document_id}/revisions", response_model=ApiResponse)
-def get_knowledge_document_revisions(document_id: str) -> ApiResponse:
+def get_knowledge_document_revisions(
+    document_id: str,
+    _auth: dict[str, Any] = Depends(require_role("reviewer")),
+) -> ApiResponse:
     return ApiResponse(data=list_knowledge_revisions(document_id))
 
 
@@ -582,7 +620,11 @@ def update_document_chunk_status(
 
 
 @app.post("/api/knowledge/documents/{document_id}/analyze", response_model=ApiResponse)
-def analyze_document(document_id: str, request: MultimodalAnalyzeRequest | None = None) -> ApiResponse:
+def analyze_document(
+    document_id: str,
+    request: MultimodalAnalyzeRequest | None = None,
+    _auth: dict[str, Any] = Depends(require_role("admin")),
+) -> ApiResponse:
     provider = request.provider if request else None
     return ApiResponse(data=analyze_knowledge_document(document_id, provider), message="资料多模态分析完成")
 

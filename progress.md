@@ -89,3 +89,6 @@
 - R03 completed repair case metadata and workflow selection: `component` and `faultCode` are accepted, stored, and returned in approved case search results; explicit workflow IDs are validated for existence and device compatibility; no reliable match now stores `workflowId=null` with `workflowSelectionReason=no_reliable_match` instead of falling back to the first workflow.
 - R03 frontend case submission now supports device type, component, fault code, risk level, maintenance level, and optional workflow ID.
 - R03 validation passed: backend `120 passed in 14.32s`; frontend build passed in `5.34s` with existing Vite/Rollup warnings.
+- R04 completed the role-based API authorization matrix: token mode now rejects unsupported `AUTH_MODE`, invalid `AUTH_TOKEN_ROLE`, duplicate cross-role tokens, and missing admin token; operator submission routes, reviewer review/list routes, and admin validation/maintenance routes are explicitly protected.
+- R04 status reporting exposes auth booleans and redacted configuration errors without token material.
+- R04 backend validation passed: `105 passed in 14.37s`.

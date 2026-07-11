@@ -1009,9 +1009,10 @@ def test_search_returns_case_component_and_fault_code_metadata(tmp_path, monkeyp
     assert case_result["faultCode"] == "P0300"
 
 
-def create_pending_case(client: TestClient) -> dict[str, Any]:
+def create_pending_case(client: TestClient, headers: dict[str, str] | None = None) -> dict[str, Any]:
     response = client.post(
         "/api/cases",
+        headers=headers or {},
         json={
             "deviceModel": "发动机-示例型号 A",
             "faultText": "review pending fixture",
@@ -1089,7 +1090,7 @@ def test_token_auth_protects_review_and_admin_routes(tmp_path, monkeypatch) -> N
     monkeypatch.setenv("AUTH_REVIEWER_TOKEN", "review-token")
     monkeypatch.setenv("AUTH_ADMIN_TOKEN", "admin-token")
     client = make_client(tmp_path, monkeypatch)
-    pending_case = create_pending_case(client)
+    pending_case = create_pending_case(client, headers={"Authorization": "Bearer operator-token"})
 
     missing = client.patch(
         f"/api/cases/{pending_case['id']}/review",
@@ -1144,16 +1145,49 @@ def test_token_auth_role_matrix_and_status_visibility(tmp_path, monkeypatch) -> 
     monkeypatch.setenv("AUTH_REVIEWER_TOKEN", "review-token")
     monkeypatch.setenv("AUTH_ADMIN_TOKEN", "admin-token")
     client = make_client(tmp_path, monkeypatch)
-    pending_case = create_pending_case(client)
+    operator_headers = {"Authorization": "Bearer operator-token"}
+    reviewer_headers = {"Authorization": "Bearer review-token"}
+    admin_headers = {"Authorization": "Bearer admin-token"}
+    pending_case = create_pending_case(client, headers=operator_headers)
     save_pending_review_chunk()
 
-    # Public read and submission paths remain available by design.
+    # Public read paths remain available by design.
     assert client.post("/api/search", json={"faultText": "review pending fixture"}).status_code == 200
     assert client.post(
         "/api/rag/answer",
         json={"deviceModel": "engine", "faultText": "review pending fixture", "provider": "mock"},
     ).status_code == 200
-    assert create_pending_case(client)["status"] == "pending_review"
+    assert client.post("/api/cases", json={
+        "deviceModel": "engine",
+        "faultText": "protected submit",
+        "cause": "cause",
+        "solution": "solution",
+        "result": "result",
+        "tags": ["protected"],
+    }).status_code == 401
+    assert create_pending_case(client, headers=operator_headers)["status"] == "pending_review"
+    assert client.get("/api/review/items", headers=operator_headers).status_code == 403
+    assert client.get("/api/review/items", headers=reviewer_headers).status_code == 200
+    assert client.get("/api/review/events", headers=reviewer_headers).status_code == 200
+    assert client.get("/api/knowledge/documents", headers=operator_headers).status_code == 403
+    assert client.get("/api/knowledge/documents", headers=reviewer_headers).status_code == 200
+    assert client.get("/api/knowledge/documents/kdoc-review-001", headers=reviewer_headers).status_code == 200
+    assert client.post("/api/rag/feedback", json={
+        "deviceModel": "engine",
+        "faultText": "feedback",
+        "maintenanceLevel": "normal_repair",
+        "originalAnswer": "original answer",
+    }).status_code == 401
+    assert client.post("/api/rag/feedback", headers=operator_headers, json={
+        "deviceModel": "engine",
+        "faultText": "feedback",
+        "maintenanceLevel": "normal_repair",
+        "originalAnswer": "original answer",
+        "reason": "operator feedback",
+    }).status_code == 200
+    assert client.post("/api/providers/llm/validate", headers=reviewer_headers, json={}).status_code == 403
+    assert client.post("/api/providers/llm/validate", headers=admin_headers, json={}).status_code == 200
+    assert client.post("/api/knowledge/documents/kdoc-review-001/analyze", headers=reviewer_headers, json={}).status_code == 403
 
     matrix = [
         ("case reviewer denied anonymous", "PATCH", f"/api/cases/{pending_case['id']}/review", None, 401),
@@ -1202,13 +1236,13 @@ def test_token_auth_role_matrix_and_status_visibility(tmp_path, monkeypatch) -> 
 
     status = client.get("/api/providers/status").json()["data"]
     auth = status["system"]["auth"]
-    assert auth == {
-        "mode": "token",
-        "enabled": True,
-        "operatorConfigured": True,
-        "reviewerConfigured": True,
-        "adminConfigured": True,
-    }
+    assert auth["mode"] == "token"
+    assert auth["enabled"] is True
+    assert auth["valid"] is True
+    assert auth["operatorConfigured"] is True
+    assert auth["reviewerConfigured"] is True
+    assert auth["adminConfigured"] is True
+    assert auth["errors"] == []
     assert "operator-token" not in str(status)
     assert "review-token" not in str(status)
     assert "admin-token" not in str(status)
@@ -1223,6 +1257,43 @@ def test_auth_mode_off_is_explicit_in_status(tmp_path, monkeypatch) -> None:
     assert status["system"]["auth"]["mode"] == "off"
     assert status["system"]["auth"]["enabled"] is False
     assert any("AUTH_MODE=off" in item for item in status["system"]["warnings"])
+
+
+def test_token_auth_rejects_invalid_configuration(tmp_path, monkeypatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+
+    monkeypatch.setenv("AUTH_MODE", "dev")
+    response = client.get("/api/review/items")
+    assert response.status_code == 500
+    assert "Unsupported AUTH_MODE" in response.json()["message"]
+
+    monkeypatch.setenv("AUTH_MODE", "token")
+    monkeypatch.setenv("AUTH_TOKEN", "generic-token")
+    monkeypatch.setenv("AUTH_TOKEN_ROLE", "superuser")
+    response = client.get("/api/review/items", headers={"Authorization": "Bearer generic-token"})
+    assert response.status_code == 500
+    assert "AUTH_TOKEN_ROLE" in response.json()["message"]
+
+
+def test_token_auth_rejects_duplicate_tokens_and_missing_admin(tmp_path, monkeypatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+
+    monkeypatch.setenv("AUTH_MODE", "token")
+    monkeypatch.delenv("AUTH_TOKEN", raising=False)
+    monkeypatch.delenv("AUTH_TOKEN_ROLE", raising=False)
+    monkeypatch.setenv("AUTH_OPERATOR_TOKEN", "same-token")
+    monkeypatch.setenv("AUTH_REVIEWER_TOKEN", "same-token")
+    monkeypatch.setenv("AUTH_ADMIN_TOKEN", "admin-token")
+    duplicate = client.get("/api/review/items", headers={"Authorization": "Bearer same-token"})
+    assert duplicate.status_code == 500
+    assert "unique across roles" in duplicate.json()["message"]
+
+    monkeypatch.setenv("AUTH_OPERATOR_TOKEN", "operator-token")
+    monkeypatch.setenv("AUTH_REVIEWER_TOKEN", "review-token")
+    monkeypatch.delenv("AUTH_ADMIN_TOKEN", raising=False)
+    missing_admin = client.get("/api/review/items", headers={"Authorization": "Bearer review-token"})
+    assert missing_admin.status_code == 500
+    assert "requires an admin token" in missing_admin.json()["message"]
 
 
 def test_knowledge_directory_is_not_public_static_mount(tmp_path, monkeypatch) -> None:

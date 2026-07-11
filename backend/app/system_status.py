@@ -323,12 +323,16 @@ def build_system_status() -> dict[str, Any]:
     if auth["mode"] == "off":
         warnings.append("AUTH_MODE=off; reviewer/admin API protection is explicitly disabled for offline demo mode.")
     elif auth["mode"] == "token":
+        if not auth["operatorConfigured"]:
+            warnings.append("AUTH_MODE=token but AUTH_OPERATOR_TOKEN is not configured.")
         if not auth["reviewerConfigured"]:
             warnings.append("AUTH_MODE=token but AUTH_REVIEWER_TOKEN is not configured.")
         if not auth["adminConfigured"]:
             warnings.append("AUTH_MODE=token but AUTH_ADMIN_TOKEN is not configured.")
     else:
         warnings.append(f"Unsupported AUTH_MODE={auth['mode']}; protected APIs will reject requests.")
+    for error in auth.get("errors", []):
+        warnings.append(f"Auth configuration error: {error}")
     seed_data = safe_seed_data(warnings)
     documents = safe_load_list(load_documents, "knowledge documents", warnings)
     chunks = safe_load_list(load_document_chunks, "knowledge chunks", warnings)
