@@ -21,6 +21,7 @@ def make_hit(
     vector_score: float | None = None,
     qdrant_score: float | None = None,
     fusion_score: float | None = None,
+    rerank_score: float | None = None,
     review_status: str | None = "approved",
     matched_terms: list[str] | None = None,
     matched_fields: list[str] | None = None,
@@ -46,6 +47,7 @@ def make_hit(
         vector_score=vector_score,
         qdrant_score=qdrant_score,
         fusion_score=fusion_score,
+        rerank_score=rerank_score,
         review_status=review_status,
         matched_fields=matched_fields or [],
     )
@@ -53,6 +55,7 @@ def make_hit(
 
 def make_context() -> QueryContext:
     return QueryContext(
+        device_type="engine",
         device_model="发动机-示例型号 A",
         fault_text="启动困难",
         top_k=5,
@@ -180,17 +183,77 @@ def test_candidate_pool_expands_before_heuristic_rerank(monkeypatch) -> None:
     assert response["results"][0]["scoreBreakdown"]["requestedTopK"] == 3
 
 
-def test_final_results_preserve_approved_case_coverage() -> None:
-    hits = [
-        make_hit(f"doc-{index}", source_type="document", fusion_score=0.04 - index * 0.001)
-        for index in range(5)
-    ]
-    case_hit = make_hit("case-1", source_type="case", fusion_score=0.01, keyword_score=18)
+def test_source_diversity_promotes_strong_approved_case() -> None:
+    hits = [make_hit(f"doc-{index}", source_type="document", fusion_score=0.04 - index * 0.001) for index in range(5)]
+    case_hit = make_hit(
+        "case-1",
+        source_type="case",
+        fusion_score=0.030,
+        keyword_rank=3,
+        keyword_score=18,
+        matched_terms=["hard-start"],
+    )
 
-    final_hits = pipeline.preserve_case_coverage([*hits, case_hit], top_k=5)
+    final_hits = pipeline.apply_source_diversity_policy(make_context(), [*hits, case_hit], top_k=5)
 
     assert [hit.id for hit in final_hits] == ["doc-0", "doc-1", "doc-2", "doc-3", "case-1"]
-    assert case_hit.score_breakdown["coveragePromotion"] == "approved_case"
+    assert case_hit.score_breakdown["sourceDiversityPromotion"] is True
+    assert case_hit.score_breakdown["sourceDiversityReason"] == "strong_approved_case"
+    assert case_hit.score_breakdown["originalRank"] == 6
+    assert case_hit.score_breakdown["replacedFinalRank"] == 5
+
+
+def test_source_diversity_does_not_promote_weak_vector_only_case() -> None:
+    hits = [make_hit(f"doc-{index}", source_type="document", fusion_score=0.04 - index * 0.001) for index in range(5)]
+    weak_case = make_hit("case-weak", source_type="case", fusion_score=0.033, vector_rank=1, matched_terms=[])
+
+    final_hits = pipeline.apply_source_diversity_policy(make_context(), [*hits, weak_case], top_k=5)
+
+    assert [hit.id for hit in final_hits] == ["doc-0", "doc-1", "doc-2", "doc-3", "doc-4"]
+    assert "sourceDiversityPromotion" not in weak_case.score_breakdown
+
+
+def test_source_diversity_does_not_replace_with_low_scoring_case() -> None:
+    hits = [make_hit(f"doc-{index}", source_type="document", fusion_score=0.04 - index * 0.001) for index in range(5)]
+    low_case = make_hit(
+        "case-low",
+        source_type="case",
+        fusion_score=0.001,
+        keyword_rank=4,
+        matched_terms=["hard-start"],
+    )
+
+    final_hits = pipeline.apply_source_diversity_policy(make_context(), [*hits, low_case], top_k=5)
+
+    assert [hit.id for hit in final_hits] == ["doc-0", "doc-1", "doc-2", "doc-3", "doc-4"]
+
+
+def test_source_diversity_skips_small_top_k() -> None:
+    hits = [
+        make_hit("doc-1", source_type="document", fusion_score=0.04),
+        make_hit("doc-2", source_type="document", fusion_score=0.03),
+        make_hit("case-1", source_type="case", fusion_score=0.029, keyword_rank=1, matched_terms=["hard-start"]),
+    ]
+
+    final_hits = pipeline.apply_source_diversity_policy(make_context(), hits, top_k=2)
+
+    assert [hit.id for hit in final_hits] == ["doc-1", "doc-2"]
+
+
+def test_source_diversity_skips_when_case_already_present() -> None:
+    hits = [
+        make_hit("doc-1", source_type="document", fusion_score=0.05),
+        make_hit("case-present", source_type="case", fusion_score=0.04, keyword_rank=1, matched_terms=["hard-start"]),
+        make_hit("doc-2", source_type="document", fusion_score=0.03),
+        make_hit("doc-3", source_type="document", fusion_score=0.02),
+        make_hit("doc-4", source_type="document", fusion_score=0.01),
+        make_hit("case-extra", source_type="case", fusion_score=0.03, keyword_rank=2, matched_terms=["hard-start"]),
+    ]
+
+    final_hits = pipeline.apply_source_diversity_policy(make_context(), hits, top_k=5)
+
+    assert [hit.id for hit in final_hits] == ["doc-1", "case-present", "doc-2", "doc-3", "doc-4"]
+    assert "sourceDiversityPromotion" not in hits[-1].score_breakdown
 
 
 def test_reranker_none_preserves_rrf_order(monkeypatch) -> None:

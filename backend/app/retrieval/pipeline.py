@@ -5,6 +5,7 @@ from uuid import uuid4
 
 from fastapi import HTTPException
 
+from ..review_policy import normalize_review_status
 from ..schemas import SearchRequest
 from .filters import apply_metadata_filter
 from .fusion import fuse_hits_rrf
@@ -54,6 +55,7 @@ def build_query_context(request: SearchRequest) -> QueryContext:
         top_k=requested_top_k,
         query_tokens=query_tokens,
         vector_query=" ".join([request.deviceModel, request.faultText]).strip(),
+        device_type=request.deviceType.strip(),
         metadata_filters={"device_model": request.deviceModel.strip()},
         requested_top_k=requested_top_k,
         candidate_k=candidate_k,
@@ -85,16 +87,71 @@ def merge_results(keyword_hits: list[RetrievalHit], vector_hits: list[RetrievalH
     return fuse_hits_rrf(keyword_hits, vector_hits, candidate_k)
 
 
-def preserve_case_coverage(hits: list[RetrievalHit], top_k: int) -> list[RetrievalHit]:
+def comparable_score(hit: RetrievalHit) -> float:
+    if hit.rerank_score is not None:
+        return hit.rerank_score
+    if hit.fusion_score is not None:
+        return hit.fusion_score
+    return 0.0
+
+
+def exact_match(expected: str, actual: str | None) -> bool:
+    return bool(expected and actual and expected.strip().lower() == actual.strip().lower())
+
+
+def is_strong_approved_case(context: QueryContext, hit: RetrievalHit) -> bool:
+    if hit.source_type != "case":
+        return False
+    if normalize_review_status(hit.review_status) != "approved":
+        return False
+    if not hit.matched_terms:
+        return False
+    if context.device_model and hit.device_model and not exact_match(context.device_model, hit.device_model):
+        return False
+    if context.device_type and hit.device_type and not exact_match(context.device_type, hit.device_type):
+        return False
+    return bool(
+        hit.keyword_rank is not None
+        or hit.rerank_score is not None
+        or exact_match(context.device_model, hit.device_model)
+        or exact_match(context.device_type, hit.device_type)
+    )
+
+
+def can_promote_case(context: QueryContext, case_hit: RetrievalHit, last_hit: RetrievalHit) -> bool:
+    if not is_strong_approved_case(context, case_hit):
+        return False
+    case_score = comparable_score(case_hit)
+    last_score = comparable_score(last_hit)
+    if last_score <= 0:
+        return case_hit.keyword_rank is not None and bool(case_hit.matched_terms)
+    return case_score >= last_score * 0.8
+
+
+def apply_source_diversity_policy(context: QueryContext, hits: list[RetrievalHit], top_k: int) -> list[RetrievalHit]:
     final_hits = hits[:top_k]
     if top_k < 3 or any(hit.source_type == "case" for hit in final_hits):
         return final_hits
 
-    best_case = next((hit for hit in hits[top_k:] if hit.source_type == "case"), None)
+    best_case_entry = next(
+        (
+            (index, hit)
+            for index, hit in enumerate(hits[top_k:], start=top_k + 1)
+            if can_promote_case(context, hit, final_hits[-1])
+        ),
+        None,
+    )
+    if best_case_entry is None:
+        return final_hits
+
+    original_rank, best_case = best_case_entry
     if best_case is None:
         return final_hits
 
-    best_case.score_breakdown["coveragePromotion"] = "approved_case"
+    best_case.score_breakdown["sourceDiversityPromotion"] = True
+    best_case.score_breakdown["sourceDiversityReason"] = "strong_approved_case"
+    best_case.score_breakdown["originalRank"] = original_rank
+    best_case.score_breakdown["replacedFinalRank"] = top_k
     return [*final_hits[:-1], best_case]
 
 
@@ -110,7 +167,7 @@ def search_knowledge(request: SearchRequest) -> dict[str, object]:
     fused_hits = merge_results(keyword_hits, vector_hits, candidate_k)
     reranked_hits = rerank_hits(context, fused_hits)
     candidate_pool_count = len(reranked_hits)
-    final_hits = preserve_case_coverage(reranked_hits, requested_top_k)
+    final_hits = apply_source_diversity_policy(context, reranked_hits, requested_top_k)
     for final_rank, hit in enumerate(final_hits, start=1):
         hit.score_breakdown["finalRank"] = final_rank
         hit.score_breakdown["candidatePoolSize"] = candidate_pool_count

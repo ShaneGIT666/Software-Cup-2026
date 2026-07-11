@@ -84,3 +84,5 @@
 - Started R01-R08 review-blocker closure on branch `codex/full-trust-hardening-20260711` at `e9d1303`; preserved existing user changes in `data/examples/repair-cases.json` and `tmp/`.
 - R01 closed knowledge revision state gaps: only current approved chunks can be revised, duplicate pending proposals are rejected, stale proposal approval fails with 409, status transitions are explicit, revision review fields sync on approve/reject, and a logical chunk can have only one current approved version.
 - R01 targeted regression passed: `10 passed in 1.11s` across chunk revision audit, approved-only knowledge graph, and evidence pack tests.
+- R02 replaced broad case coverage promotion with an explicit source diversity policy: only approved, strong keyword/matched-term cases with comparable rerank/fusion score can replace the final topK item; weak vector-only, low-score, small-topK, and already-covered cases are not promoted.
+- R02 targeted retrieval regression passed: `17 passed in 0.41s`.

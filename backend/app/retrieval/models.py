@@ -11,6 +11,7 @@ class QueryContext:
     top_k: int
     query_tokens: list[str]
     vector_query: str
+    device_type: str = ""
     metadata_filters: dict[str, str] = field(default_factory=dict)
     requested_top_k: int | None = None
     candidate_k: int | None = None
