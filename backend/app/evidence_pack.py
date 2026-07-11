@@ -41,7 +41,7 @@ class EvidenceItem(BaseModel):
     snippet: str
     reason: str = ""
     confidence: float = 0
-    reviewStatus: str = "approved"
+    reviewStatus: str = "unknown"
     riskLevel: str = "unknown"
     score: float | int | None = None
     retrievalSource: str | None = None
@@ -124,7 +124,7 @@ def build_evidence_pack(results: list[dict[str, Any]]) -> dict[str, Any]:
                 snippet=str(result.get("snippet", "")),
                 reason=str(result.get("reason", "")),
                 confidence=float(result.get("confidence") or 0),
-                reviewStatus=str(result.get("reviewStatus") or "approved"),
+                reviewStatus=str(result.get("reviewStatus") or "unknown"),
                 riskLevel=_risk_level(result),
                 score=score_breakdown.get("score"),
                 retrievalSource=result.get("retrievalSource") or score_breakdown.get("retrievalSource"),
@@ -206,6 +206,7 @@ def build_structured_rag_output(
         )
         return dump_model(output)
 
+    approved_only = bool(evidence_pack.get("approvedOnly", False))
     top_labels = "、".join(_evidence_label(item) for item in items[:3])
     preliminary = (
         f"已检索到 {len(items)} 条 approved 证据，当前判断仅限于 {device_model or '未指明设备'} "
@@ -218,8 +219,11 @@ def build_structured_rag_output(
     repair_steps = [
         f"若现场现象与 {_evidence_label(item)} 一致，仅按该来源资料支持的内容执行处理并记录结果。"
         for item in items[:2]
-    ]
-    if risk_review_required:
+    ] if approved_only else []
+    if not approved_only:
+        risk_review_required = True
+        safety_warnings = ["证据包存在非 approved 片段，不得生成具体维修步骤，必须先完成人工审核。"]
+    elif risk_review_required:
         safety_warnings = ["证据包包含 high/critical 风险等级，执行前必须人工复核。"]
     else:
         safety_warnings = ["证据包未标记 high/critical 风险；涉及断电、拆装、高温或旋转部件时仍需按现场安全规程复核。"]

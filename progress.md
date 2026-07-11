@@ -97,3 +97,5 @@
 - R05 validation passed: backend `106 passed in 14.41s`; frontend build passed in `5.48s` with existing Vite/Rollup warnings.
 - R06 removed frontend build-time API token configuration, switched browser credentials to `sessionStorage.softwareCupAuthToken`, exported token session helpers and `ApiRequestError`, and added a status-page token save/clear UI that never displays the token value.
 - R06 validation passed: frontend build passed in `5.29s`; build artifact scan for `VITE_API_AUTH_TOKEN|operator-token|review-token|admin-token` returned no matches.
+- R07 enforced grounded RAG answer semantics: no-evidence LLM fallback now defaults to disabled, citations and evidence default missing review state to `unknown`, non-approved evidence is fail-closed with no repair steps, and final answer metadata now distinguishes `rawAnswer`, `answer`, `llmAnswerUsed`, `llmCandidateAccepted`, `finalAnswerSource`, and `answerMode`.
+- R07 validation passed: backend RAG/evidence/corrective/safety regression `119 passed in 12.04s`.

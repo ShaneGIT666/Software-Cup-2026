@@ -4,12 +4,39 @@ import time
 from typing import Any
 
 from .corrective_rag import apply_corrective_rag, assess_corrective_rag
+from .evidence_pack import format_structured_answer
 from .knowledge_graph import build_knowledge_graph
 from .llm_adapter import generate_rag_answer, real_rag_answer
 from .provider_policy import configured_llm_provider, remote_api_disabled
 from .safety_rules import apply_safety_rules, evaluate_safety_rules
 from .schemas import DiagnosisRequest, LlmValidateRequest, RagAnswerRequest, SearchRequest
 from .services import search_knowledge
+
+
+def finalize_rag_answer_semantics(payload: dict[str, Any]) -> dict[str, Any]:
+    updated = dict(payload)
+    evidence_pack = updated.get("evidencePack") or {}
+    raw_answer = str(updated.get("rawAnswer") or "").strip()
+    final_answer = str(updated.get("answer") or "").strip()
+    answer_mode = (
+        "grounded"
+        if evidence_pack.get("evidenceCount", 0) and evidence_pack.get("approvedOnly", False)
+        else "insufficient_evidence"
+    )
+    raw_answer_used = bool(raw_answer and final_answer == raw_answer and updated.get("llmAnswerUsed"))
+    updated["llmCandidateAccepted"] = raw_answer_used
+    updated["llmAnswerUsed"] = raw_answer_used
+    updated["finalAnswerSource"] = "validated_llm" if raw_answer_used else "template"
+    updated["answerMode"] = answer_mode
+    if answer_mode == "insufficient_evidence":
+        structured = dict(updated.get("structuredAnswer") or {})
+        structured["repairSteps"] = []
+        structured["riskReviewRequired"] = True
+        updated["structuredAnswer"] = structured
+        updated["recommendedActions"] = structured.get("inspectionSteps", [])
+        updated["riskReviewRequired"] = True
+        updated["answer"] = format_structured_answer(structured)
+    return updated
 
 
 def compact_graph_context(graph: dict[str, Any] | None, limit: int = 8) -> dict[str, Any]:
@@ -77,6 +104,7 @@ def answer_with_rag(request: RagAnswerRequest) -> dict[str, Any]:
         rag_payload.get("structuredAnswer", {}),
     )
     rag_payload = apply_safety_rules(rag_payload, safety_report)
+    rag_payload = finalize_rag_answer_semantics(rag_payload)
     return {
         "queryId": search_payload["queryId"],
         "summary": search_payload["summary"],
@@ -116,6 +144,7 @@ def diagnose_with_rag(request: DiagnosisRequest) -> dict[str, Any]:
         rag_payload.get("structuredAnswer", {}),
     )
     rag_payload = apply_safety_rules(rag_payload, safety_report)
+    rag_payload = finalize_rag_answer_semantics(rag_payload)
     citations = rag_payload.get("citations", [])
     selected_citations = [
         item for item in citations if not request.evidenceIds or item.get("id") in request.evidenceIds

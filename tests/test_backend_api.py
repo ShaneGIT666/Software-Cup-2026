@@ -460,9 +460,54 @@ def test_rag_answer_uses_structured_real_llm_answer_when_compliant(tmp_path, mon
     assert payload["rawAnswer"] == structured_answer
     assert payload["answer"] != payload["rawAnswer"]
     assert "【初步判断】" in payload["answer"]
-    assert payload["llmAnswerUsed"] is True
+    assert payload["llmAnswerUsed"] is False
+    assert payload["llmCandidateAccepted"] is False
+    assert payload["finalAnswerSource"] == "template"
+    assert payload["answerMode"] == "grounded"
     assert payload["llmAnswerMode"] == "structured_evidence_answer"
     assert "llmAnswerPreservedAfterRules" not in payload
+
+
+def test_rag_answer_rejects_no_evidence_llm_fallback_by_default(tmp_path, monkeypatch) -> None:
+    structured_answer = (
+        "【初步判断】\n模型尝试给出无证据建议。\n\n"
+        "【检修等级说明】\n一般检修。\n\n"
+        "【作业前准备】\n1. 准备工具。\n\n"
+        "【建议检查步骤】\n1. 检查。\n\n"
+        "【建议维修步骤】\n1. 不应采用。\n\n"
+        "【作业中风险控制】\n1. 注意安全。\n\n"
+        "【合规校验提醒】\n1. 复核。\n\n"
+        "【安全提醒】\n1. 断电。\n\n"
+        "【验收标准】\n1. 验收。\n\n"
+        "【引用证据】\n暂无。\n\n"
+        "【不确定信息】\n1. 无证据。"
+    )
+
+    def fake_post_json(url: str, headers: dict[str, str], payload: dict[str, Any], timeout: float) -> dict[str, Any]:
+        return {"choices": [{"message": {"content": structured_answer}}]}
+
+    monkeypatch.setenv("OPENAI_API_KEY", "compatible-key")
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://compatible-provider.test/v1")
+    monkeypatch.setenv("OPENAI_MODEL", "compatible-model")
+    monkeypatch.setenv("OPENAI_API_STYLE", "chat_completions")
+    monkeypatch.delenv("RAG_ALLOW_LLM_NO_EVIDENCE_FALLBACK", raising=False)
+    monkeypatch.setattr(llm_adapter, "_post_json", fake_post_json)
+    client = make_client(tmp_path, monkeypatch)
+
+    response = client.post(
+        "/api/rag/answer",
+        json={"deviceModel": "NO-EVIDENCE-DEVICE", "faultText": "NO-EVIDENCE-FAULT", "topK": 2, "provider": "openai"},
+    )
+
+    payload = response.json()["data"]
+    assert response.status_code == 200
+    assert payload["rawAnswer"] == structured_answer
+    assert payload["llmAnswerUsed"] is False
+    assert payload["llmCandidateAccepted"] is False
+    assert payload["finalAnswerSource"] == "template"
+    assert payload["answerMode"] == "insufficient_evidence"
+    assert payload["structuredAnswer"]["repairSteps"] == []
+    assert payload["recommendedActions"] == payload["structuredAnswer"]["inspectionSteps"]
 
 
 def test_rag_answer_uses_openai_compatible_chat_completions(tmp_path, monkeypatch) -> None:

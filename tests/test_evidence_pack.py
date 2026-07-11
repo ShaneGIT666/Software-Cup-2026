@@ -55,6 +55,7 @@ def test_high_risk_evidence_requires_manual_review() -> None:
                 "sourceId": "manual-001",
                 "snippet": "高压系统维修前需复核。",
                 "confidence": 0.9,
+                "reviewStatus": "approved",
                 "scoreBreakdown": {"score": 20, "riskLevel": "critical"},
             }
         ]
@@ -64,3 +65,26 @@ def test_high_risk_evidence_requires_manual_review() -> None:
     assert pack["riskReviewRequired"] is True
     assert structured["riskReviewRequired"] is True
     assert any("人工复核" in item for item in structured["safetyWarnings"])
+
+
+def test_missing_review_status_is_not_treated_as_approved() -> None:
+    pack = build_evidence_pack(
+        [
+            {
+                "id": "doc-unknown",
+                "title": "unknown review",
+                "sourceType": "document",
+                "sourceName": "unreviewed",
+                "documentId": "doc-unknown",
+                "chunkId": "chunk-unknown",
+                "snippet": "unreviewed content",
+                "confidence": 0.8,
+            }
+        ]
+    )
+    structured = build_structured_rag_output("device", "fault", pack)
+
+    assert pack["approvedOnly"] is False
+    assert pack["items"][0]["reviewStatus"] == "unknown"
+    assert structured["repairSteps"] == []
+    assert structured["riskReviewRequired"] is True

@@ -72,7 +72,7 @@ def structured_llm_answer_enabled() -> bool:
 
 
 def allow_llm_no_evidence_fallback() -> bool:
-    return env_flag("RAG_ALLOW_LLM_NO_EVIDENCE_FALLBACK", True)
+    return env_flag("RAG_ALLOW_LLM_NO_EVIDENCE_FALLBACK", False)
 
 
 def llm_answer_has_required_headings(answer: str) -> bool:
@@ -139,7 +139,7 @@ def citation_from_result(result: dict[str, Any]) -> dict[str, Any]:
         "documentId": result.get("documentId"),
         "chunkId": result.get("chunkId"),
         "sourceDocId": result.get("documentId") or result.get("sourceDocId") or result.get("sourceId") or result.get("id"),
-        "reviewStatus": result.get("reviewStatus", "approved"),
+        "reviewStatus": result.get("reviewStatus") or "unknown",
         "riskLevel": result.get("riskLevel") or result.get("scoreBreakdown", {}).get("riskLevel"),
         "reason": result.get("reason", ""),
         "scoreBreakdown": result.get("scoreBreakdown", {}),
@@ -206,6 +206,10 @@ def mock_rag_answer(
         "answer": format_structured_answer(structured_answer),
         "rawAnswer": "",
         "structuredAnswer": structured_answer,
+        "llmCandidateAccepted": False,
+        "llmAnswerUsed": False,
+        "finalAnswerSource": "template",
+        "answerMode": "grounded" if evidence_pack.get("evidenceCount", 0) else "insufficient_evidence",
         "recommendedActions": structured_answer.get("inspectionSteps", []) + structured_answer.get("repairSteps", []),
         "evidencePack": evidence_pack,
         "riskReviewRequired": structured_answer.get("riskReviewRequired", False),
@@ -402,12 +406,16 @@ def real_rag_answer(
     structured_answer = build_structured_rag_output(device_model, fault_text, evidence_pack, maintenance_level, risk_level)
     template_answer = format_structured_answer(structured_answer)
     final_answer, llm_answer_used, llm_answer_mode = select_final_rag_answer(answer, template_answer, citations)
+    answer_mode = "grounded" if evidence_pack.get("evidenceCount", 0) else "insufficient_evidence"
     return {
         "answer": final_answer,
         "rawAnswer": answer,
         "structuredAnswer": structured_answer,
+        "llmCandidateAccepted": llm_answer_used,
         "llmAnswerUsed": llm_answer_used,
         "llmAnswerMode": llm_answer_mode,
+        "finalAnswerSource": "validated_llm" if llm_answer_used else "template",
+        "answerMode": answer_mode,
         "recommendedActions": structured_answer.get("inspectionSteps", []) + structured_answer.get("repairSteps", []),
         "evidencePack": evidence_pack,
         "riskReviewRequired": structured_answer.get("riskReviewRequired", False),

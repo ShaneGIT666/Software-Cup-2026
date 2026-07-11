@@ -923,6 +923,9 @@ export interface RagAnswerPayload {
   requestedProvider: string;
   fallback: boolean;
   fallbackReason?: string;
+  llmCandidateAccepted?: boolean;
+  finalAnswerSource?: "template" | "validated_llm" | string;
+  answerMode?: "grounded" | "insufficient_evidence" | string;
   llmAnswerUsed?: boolean;
   llmAnswerMode?: string;
   llmAnswerPreservedAfterRules?: boolean;
