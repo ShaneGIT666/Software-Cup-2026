@@ -80,6 +80,9 @@ class CaseCreateRequest(BaseModel):
     cause: str
     solution: str
     result: str
+    deviceType: str = ""
+    riskLevel: str = "medium"
+    workflowId: str | None = None
     tags: list[str] = Field(default_factory=list)
     experienceSummary: str = ""
     lessonsLearned: str = ""

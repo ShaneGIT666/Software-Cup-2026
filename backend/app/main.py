@@ -7,12 +7,13 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from .auth import require_role
 from .data_store import PROJECT_ROOT, knowledge_dir, upload_dir
 from .knowledge import (
     analyze_document_assets,
@@ -387,7 +388,11 @@ def get_rag_feedback(status: str | None = None) -> ApiResponse:
 
 
 @app.patch("/api/rag/feedback/{feedback_id}/review", response_model=ApiResponse)
-def review_feedback(feedback_id: str, request: RagFeedbackReviewRequest) -> ApiResponse:
+def review_feedback(
+    feedback_id: str,
+    request: RagFeedbackReviewRequest,
+    _auth: dict[str, Any] = Depends(require_role("reviewer")),
+) -> ApiResponse:
     return ApiResponse(data=review_rag_feedback(feedback_id, request), message="回答修正审核完成")
 
 
@@ -402,7 +407,7 @@ def knowledge_graph_global() -> ApiResponse:
 
 
 @app.post("/api/knowledge/graph/rebuild", response_model=ApiResponse)
-def rebuild_knowledge_graph() -> ApiResponse:
+def rebuild_knowledge_graph(_auth: dict[str, Any] = Depends(require_role("admin"))) -> ApiResponse:
     return ApiResponse(data=build_global_knowledge_graph(), message="知识图谱已重建")
 
 
@@ -425,7 +430,11 @@ def list_cases(status: str | None = None) -> ApiResponse:
 
 
 @app.patch("/api/cases/{case_id}/review", response_model=ApiResponse)
-def review_case(case_id: str, request: CaseReviewRequest) -> ApiResponse:
+def review_case(
+    case_id: str,
+    request: CaseReviewRequest,
+    _auth: dict[str, Any] = Depends(require_role("reviewer")),
+) -> ApiResponse:
     return ApiResponse(data=review_repair_case(case_id, request), message="审核完成")
 
 
@@ -489,6 +498,7 @@ async def upload_knowledge_document(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     source_name: str | None = Form(default=None),
+    _auth: dict[str, Any] = Depends(require_role("admin")),
 ) -> ApiResponse:
     document = await ingest_knowledge_document(file, source_name)
     if should_enqueue_asset_analysis(document):
@@ -504,6 +514,7 @@ async def upload_knowledge_document_async(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     source_name: str | None = Form(default=None),
+    _auth: dict[str, Any] = Depends(require_role("admin")),
 ) -> ApiResponse:
     task = await create_knowledge_parse_task(file, source_name)
     background_tasks.add_task(process_knowledge_parse_task, task["id"])
@@ -541,18 +552,33 @@ def get_knowledge_document_revisions(document_id: str) -> ApiResponse:
 
 
 @app.patch("/api/knowledge/documents/{document_id}/chunks/{chunk_id}", response_model=ApiResponse)
-def revise_document_chunk(document_id: str, chunk_id: str, request: KnowledgeChunkRevisionRequest) -> ApiResponse:
+def revise_document_chunk(
+    document_id: str,
+    chunk_id: str,
+    request: KnowledgeChunkRevisionRequest,
+    _auth: dict[str, Any] = Depends(require_role("reviewer")),
+) -> ApiResponse:
     request.chunkId = chunk_id
     return ApiResponse(data=revise_knowledge_chunk(document_id, request), message="知识片段修正已保存")
 
 
 @app.patch("/api/knowledge/documents/{document_id}/chunks/{chunk_id}/review", response_model=ApiResponse)
-def review_document_chunk(document_id: str, chunk_id: str, request: KnowledgeChunkReviewRequest) -> ApiResponse:
+def review_document_chunk(
+    document_id: str,
+    chunk_id: str,
+    request: KnowledgeChunkReviewRequest,
+    _auth: dict[str, Any] = Depends(require_role("reviewer")),
+) -> ApiResponse:
     return ApiResponse(data=review_knowledge_chunk(document_id, chunk_id, request), message="知识片段审核完成")
 
 
 @app.patch("/api/knowledge/documents/{document_id}/chunks/{chunk_id}/status", response_model=ApiResponse)
-def update_document_chunk_status(document_id: str, chunk_id: str, request: KnowledgeChunkStatusRequest) -> ApiResponse:
+def update_document_chunk_status(
+    document_id: str,
+    chunk_id: str,
+    request: KnowledgeChunkStatusRequest,
+    _auth: dict[str, Any] = Depends(require_role("admin")),
+) -> ApiResponse:
     return ApiResponse(data=set_knowledge_chunk_status(document_id, chunk_id, request), message="知识片段状态已更新")
 
 
@@ -581,5 +607,8 @@ def frontend_spa(full_path: str) -> HTMLResponse:
 
 
 @app.delete("/api/knowledge/documents/{document_id}", response_model=ApiResponse)
-def remove_knowledge_document(document_id: str) -> ApiResponse:
+def remove_knowledge_document(
+    document_id: str,
+    _auth: dict[str, Any] = Depends(require_role("admin")),
+) -> ApiResponse:
     return ApiResponse(data=delete_knowledge_document(document_id), message="资料已删除")

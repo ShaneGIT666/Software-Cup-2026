@@ -902,6 +902,33 @@ def test_case_submit_review_and_search_round_trip(tmp_path, monkeypatch) -> None
     assert events[-1]["after"]["tags"] == ["偶发熄火", "怠速控制", "发动机"]
 
 
+def test_case_create_preserves_metadata_and_workflow_selection(tmp_path, monkeypatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+
+    response = client.post(
+        "/api/cases",
+        json={
+            "deviceType": "传动系统",
+            "deviceModel": "CHAIN-DRIVE-A",
+            "faultText": "传动异响",
+            "cause": "链条张紧度异常",
+            "solution": "调整张紧度并补充润滑",
+            "result": "异响降低",
+            "riskLevel": "high",
+            "maintenanceLevel": "focused_repair",
+            "workflowId": "wf-006",
+            "tags": ["链条", "异响"],
+        },
+    )
+
+    assert response.status_code == 200
+    created = response.json()["data"]
+    assert created["deviceType"] == "传动系统"
+    assert created["riskLevel"] == "high"
+    assert created["maintenanceLevel"] == "focused_repair"
+    assert created["workflowId"] == "wf-006"
+
+
 def create_pending_case(client: TestClient) -> dict[str, Any]:
     response = client.post(
         "/api/cases",
@@ -974,6 +1001,46 @@ def test_review_events_api_filters_audit_log(tmp_path, monkeypatch) -> None:
     assert data["items"][0]["reviewer"] == "auditor"
     assert data["items"][0]["before"]["status"] == "pending_review"
     assert data["items"][0]["after"]["status"] == "approved"
+
+
+def test_token_auth_protects_review_and_admin_routes(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("AUTH_MODE", "token")
+    monkeypatch.setenv("AUTH_REVIEWER_TOKEN", "review-token")
+    monkeypatch.setenv("AUTH_ADMIN_TOKEN", "admin-token")
+    client = make_client(tmp_path, monkeypatch)
+    pending_case = create_pending_case(client)
+
+    missing = client.patch(
+        f"/api/cases/{pending_case['id']}/review",
+        json={"action": "approve", "reviewNote": "needs auth"},
+    )
+    assert missing.status_code == 401
+
+    invalid = client.patch(
+        f"/api/cases/{pending_case['id']}/review",
+        headers={"Authorization": "Bearer wrong-token"},
+        json={"action": "approve", "reviewNote": "bad token"},
+    )
+    assert invalid.status_code == 403
+
+    reviewer = client.patch(
+        f"/api/cases/{pending_case['id']}/review",
+        headers={"Authorization": "Bearer review-token"},
+        json={"action": "approve", "reviewNote": "reviewer ok"},
+    )
+    assert reviewer.status_code == 200
+
+    admin_only = client.post(
+        "/api/knowledge/graph/rebuild",
+        headers={"Authorization": "Bearer review-token"},
+    )
+    assert admin_only.status_code == 403
+
+    admin = client.post(
+        "/api/knowledge/graph/rebuild",
+        headers={"Authorization": "Bearer admin-token"},
+    )
+    assert admin.status_code == 200
 
 
 def save_pending_review_chunk() -> None:

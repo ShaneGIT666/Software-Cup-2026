@@ -65,3 +65,8 @@
 - T05/T06 focused tests passed: `11 passed in 0.21s`.
 - Backend API contract tests passed after T05/T06: `95 passed in 14.66s`.
 - Combined retrieval/evidence/chunk/graph/multimodal/corrective/safety regression passed after T05/T06: `28 passed in 0.76s`.
+- Completed T07/T08: case creation now preserves caller-provided `deviceType`, `riskLevel`, `maintenanceLevel`, and workflow selection; missing workflow uses the closest existing workflow instead of a hardcoded route.
+- Added minimal role protection in token mode through `backend/app/auth.py`; reviewer/admin routes are protected when `AUTH_MODE=token`, while `AUTH_MODE=off` keeps the local demo path unchanged.
+- Added `.env.example` auth variables: `AUTH_MODE`, `AUTH_TOKEN`, `AUTH_TOKEN_ROLE`, `AUTH_REVIEWER_TOKEN`, and `AUTH_ADMIN_TOKEN`.
+- Backend API contract tests passed after T07/T08: `97 passed in 15.49s`.
+- Combined retrieval/evidence/chunk/graph/multimodal/corrective/safety/case regression passed after T07/T08: `30 passed in 1.03s`.

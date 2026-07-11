@@ -172,11 +172,36 @@ def search_knowledge(request: SearchRequest) -> dict[str, Any]:
     return run_retrieval_pipeline(request)
 
 
+def select_workflow_id(request: CaseCreateRequest) -> str:
+    data = load_seed_data()
+    workflows = data["workflows"]
+    requested = (request.workflowId or "").strip()
+    if requested and any(workflow.get("id") == requested for workflow in workflows):
+        return requested
+
+    device_type = request.deviceType.strip() or request.deviceModel.strip()
+    fault_text = request.faultText.strip()
+    for workflow in workflows:
+        workflow_device = str(workflow.get("deviceType") or "")
+        workflow_fault = str(workflow.get("faultType") or "")
+        if workflow_device and device_type and workflow_device in device_type:
+            if not workflow_fault or workflow_fault in fault_text:
+                return str(workflow["id"])
+    for workflow in workflows:
+        workflow_fault = str(workflow.get("faultType") or "")
+        if workflow_fault and workflow_fault in fault_text:
+            return str(workflow["id"])
+    return str(workflows[0]["id"]) if workflows else ""
+
+
 def create_repair_case(request: CaseCreateRequest) -> dict[str, Any]:
     cases = load_cases()
     case_id = f"case-{uuid4().hex[:8]}"
+    device_type = request.deviceType.strip() or request.deviceModel.strip() or "unknown"
+    workflow_id = select_workflow_id(request)
     repair_case = {
         "id": case_id,
+        "deviceType": device_type,
         "deviceType": "发动机",
         "deviceModel": request.deviceModel,
         "faultTitle": request.faultText[:20] or "新提交维修案例",
@@ -188,12 +213,16 @@ def create_repair_case(request: CaseCreateRequest) -> dict[str, Any]:
         "experienceSummary": request.experienceSummary,
         "lessonsLearned": request.lessonsLearned,
         "maintenanceLevel": request.maintenanceLevel,
+        "riskLevel": request.riskLevel,
         "status": "pending_review",
         "tags": request.tags,
+        "workflowId": workflow_id,
         "workflowId": "wf-001",
         "createdAt": utc_now(),
         "reviewedAt": "",
     }
+    repair_case["deviceType"] = device_type
+    repair_case["workflowId"] = workflow_id
     cases.append(repair_case)
     save_cases(cases)
     return repair_case
