@@ -99,7 +99,7 @@ def search_qdrant(
         point_payload = item.get("payload") or {}
         if not isinstance(point_payload, dict):
             continue
-        if str(point_payload.get("reviewStatus", "approved")) != "approved":
+        if str(point_payload.get("reviewStatus") or "unknown") != "approved":
             continue
         matches.append(
             {

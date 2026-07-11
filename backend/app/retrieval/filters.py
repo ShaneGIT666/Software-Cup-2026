@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from ..review_policy import normalize_review_status
 from .models import QueryContext, RetrievalHit
 
 
@@ -16,7 +17,7 @@ def device_model_matches(expected: str, actual: str | None) -> bool:
 
 
 def review_status_matches(hit: RetrievalHit) -> bool:
-    return (hit.review_status or "approved") == "approved"
+    return normalize_review_status(hit.review_status) == "approved"
 
 
 def metadata_matches(context: QueryContext, hit: RetrievalHit) -> bool:

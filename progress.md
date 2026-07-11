@@ -54,3 +54,9 @@
 - Targeted retrieval test passed: `12 passed in 0.44s`.
 - Expanded T00-related backend regression passed after retrieval changes: `26 passed in 0.62s`.
 - `git diff --check` passed with only CRLF conversion warnings.
+- Completed T03/T04 knowledge governance: chunk revision now creates a pending version with `logical_chunk_id`, incremented `version`, `supersedes`, and `is_current=false`; approving that version marks the old chunk `replaced`, sets `replaced_by`, and syncs only the current approved chunk.
+- Added `backend/app/review_policy.py` and changed retrieval/vector/graph/review paths so missing review metadata normalizes to `unknown` instead of defaulting to `approved`.
+- Updated API and focused tests for pending revisions, approved replacement, rejected revisions, graph approved-only isolation, candidate-pool vector recall, and explicit approved vector sync fixtures.
+- T03/T04 targeted tests passed: `3 passed in 0.82s`.
+- Backend API contract tests passed after update: `95 passed in 14.54s`.
+- Combined retrieval/evidence/chunk/graph/multimodal/corrective/safety regression passed: `28 passed in 0.74s`.

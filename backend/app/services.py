@@ -18,6 +18,7 @@ from .data_store import (
     save_rag_feedback,
     save_review_events,
 )
+from .review_policy import is_current_approved_chunk
 from .retrieval.pipeline import search_knowledge as run_retrieval_pipeline
 from .schemas import CaseCreateRequest, CaseReviewRequest, RagFeedbackCreateRequest, RagFeedbackReviewRequest, SearchRequest
 
@@ -138,7 +139,7 @@ def reason_text(prefix: str, terms: list[str], item: dict[str, Any]) -> str:
 
 
 def chunk_is_approved(chunk: dict[str, Any]) -> bool:
-    return chunk.get("review_status", "approved") == "approved"
+    return is_current_approved_chunk(chunk)
 
 
 def build_search_summary(results: list[dict[str, Any]], query_tokens: list[str]) -> str:

@@ -12,6 +12,7 @@ from .data_store import (
     save_knowledge_graph_cache,
 )
 from .schemas import SearchRequest
+from .review_policy import is_approved_case, is_current_approved_chunk, normalize_review_status
 from .services import search_knowledge, tokens
 
 
@@ -53,7 +54,7 @@ def add_node(
         "id": identifier,
         "label": compact(label, node_type),
         "type": node_type,
-        "reviewStatus": (properties or {}).get("reviewStatus") or (properties or {}).get("status") or "approved",
+        "reviewStatus": normalize_review_status((properties or {}).get("reviewStatus") or (properties or {}).get("status")),
         "weight": weight,
         "properties": properties or {},
     }
@@ -167,7 +168,7 @@ def sort_edges(edges: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
 def build_global_knowledge_graph() -> dict[str, Any]:
     data = load_seed_data()
     documents = load_documents()
-    chunks = [chunk for chunk in load_document_chunks() if chunk.get("review_status", "approved") == "approved"]
+    chunks = [chunk for chunk in load_document_chunks() if is_current_approved_chunk(chunk)]
     approved_document_ids = {str(chunk.get("documentId", "")) for chunk in chunks}
     nodes: dict[str, dict[str, Any]] = {}
     edges: dict[str, dict[str, Any]] = {}
@@ -223,17 +224,17 @@ def build_global_knowledge_graph() -> dict[str, Any]:
         add_terms(nodes, edges, workflow_id, workflow.get("tools", []), relation="需要工具", evidence="作业流程工具清单")
 
     for repair_case in data["cases"]:
-        if repair_case.get("status", "approved") != "approved":
+        if not is_approved_case(repair_case):
             continue
         case_id = add_node(
             nodes,
             "case",
             repair_case.get("faultTitle"),
             raw_id=f"case:{repair_case['id']}",
-            weight=5 if repair_case.get("status") == "approved" else 2,
+            weight=5,
             properties={
-                "status": repair_case.get("status", "approved"),
-                "reviewStatus": repair_case.get("status", "approved"),
+                "status": repair_case.get("status", ""),
+                "reviewStatus": repair_case.get("status", ""),
                 "createdAt": repair_case.get("createdAt", ""),
                 "experienceSummary": repair_case.get("experienceSummary", ""),
                 "lessonsLearned": repair_case.get("lessonsLearned", ""),

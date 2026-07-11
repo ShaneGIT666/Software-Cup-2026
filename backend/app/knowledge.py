@@ -39,6 +39,7 @@ from .ocr_adapter import analyze_ocr_document
 from .parser_router import parse_document, save_parse_artifacts
 from .provider_policy import configured_llm_provider, key_configured, record_fallback, remote_api_disabled
 from .schemas import KnowledgeChunkReviewRequest, KnowledgeChunkRevisionRequest, KnowledgeChunkStatusRequest
+from .review_policy import is_current_approved_chunk
 from .vector_store import delete_document as delete_vector_document
 from .vector_store import sync_chunks
 
@@ -224,6 +225,10 @@ def build_chunk(
         "evidence_location": {"page": page, "section": section or ""},
         "review_status": review_status,
         "version": 1,
+        "logical_chunk_id": chunk_id,
+        "is_current": review_status == "approved",
+        "supersedes": None,
+        "replaced_by": None,
         "created_at": now,
         "updated_at": now,
     }
@@ -1219,11 +1224,29 @@ def transition_knowledge_chunk_status(
     updated["review_reason"] = reason
     updated["updated_at"] = review_time
     updated["updatedAt"] = review_time
+    if next_status == "approved":
+        updated["is_current"] = True
+    elif next_status in {"rejected", "deprecated", "replaced"}:
+        updated["is_current"] = False
     if next_status == "replaced":
         updated["replaced_by"] = replacement_chunk_id
-    else:
+    elif "supersedes" not in updated:
         updated.pop("replaced_by", None)
     chunks[chunk_index] = updated
+
+    superseded_previous: dict[str, Any] | None = None
+    if next_status == "approved" and updated.get("supersedes"):
+        superseded_id = str(updated["supersedes"])
+        superseded_index = next((index for index, chunk in enumerate(chunks) if chunk.get("id") == superseded_id), None)
+        if superseded_index is not None:
+            superseded_previous = dict(chunks[superseded_index])
+            superseded = dict(chunks[superseded_index])
+            superseded["review_status"] = "replaced"
+            superseded["is_current"] = False
+            superseded["replaced_by"] = updated["id"]
+            superseded["updated_at"] = review_time
+            superseded["updatedAt"] = review_time
+            chunks[superseded_index] = superseded
     save_document_chunks(chunks)
 
     document_chunks = [chunk for chunk in chunks if chunk.get("documentId") == document_id]
@@ -1234,7 +1257,7 @@ def transition_knowledge_chunk_status(
     save_documents(documents)
 
     delete_vector_document(document_id)
-    sync_chunks(document_chunks)
+    sync_chunks([chunk for chunk in document_chunks if is_current_approved_chunk(chunk)])
 
     event = {
         "id": f"review-{uuid4().hex[:8]}",
@@ -1251,6 +1274,10 @@ def transition_knowledge_chunk_status(
         "before": previous,
         "after": updated,
     }
+    if superseded_previous:
+        event["supersedes"] = updated.get("supersedes")
+        event["replacedChunkBefore"] = superseded_previous
+        event["replacedChunkAfter"] = next((chunk for chunk in chunks if chunk.get("id") == updated.get("supersedes")), None)
     if replacement_chunk_id:
         event["replacementChunkId"] = replacement_chunk_id
     events = load_review_events()
@@ -1315,13 +1342,34 @@ def revise_knowledge_chunk(document_id: str, request: KnowledgeChunkRevisionRequ
         raise HTTPException(status_code=404, detail="knowledge chunk not found")
 
     previous = dict(chunks[chunk_index])
+    revision_time = utc_now()
+    logical_chunk_id = previous.get("logical_chunk_id") or previous.get("id")
+    existing_versions = [
+        int(chunk.get("version") or 1)
+        for chunk in chunks
+        if (chunk.get("logical_chunk_id") or chunk.get("id")) == logical_chunk_id
+    ]
+    next_version = max(existing_versions or [int(previous.get("version") or 1)]) + 1
+    proposed_id = f"{previous['id']}-rev-{uuid4().hex[:8]}"
     updated = dict(previous)
+    updated["id"] = proposed_id
+    updated["chunk_id"] = proposed_id
     updated["content"] = content
     updated["snippet"] = content[:160]
     updated["keywords"] = build_keywords(" ".join([content, " ".join(request.tags)]))
     updated["manuallyCorrected"] = True
-    updated["updatedAt"] = utc_now()
+    updated["created_at"] = revision_time
+    updated["updated_at"] = revision_time
+    updated["updatedAt"] = revision_time
     updated["revisionTags"] = request.tags
+    updated["logical_chunk_id"] = logical_chunk_id
+    updated["version"] = next_version
+    updated["supersedes"] = previous["id"]
+    updated["replaced_by"] = None
+    updated["review_status"] = "pending_review"
+    updated["is_current"] = False
+    updated["revision_reason"] = request.reason.strip()
+    updated["revision_author"] = request.reviewer.strip() or "operator"
     if request.title is not None and request.title.strip():
         updated["title"] = request.title.strip()
     if request.sourceName is not None and request.sourceName.strip():
@@ -1332,12 +1380,17 @@ def revise_knowledge_chunk(document_id: str, request: KnowledgeChunkRevisionRequ
     revision = {
         "id": f"krev-{uuid4().hex[:8]}",
         "documentId": document_id,
-        "chunkId": request.chunkId,
+        "chunkId": proposed_id,
+        "originalChunkId": request.chunkId,
+        "proposedChunkId": proposed_id,
+        "logicalChunkId": logical_chunk_id,
+        "version": next_version,
+        "supersedes": previous["id"],
         "source": "manual-correction",
-        "status": "applied",
+        "status": "pending_review",
         "reason": request.reason.strip(),
         "reviewer": request.reviewer.strip() or "operator",
-        "createdAt": utc_now(),
+        "createdAt": revision_time,
         "before": {
             "title": previous.get("title", ""),
             "sourceName": previous.get("sourceName", ""),
@@ -1355,12 +1408,8 @@ def revise_knowledge_chunk(document_id: str, request: KnowledgeChunkRevisionRequ
         },
     }
 
-    chunks[chunk_index] = updated
+    chunks.append(updated)
     save_document_chunks(chunks)
-
-    document_chunks = [chunk for chunk in chunks if chunk.get("documentId") == document_id]
-    delete_vector_document(document_id)
-    sync_chunks(document_chunks)
 
     revisions = load_knowledge_revisions()
     revisions.append(revision)
@@ -1373,11 +1422,15 @@ def revise_knowledge_chunk(document_id: str, request: KnowledgeChunkRevisionRequ
             "objectType": "knowledge_revision",
             "objectId": revision["id"],
             "documentId": document_id,
-            "chunkId": request.chunkId,
+            "chunkId": proposed_id,
+            "originalChunkId": request.chunkId,
+            "proposedChunkId": proposed_id,
             "revisionId": revision["id"],
             "action": "revise",
             "beforeStatus": previous.get("review_status", "pending_review"),
             "afterStatus": updated.get("review_status", "pending_review"),
+            "supersedes": previous["id"],
+            "replaced_by": None,
             "reason": revision["reason"],
             "reviewer": revision["reviewer"],
             "reviewTime": revision["createdAt"],
@@ -1389,11 +1442,10 @@ def revise_knowledge_chunk(document_id: str, request: KnowledgeChunkRevisionRequ
 
     document["revisionCount"] = int(document.get("revisionCount") or 0) + 1
     document["latestRevisionAt"] = revision["createdAt"]
-    if document.get("status") not in {"analyzed", "needs_multimodal_analysis"}:
-        document["status"] = "indexed"
+    document["status"] = "pending_review"
     save_documents(documents)
 
-    return {"document": document, "chunk": updated, "revision": revision}
+    return {"document": document, "originalChunk": previous, "proposedChunk": updated, "chunk": updated, "revision": revision}
 
 
 def delete_knowledge_document(document_id: str) -> dict[str, Any]:

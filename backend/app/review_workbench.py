@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from .data_store import load_cases, load_document_chunks, load_documents, load_rag_feedback, load_review_events
+from .review_policy import normalize_review_status
 
 
 def case_review_item(item: dict[str, Any]) -> dict[str, Any]:
@@ -78,7 +79,7 @@ def list_review_items(status: str = "pending_review", item_type: str = "all") ->
 
     if item_type in {"all", "knowledge_chunk"}:
         for chunk in load_document_chunks():
-            if status == "all" or chunk.get("review_status", "approved") == status:
+            if status == "all" or normalize_review_status(chunk.get("review_status")) == status:
                 items.append(chunk_review_item(chunk, documents.get(chunk.get("documentId"))))
 
     if item_type in {"all", "rag_feedback"}:

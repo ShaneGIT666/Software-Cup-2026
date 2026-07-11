@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..data_store import load_document_chunks, load_seed_data
+from ..review_policy import is_approved_case, is_current_approved_chunk
 from .models import QueryContext, RetrievalHit
 
 
@@ -93,7 +94,7 @@ def matched_fields(scoring: dict[str, Any]) -> list[str]:
 
 
 def chunk_is_approved(chunk: dict[str, Any]) -> bool:
-    return chunk.get("review_status", "approved") == "approved"
+    return is_current_approved_chunk(chunk)
 
 
 def retrieve_keyword_hits(context: QueryContext) -> list[RetrievalHit]:
@@ -112,6 +113,7 @@ def retrieve_keyword_hits(context: QueryContext) -> list[RetrievalHit]:
                     source_id=manual["id"],
                     source_name=manual["sourceName"],
                     source_type="manual",
+                    review_status="approved",
                     confidence=confidence_from_score(scoring["score"], 0.95),
                     snippet=manual["content"][:120],
                     workflow_id=manual.get("workflowId"),
@@ -129,7 +131,7 @@ def retrieve_keyword_hits(context: QueryContext) -> list[RetrievalHit]:
             )
 
     for repair_case in data["cases"]:
-        if repair_case.get("status") != "approved":
+        if not is_approved_case(repair_case):
             continue
         field_weights = {"faultTitle": 5, "faultText": 4, "tags": 4, "possibleCauses": 3, "solution": 2}
         scoring = score_item(context.query_tokens, repair_case, field_weights, source_weight=2)
@@ -151,7 +153,7 @@ def retrieve_keyword_hits(context: QueryContext) -> list[RetrievalHit]:
                     device_type=repair_case.get("deviceType"),
                     device_model=repair_case.get("deviceModel"),
                     fault_type=repair_case.get("faultTitle"),
-                    review_status=repair_case.get("status", "approved"),
+                    review_status=repair_case.get("status") or "unknown",
                     keyword_score=float(scoring["score"]),
                     matched_fields=matched_fields(scoring),
                 )
@@ -183,7 +185,7 @@ def retrieve_keyword_hits(context: QueryContext) -> list[RetrievalHit]:
                     device_model=chunk.get("device_model") or chunk.get("deviceModel"),
                     component=chunk.get("component"),
                     fault_type=chunk.get("fault_symptom") or chunk.get("faultType"),
-                    review_status=chunk.get("review_status", "approved"),
+                    review_status=chunk.get("review_status") or "unknown",
                     keyword_score=float(scoring["score"]),
                     matched_fields=matched_fields(scoring),
                 )

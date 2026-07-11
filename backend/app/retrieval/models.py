@@ -39,7 +39,7 @@ class RetrievalHit:
     device_model: str | None = None
     component: str | None = None
     fault_type: str | None = None
-    review_status: str | None = "approved"
+    review_status: str | None = "unknown"
     keyword_rank: int | None = None
     vector_rank: int | None = None
     qdrant_rank: int | None = None

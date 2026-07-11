@@ -20,6 +20,7 @@ def make_hit(
     vector_score: float | None = None,
     qdrant_score: float | None = None,
     fusion_score: float | None = None,
+    review_status: str | None = "approved",
     matched_terms: list[str] | None = None,
     matched_fields: list[str] | None = None,
 ) -> RetrievalHit:
@@ -44,6 +45,7 @@ def make_hit(
         vector_score=vector_score,
         qdrant_score=qdrant_score,
         fusion_score=fusion_score,
+        review_status=review_status,
         matched_fields=matched_fields or [],
     )
 

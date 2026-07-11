@@ -900,11 +900,26 @@ def test_case_submit_review_and_search_round_trip(tmp_path, monkeypatch) -> None
     assert events[-1]["after"]["tags"] == ["偶发熄火", "怠速控制", "发动机"]
 
 
+def create_pending_case(client: TestClient) -> dict[str, Any]:
+    response = client.post(
+        "/api/cases",
+        json={
+            "deviceModel": "发动机-示例型号 A",
+            "faultText": "review pending fixture",
+            "cause": "pending cause",
+            "solution": "pending solution",
+            "result": "pending result",
+            "tags": ["pending"],
+        },
+    )
+    assert response.status_code == 200
+    return response.json()["data"]
+
+
 def test_invalid_review_action_is_rejected_without_status_change(tmp_path, monkeypatch) -> None:
     client = make_client(tmp_path, monkeypatch)
 
-    pending_response = client.get("/api/cases?status=pending_review")
-    pending_case = pending_response.json()["data"]["items"][0]
+    pending_case = create_pending_case(client)
 
     response = client.patch(
         f"/api/cases/{pending_case['id']}/review",
@@ -923,7 +938,7 @@ def test_invalid_review_action_is_rejected_without_status_change(tmp_path, monke
 
 def test_case_review_reject_requires_reason(tmp_path, monkeypatch) -> None:
     client = make_client(tmp_path, monkeypatch)
-    pending_case = client.get("/api/cases?status=pending_review").json()["data"]["items"][0]
+    pending_case = create_pending_case(client)
 
     response = client.patch(
         f"/api/cases/{pending_case['id']}/review",
@@ -937,7 +952,7 @@ def test_case_review_reject_requires_reason(tmp_path, monkeypatch) -> None:
 
 def test_review_events_api_filters_audit_log(tmp_path, monkeypatch) -> None:
     client = make_client(tmp_path, monkeypatch)
-    pending_case = client.get("/api/cases?status=pending_review").json()["data"]["items"][0]
+    pending_case = create_pending_case(client)
     review_response = client.patch(
         f"/api/cases/{pending_case['id']}/review",
         json={"action": "approve", "reviewNote": "审计流水测试", "reviewer": "auditor"},
@@ -1058,6 +1073,7 @@ def save_approved_lifecycle_chunks() -> None:
 
 def test_review_items_include_pending_cases_and_knowledge_chunks(tmp_path, monkeypatch) -> None:
     client = make_client(tmp_path, monkeypatch)
+    create_pending_case(client)
     save_pending_review_chunk()
 
     response = client.get("/api/review/items?status=pending_review")
@@ -1656,7 +1672,7 @@ def test_docx_upload_falls_back_to_mock_parser_pending_review(tmp_path, monkeypa
 def test_search_merges_chroma_vector_recall(tmp_path, monkeypatch) -> None:
     def fake_vector_search(query: str, top_k: int) -> list[dict[str, Any]]:
         assert "异响" in query
-        assert top_k == 5
+        assert top_k == 20
         return [
             {
                 "id": "kdoc-vector-chunk-001",
@@ -1666,6 +1682,7 @@ def test_search_merges_chroma_vector_recall(tmp_path, monkeypatch) -> None:
                 "snippet": "链条润滑不足会导致运行噪声升高，应检查张紧度和润滑状态。",
                 "documentId": "kdoc-vector",
                 "chunkId": "kdoc-vector-chunk-001",
+                "reviewStatus": "approved",
                 "page": None,
                 "distance": 0.12,
             }
@@ -1902,6 +1919,13 @@ def test_knowledge_chunk_revision_updates_chunk_and_revisions(tmp_path, monkeypa
     )
     document = upload_response.json()["data"]
     chunk_id = document["chunks"][0]["id"]
+    approve_response = client.patch(
+        f"/api/knowledge/documents/{document['id']}/chunks/{chunk_id}/review",
+        json={"action": "approve", "reviewer": "technician-a"},
+    )
+    assert approve_response.status_code == 200
+    sync_calls.clear()
+    deleted.clear()
 
     response = client.patch(
         f"/api/knowledge/documents/{document['id']}/chunks/{chunk_id}",
@@ -1917,10 +1941,12 @@ def test_knowledge_chunk_revision_updates_chunk_and_revisions(tmp_path, monkeypa
     payload = response.json()["data"]
     assert payload["chunk"]["content"].startswith("修正后")
     assert payload["chunk"]["manuallyCorrected"] is True
+    assert payload["chunk"]["review_status"] == "pending_review"
+    assert payload["chunk"]["supersedes"] == chunk_id
     assert payload["revision"]["before"]["content"] == "old spark plug note"
     assert "火花塞" in payload["revision"]["after"]["content"]
-    assert deleted == [document["id"]]
-    assert sync_calls and sync_calls[-1][0]["id"] == chunk_id
+    assert deleted == []
+    assert sync_calls == []
 
     revisions_response = client.get(f"/api/knowledge/documents/{document['id']}/revisions")
     revisions = revisions_response.json()["data"]
@@ -1935,7 +1961,8 @@ def test_knowledge_chunk_revision_updates_chunk_and_revisions(tmp_path, monkeypa
 
     chunks_response = client.get(f"/api/knowledge/documents/{document['id']}/chunks")
     chunks = chunks_response.json()["data"]["items"]
-    assert chunks[0]["content"].startswith("修正后")
+    assert any(chunk["id"] == chunk_id and chunk["content"] == "old spark plug note" for chunk in chunks)
+    assert any(chunk["id"] == payload["chunk"]["id"] and chunk["content"].startswith("修正后") for chunk in chunks)
 
     search_response = client.post(
         "/api/search",
@@ -2293,6 +2320,8 @@ def test_vector_sync_uses_openai_embedding_when_available(monkeypatch) -> None:
                 "sourceName": "测试",
                 "content": "发动机启动困难",
                 "snippet": "发动机启动困难",
+                "review_status": "approved",
+                "is_current": True,
             }
         ]
     )
@@ -2340,6 +2369,8 @@ def test_vector_sync_falls_back_to_hash_embedding_when_remote_fails(monkeypatch)
                 "sourceName": "测试",
                 "content": "发动机启动困难",
                 "snippet": "发动机启动困难",
+                "review_status": "approved",
+                "is_current": True,
             }
         ]
     )

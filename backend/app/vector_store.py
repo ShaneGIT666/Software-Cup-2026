@@ -19,6 +19,7 @@ from .provider_policy import (
     record_fallback,
     remote_api_disabled,
 )
+from .review_policy import is_current_approved_chunk
 from .retrieval.qdrant_enhancer import qdrant_status, search_qdrant
 
 
@@ -185,7 +186,7 @@ def metadata_for_chunk(chunk: dict[str, Any], embedding_provider: str) -> dict[s
         "section": chunk.get("section", ""),
         "chunkIndex": chunk.get("chunkIndex") or 0,
         "embeddingProvider": embedding_provider,
-        "reviewStatus": chunk.get("review_status", "approved"),
+        "reviewStatus": chunk.get("review_status") or "unknown",
         "version": chunk.get("version", 1),
     }
     if chunk.get("analysisProvider"):
@@ -382,7 +383,7 @@ def sync_json_chunks(chunks: list[dict[str, Any]], documents: list[str], embeddi
 
 
 def sync_chunks(chunks: list[dict[str, Any]]) -> None:
-    chunks = [chunk for chunk in chunks if chunk.get("review_status", "approved") == "approved"]
+    chunks = [chunk for chunk in chunks if is_current_approved_chunk(chunk)]
     if not chunks:
         return
     documents = [chunk.get("content") or chunk.get("snippet", "") for chunk in chunks]
@@ -453,7 +454,7 @@ def cosine_distance(left: list[float], right: list[float]) -> float:
 
 
 def item_from_vector_match(chunk_id: str, document: str, metadata: dict[str, Any], distance: float, provider: str) -> dict[str, Any] | None:
-    if metadata.get("reviewStatus", "approved") != "approved":
+    if metadata.get("reviewStatus") != "approved":
         return None
     page = metadata.get("page") or None
     return {
