@@ -39,6 +39,7 @@ class RetrievalHit:
     device_type: str | None = None
     device_model: str | None = None
     component: str | None = None
+    fault_code: str | None = None
     fault_type: str | None = None
     review_status: str | None = "unknown"
     keyword_rank: int | None = None
@@ -89,6 +90,8 @@ class RetrievalHit:
             result["deviceModel"] = self.device_model
         if self.component:
             result["component"] = self.component
+        if self.fault_code:
+            result["faultCode"] = self.fault_code
         if self.fault_type:
             result["faultType"] = self.fault_type
         if self.document_id:

@@ -22,6 +22,7 @@ export interface SearchResult {
   deviceType?: string;
   deviceModel?: string;
   component?: string;
+  faultCode?: string;
   faultType?: string;
   matchedTerms?: string[];
   reason?: string;
@@ -320,13 +321,18 @@ export function fetchProviderStatus() {
 
 export function submitCase(payload: {
   deviceModel: string;
+  deviceType?: string;
+  component?: string;
+  faultCode?: string;
   faultText: string;
   cause: string;
   solution: string;
   result: string;
+  riskLevel?: string;
   experienceSummary?: string;
   lessonsLearned?: string;
   maintenanceLevel?: string;
+  workflowId?: string | null;
   tags: string[];
 }) {
   return request<{ id: string; status: string }>("/api/cases", {
@@ -362,6 +368,11 @@ export interface CaseItem {
   solution?: string;
   cause?: string;
   result?: string;
+  deviceType?: string;
+  component?: string;
+  faultCode?: string;
+  workflowId?: string | null;
+  workflowSelectionReason?: string;
 }
 
 export interface CaseListPayload {

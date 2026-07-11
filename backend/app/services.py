@@ -172,38 +172,66 @@ def search_knowledge(request: SearchRequest) -> dict[str, Any]:
     return run_retrieval_pipeline(request)
 
 
-def select_workflow_id(request: CaseCreateRequest) -> str:
+def normalize_match_text(value: str | None) -> str:
+    return (value or "").strip().lower()
+
+
+def compatible_text(expected: str, actual: str) -> bool:
+    expected_norm = normalize_match_text(expected)
+    actual_norm = normalize_match_text(actual)
+    if not expected_norm or not actual_norm:
+        return True
+    return expected_norm == actual_norm or expected_norm in actual_norm or actual_norm in expected_norm
+
+
+def fault_matches(workflow_fault: str, fault_text: str) -> bool:
+    workflow_fault_norm = normalize_match_text(workflow_fault)
+    fault_text_norm = normalize_match_text(fault_text)
+    return bool(workflow_fault_norm and fault_text_norm and workflow_fault_norm in fault_text_norm)
+
+
+def select_workflow(request: CaseCreateRequest) -> tuple[str | None, str]:
     data = load_seed_data()
     workflows = data["workflows"]
     requested = (request.workflowId or "").strip()
-    if requested and any(workflow.get("id") == requested for workflow in workflows):
-        return requested
-
-    device_type = request.deviceType.strip() or request.deviceModel.strip()
+    device_type = request.deviceType.strip()
     fault_text = request.faultText.strip()
+    if requested:
+        workflow = next((item for item in workflows if item.get("id") == requested), None)
+        if workflow is None:
+            raise HTTPException(status_code=400, detail="workflowId does not exist")
+        workflow_device = str(workflow.get("deviceType") or "")
+        if device_type and workflow_device and not compatible_text(workflow_device, device_type):
+            raise HTTPException(status_code=400, detail="workflowId is not compatible with deviceType")
+        return requested, "explicit"
+
     for workflow in workflows:
         workflow_device = str(workflow.get("deviceType") or "")
         workflow_fault = str(workflow.get("faultType") or "")
-        if workflow_device and device_type and workflow_device in device_type:
-            if not workflow_fault or workflow_fault in fault_text:
-                return str(workflow["id"])
+        if normalize_match_text(workflow_device) == normalize_match_text(device_type) and fault_matches(workflow_fault, fault_text):
+            return str(workflow["id"]), "device_and_fault_match"
+    for workflow in workflows:
+        workflow_device = str(workflow.get("deviceType") or "")
+        if normalize_match_text(workflow_device) == normalize_match_text(device_type):
+            return str(workflow["id"]), "device_match"
     for workflow in workflows:
         workflow_fault = str(workflow.get("faultType") or "")
-        if workflow_fault and workflow_fault in fault_text:
-            return str(workflow["id"])
-    return str(workflows[0]["id"]) if workflows else ""
+        if fault_matches(workflow_fault, fault_text):
+            return str(workflow["id"]), "fault_match"
+    return None, "no_reliable_match"
 
 
 def create_repair_case(request: CaseCreateRequest) -> dict[str, Any]:
     cases = load_cases()
     case_id = f"case-{uuid4().hex[:8]}"
     device_type = request.deviceType.strip() or request.deviceModel.strip() or "unknown"
-    workflow_id = select_workflow_id(request)
+    workflow_id, workflow_reason = select_workflow(request)
     repair_case = {
         "id": case_id,
         "deviceType": device_type,
-        "deviceType": "发动机",
         "deviceModel": request.deviceModel,
+        "component": request.component,
+        "faultCode": request.faultCode,
         "faultTitle": request.faultText[:20] or "新提交维修案例",
         "faultText": request.faultText,
         "symptoms": [request.faultText],
@@ -217,12 +245,10 @@ def create_repair_case(request: CaseCreateRequest) -> dict[str, Any]:
         "status": "pending_review",
         "tags": request.tags,
         "workflowId": workflow_id,
-        "workflowId": "wf-001",
+        "workflowSelectionReason": workflow_reason,
         "createdAt": utc_now(),
         "reviewedAt": "",
     }
-    repair_case["deviceType"] = device_type
-    repair_case["workflowId"] = workflow_id
     cases.append(repair_case)
     save_cases(cases)
     return repair_case

@@ -910,6 +910,8 @@ def test_case_create_preserves_metadata_and_workflow_selection(tmp_path, monkeyp
         json={
             "deviceType": "传动系统",
             "deviceModel": "CHAIN-DRIVE-A",
+            "component": "drive chain",
+            "faultCode": "CHAIN-01",
             "faultText": "传动异响",
             "cause": "链条张紧度异常",
             "solution": "调整张紧度并补充润滑",
@@ -924,9 +926,87 @@ def test_case_create_preserves_metadata_and_workflow_selection(tmp_path, monkeyp
     assert response.status_code == 200
     created = response.json()["data"]
     assert created["deviceType"] == "传动系统"
+    assert created["component"] == "drive chain"
+    assert created["faultCode"] == "CHAIN-01"
     assert created["riskLevel"] == "high"
     assert created["maintenanceLevel"] == "focused_repair"
     assert created["workflowId"] == "wf-006"
+    assert created["workflowSelectionReason"] == "explicit"
+
+
+def test_case_create_rejects_invalid_or_incompatible_workflow(tmp_path, monkeypatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    base_payload = {
+        "deviceType": "发动机",
+        "deviceModel": "ENGINE-A",
+        "faultText": "启动困难",
+        "cause": "点火异常",
+        "solution": "检查火花塞",
+        "result": "恢复",
+        "tags": ["启动"],
+    }
+
+    missing = client.post("/api/cases", json={**base_payload, "workflowId": "wf-missing"})
+    incompatible = client.post("/api/cases", json={**base_payload, "workflowId": "wf-006"})
+
+    assert missing.status_code == 400
+    assert "workflowId does not exist" in missing.json()["message"]
+    assert incompatible.status_code == 400
+    assert "workflowId is not compatible" in incompatible.json()["message"]
+
+
+def test_case_create_does_not_fallback_to_first_workflow_without_reliable_match(tmp_path, monkeypatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+
+    response = client.post(
+        "/api/cases",
+        json={
+            "deviceType": "未知设备",
+            "deviceModel": "UNKNOWN-DEVICE",
+            "faultText": "unmapped rainbow vibration",
+            "cause": "unknown",
+            "solution": "record and escalate",
+            "result": "pending",
+            "tags": ["unmapped"],
+        },
+    )
+
+    assert response.status_code == 200
+    created = response.json()["data"]
+    assert created["workflowId"] is None
+    assert created["workflowSelectionReason"] == "no_reliable_match"
+
+
+def test_search_returns_case_component_and_fault_code_metadata(tmp_path, monkeypatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    create_response = client.post(
+        "/api/cases",
+        json={
+            "deviceType": "engine-test",
+            "deviceModel": "ENGINE-META-A",
+            "component": "spark plug",
+            "faultCode": "P0300",
+            "faultText": "hard start spark plug code P0300",
+            "cause": "spark plug gap",
+            "solution": "adjust spark plug gap",
+            "result": "start ok",
+            "tags": ["spark", "P0300"],
+        },
+    )
+    created = create_response.json()["data"]
+    review_response = client.patch(
+        f"/api/cases/{created['id']}/review",
+        json={"action": "approve", "reviewNote": "ok"},
+    )
+    search_response = client.post(
+        "/api/search",
+        json={"deviceModel": "ENGINE-META-A", "faultText": "spark plug P0300", "topK": 5},
+    )
+
+    assert review_response.status_code == 200
+    case_result = next(item for item in search_response.json()["data"]["results"] if item["id"] == created["id"])
+    assert case_result["component"] == "spark plug"
+    assert case_result["faultCode"] == "P0300"
 
 
 def create_pending_case(client: TestClient) -> dict[str, Any]:
@@ -1115,6 +1195,8 @@ def test_token_auth_role_matrix_and_status_visibility(tmp_path, monkeypatch) -> 
     for _label, method, path, token, expected_status in matrix:
         headers = {"Authorization": f"Bearer {token}"} if token else {}
         json_body = {"action": "approve", "reviewNote": "ok", "reason": "ok", "status": "approved"}
+        if path.endswith("/status"):
+            json_body["status"] = "deprecated"
         response = client.request(method, path, headers=headers, json=json_body)
         assert response.status_code == expected_status
 

@@ -55,6 +55,12 @@ const providerStatus = ref<ProviderStatusPayload | null>(null);
 const reviewPanel = ref<InstanceType<typeof ReviewPanel> | null>(null);
 
 const caseForm = ref({
+  deviceType: "",
+  component: "",
+  faultCode: "",
+  riskLevel: "medium",
+  maintenanceLevel: "normal_repair",
+  workflowId: "",
   cause: "火花塞积碳导致点火能量不足。",
   solution: "清理并更换火花塞，复核燃油滤清器。",
   result: "启动恢复正常，怠速稳定。",
@@ -361,13 +367,18 @@ async function createCase() {
   try {
     await submitCase({
       deviceModel: deviceModel.value,
+      deviceType: caseForm.value.deviceType || deviceModel.value,
+      component: caseForm.value.component,
+      faultCode: caseForm.value.faultCode,
       faultText: faultText.value,
       cause: caseForm.value.cause,
       solution: caseForm.value.solution,
       result: caseForm.value.result,
       experienceSummary: `${caseForm.value.cause} ${caseForm.value.solution}`,
       lessonsLearned: caseForm.value.result,
-      maintenanceLevel: maintenanceLevel.value,
+      maintenanceLevel: caseForm.value.maintenanceLevel || maintenanceLevel.value,
+      riskLevel: caseForm.value.riskLevel,
+      workflowId: caseForm.value.workflowId || undefined,
       tags: caseForm.value.tags.split(",").map((tag) => tag.trim()).filter(Boolean)
     });
     ElMessage.success("处理经验已提交审核，审核通过后将沉淀到知识库。");
@@ -471,6 +482,12 @@ refreshProviderStatus();
           @feedback="submitRagAnswerFeedback"
         />
         <CasePanel
+          v-model:device-type="caseForm.deviceType"
+          v-model:component="caseForm.component"
+          v-model:fault-code="caseForm.faultCode"
+          v-model:risk-level="caseForm.riskLevel"
+          v-model:maintenance-level="caseForm.maintenanceLevel"
+          v-model:workflow-id="caseForm.workflowId"
           v-model:cause="caseForm.cause"
           v-model:solution="caseForm.solution"
           v-model:result="caseForm.result"

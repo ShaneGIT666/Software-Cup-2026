@@ -152,6 +152,8 @@ def retrieve_keyword_hits(context: QueryContext) -> list[RetrievalHit]:
                     score_breakdown=score_breakdown(scoring, "case"),
                     device_type=repair_case.get("deviceType"),
                     device_model=repair_case.get("deviceModel"),
+                    component=repair_case.get("component"),
+                    fault_code=repair_case.get("faultCode"),
                     fault_type=repair_case.get("faultTitle"),
                     review_status=repair_case.get("status") or "unknown",
                     keyword_score=float(scoring["score"]),

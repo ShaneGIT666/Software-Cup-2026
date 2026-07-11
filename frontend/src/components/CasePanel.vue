@@ -6,6 +6,12 @@ defineProps<{
   solution: string;
   result: string;
   tags: string;
+  deviceType: string;
+  component: string;
+  faultCode: string;
+  riskLevel: string;
+  maintenanceLevel: string;
+  workflowId: string;
   submitting: boolean;
 }>();
 
@@ -14,6 +20,12 @@ const emit = defineEmits<{
   "update:solution": [value: string];
   "update:result": [value: string];
   "update:tags": [value: string];
+  "update:deviceType": [value: string];
+  "update:component": [value: string];
+  "update:faultCode": [value: string];
+  "update:riskLevel": [value: string];
+  "update:maintenanceLevel": [value: string];
+  "update:workflowId": [value: string];
   submit: [];
 }>();
 </script>
@@ -28,6 +40,36 @@ const emit = defineEmits<{
       将现场处理经验提交审核。审核通过后会沉淀到知识库，后续检索和智能建议可继续复用。
     </p>
     <el-form label-position="top">
+      <div class="case-meta-grid">
+        <el-form-item label="Device type">
+          <el-input :model-value="deviceType" @update:model-value="emit('update:deviceType', String($event))" />
+        </el-form-item>
+        <el-form-item label="Component">
+          <el-input :model-value="component" @update:model-value="emit('update:component', String($event))" />
+        </el-form-item>
+        <el-form-item label="Fault code">
+          <el-input :model-value="faultCode" @update:model-value="emit('update:faultCode', String($event))" />
+        </el-form-item>
+        <el-form-item label="Risk">
+          <el-select :model-value="riskLevel" @update:model-value="emit('update:riskLevel', String($event))">
+            <el-option label="Low" value="low" />
+            <el-option label="Medium" value="medium" />
+            <el-option label="High" value="high" />
+            <el-option label="Critical" value="critical" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="Maintenance">
+          <el-select :model-value="maintenanceLevel" @update:model-value="emit('update:maintenanceLevel', String($event))">
+            <el-option label="Daily" value="daily_check" />
+            <el-option label="Normal" value="normal_repair" />
+            <el-option label="Major" value="major_repair" />
+            <el-option label="Emergency" value="emergency" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="Workflow ID">
+          <el-input :model-value="workflowId" @update:model-value="emit('update:workflowId', String($event))" />
+        </el-form-item>
+      </div>
       <el-form-item label="故障原因">
         <el-input :model-value="cause" @update:model-value="emit('update:cause', String($event))" />
       </el-form-item>

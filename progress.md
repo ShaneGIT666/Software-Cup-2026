@@ -86,3 +86,6 @@
 - R01 targeted regression passed: `10 passed in 1.11s` across chunk revision audit, approved-only knowledge graph, and evidence pack tests.
 - R02 replaced broad case coverage promotion with an explicit source diversity policy: only approved, strong keyword/matched-term cases with comparable rerank/fusion score can replace the final topK item; weak vector-only, low-score, small-topK, and already-covered cases are not promoted.
 - R02 targeted retrieval regression passed: `17 passed in 0.41s`.
+- R03 completed repair case metadata and workflow selection: `component` and `faultCode` are accepted, stored, and returned in approved case search results; explicit workflow IDs are validated for existence and device compatibility; no reliable match now stores `workflowId=null` with `workflowSelectionReason=no_reliable_match` instead of falling back to the first workflow.
+- R03 frontend case submission now supports device type, component, fault code, risk level, maintenance level, and optional workflow ID.
+- R03 validation passed: backend `120 passed in 14.32s`; frontend build passed in `5.34s` with existing Vite/Rollup warnings.

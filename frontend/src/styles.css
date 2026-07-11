@@ -327,6 +327,12 @@ h2 {
   line-height: 1.65;
 }
 
+.case-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px 12px;
+}
+
 .action-row {
   display: flex;
   flex-wrap: wrap;
@@ -1805,6 +1811,7 @@ h2 {
   }
 
   .feedback-grid,
+  .case-meta-grid,
   .knowledge-upload,
   .graph-edge-list,
   .structured-answer,
