@@ -43,21 +43,6 @@ def compact_graph_context(graph: dict[str, Any] | None, limit: int = 8) -> dict[
     }
 
 
-def restore_structured_llm_answer(original_payload: dict[str, Any], processed_payload: dict[str, Any]) -> dict[str, Any]:
-    if not original_payload.get("llmAnswerUsed"):
-        return processed_payload
-    answer = str(original_payload.get("answer", "")).strip()
-    if not answer:
-        return processed_payload
-    return {
-        **processed_payload,
-        "answer": answer,
-        "llmAnswerUsed": True,
-        "llmAnswerMode": original_payload.get("llmAnswerMode", "structured_evidence_answer"),
-        "llmAnswerPreservedAfterRules": True,
-    }
-
-
 def answer_with_rag(request: RagAnswerRequest) -> dict[str, Any]:
     search_request = SearchRequest(
         deviceModel=request.deviceModel,
@@ -83,7 +68,6 @@ def answer_with_rag(request: RagAnswerRequest) -> dict[str, Any]:
         maintenance_level=request.maintenanceLevel,
         risk_level=request.riskLevel,
     )
-    original_rag_payload = dict(rag_payload)
     corrective_decision = assess_corrective_rag(request.deviceModel, request.faultText, search_payload["results"])
     rag_payload = apply_corrective_rag(rag_payload, corrective_decision)
     safety_report = evaluate_safety_rules(
@@ -93,7 +77,6 @@ def answer_with_rag(request: RagAnswerRequest) -> dict[str, Any]:
         rag_payload.get("structuredAnswer", {}),
     )
     rag_payload = apply_safety_rules(rag_payload, safety_report)
-    rag_payload = restore_structured_llm_answer(original_rag_payload, rag_payload)
     return {
         "queryId": search_payload["queryId"],
         "summary": search_payload["summary"],
@@ -124,7 +107,6 @@ def diagnose_with_rag(request: DiagnosisRequest) -> dict[str, Any]:
         maintenance_level=request.maintenanceLevel,
         risk_level=request.riskLevel,
     )
-    original_rag_payload = dict(rag_payload)
     corrective_decision = assess_corrective_rag(request.deviceModel, request.faultText, contexts)
     rag_payload = apply_corrective_rag(rag_payload, corrective_decision)
     safety_report = evaluate_safety_rules(
@@ -134,7 +116,6 @@ def diagnose_with_rag(request: DiagnosisRequest) -> dict[str, Any]:
         rag_payload.get("structuredAnswer", {}),
     )
     rag_payload = apply_safety_rules(rag_payload, safety_report)
-    rag_payload = restore_structured_llm_answer(original_rag_payload, rag_payload)
     citations = rag_payload.get("citations", [])
     selected_citations = [
         item for item in citations if not request.evidenceIds or item.get("id") in request.evidenceIds

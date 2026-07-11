@@ -195,7 +195,7 @@ def build_structured_rag_output(
             maintenanceLevelDescription=level_description,
             preWorkPreparation=pre_work,
             inspectionSteps=["补充设备型号、故障码、故障图片或上传并审核相关手册后重新检索。"],
-            repairSteps=["暂无证据支持的维修步骤，不建议直接执行拆装或参数调整。"],
+            repairSteps=[],
             riskControls=risk_controls,
             complianceChecks=compliance_checks,
             safetyWarnings=["证据不足时不得执行高风险操作，需由现场负责人或资深检修人员复核。"],

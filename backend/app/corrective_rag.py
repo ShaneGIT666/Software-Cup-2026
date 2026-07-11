@@ -144,8 +144,13 @@ def apply_corrective_rag(rag_payload: dict[str, Any], decision: dict[str, Any]) 
         safety.append("Corrective RAG 已触发人工复核要求，处理前需由负责人确认。")
         structured["safetyWarnings"] = list(dict.fromkeys(safety))
 
+    if decision.get("action") == "needs_more_evidence":
+        structured["repairSteps"] = []
+        structured["riskReviewRequired"] = True
+
     structured["uncertainInformation"] = list(dict.fromkeys(uncertain))
     payload["structuredAnswer"] = structured
+    payload["recommendedActions"] = structured.get("inspectionSteps", []) + structured.get("repairSteps", [])
     payload["riskReviewRequired"] = bool(payload.get("riskReviewRequired") or structured.get("riskReviewRequired"))
     payload["answer"] = format_structured_answer(structured)
     return payload

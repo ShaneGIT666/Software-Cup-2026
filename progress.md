@@ -60,3 +60,8 @@
 - T03/T04 targeted tests passed: `3 passed in 0.82s`.
 - Backend API contract tests passed after update: `95 passed in 14.54s`.
 - Combined retrieval/evidence/chunk/graph/multimodal/corrective/safety regression passed: `28 passed in 0.74s`.
+- Completed T05/T06 RAG answer safety: removed post-safety restoration of raw LLM text, kept provider text only in `rawAnswer`, and made safety/corrective structured output the final `answer`.
+- Evidence-empty structured output now has no `repairSteps`; Corrective RAG also clears repair steps and refreshes `recommendedActions` when action is `needs_more_evidence`.
+- T05/T06 focused tests passed: `11 passed in 0.21s`.
+- Backend API contract tests passed after T05/T06: `95 passed in 14.66s`.
+- Combined retrieval/evidence/chunk/graph/multimodal/corrective/safety regression passed after T05/T06: `28 passed in 0.76s`.

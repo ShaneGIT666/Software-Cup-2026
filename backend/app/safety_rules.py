@@ -234,6 +234,7 @@ def apply_safety_rules(rag_payload: dict[str, Any], safety_report: dict[str, Any
     if safety_report.get("manualReviewRequired"):
         structured["riskReviewRequired"] = True
     payload["structuredAnswer"] = structured
+    payload["recommendedActions"] = structured.get("inspectionSteps", []) + structured.get("repairSteps", [])
     payload["riskReviewRequired"] = bool(payload.get("riskReviewRequired") or safety_report.get("manualReviewRequired"))
     payload["answer"] = format_structured_answer(structured)
     return payload

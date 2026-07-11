@@ -458,9 +458,11 @@ def test_rag_answer_uses_structured_real_llm_answer_when_compliant(tmp_path, mon
     payload = response.json()["data"]
     assert payload["fallback"] is False
     assert payload["rawAnswer"] == structured_answer
-    assert payload["answer"] == structured_answer
+    assert payload["answer"] != payload["rawAnswer"]
+    assert "【初步判断】" in payload["answer"]
     assert payload["llmAnswerUsed"] is True
     assert payload["llmAnswerMode"] == "structured_evidence_answer"
+    assert "llmAnswerPreservedAfterRules" not in payload
 
 
 def test_rag_answer_uses_openai_compatible_chat_completions(tmp_path, monkeypatch) -> None:

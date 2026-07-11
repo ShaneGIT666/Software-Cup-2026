@@ -81,7 +81,7 @@ def test_apply_corrective_rag_merges_uncertainty_into_structured_answer() -> Non
         "structuredAnswer": {
             "preliminaryJudgment": "已有证据。",
             "inspectionSteps": [],
-            "repairSteps": [],
+            "repairSteps": ["证据不足时不应保留的具体维修步骤"],
             "safetyWarnings": [],
             "acceptanceCriteria": [],
             "citations": [],
@@ -100,5 +100,7 @@ def test_apply_corrective_rag_merges_uncertainty_into_structured_answer() -> Non
 
     assert updated["correctiveRag"] == decision
     assert updated["riskReviewRequired"] is True
+    assert updated["structuredAnswer"]["repairSteps"] == []
+    assert updated["recommendedActions"] == []
     assert any("Corrective RAG" in item for item in updated["structuredAnswer"]["uncertainInformation"])
     assert "Corrective RAG" in updated["answer"]

@@ -38,6 +38,7 @@ def test_structured_output_marks_no_evidence_as_uncertain() -> None:
 
     assert structured["riskReviewRequired"] is True
     assert structured["citations"] == []
+    assert structured["repairSteps"] == []
     assert "不能给出确定检修判断" in structured["preliminaryJudgment"]
     assert "未检索到" in structured["uncertainInformation"][0]
     assert "【不确定信息】" in format_structured_answer(structured)
