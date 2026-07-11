@@ -2,14 +2,17 @@
 import { computed, ref } from "vue";
 import { ElMessage } from "element-plus";
 import {
+  clearAuthToken,
   fetchKnowledgeGraph,
   fetchKnowledgeGraphOverview,
   fetchProviderStatus,
   fetchWorkflow,
+  hasAuthToken,
   rebuildKnowledgeGraph,
   requestMultimodalDiagnosis,
   requestRagAnswer,
   searchKnowledge,
+  setAuthToken,
   submitCase,
   submitRagFeedback,
   uploadFaultFile,
@@ -53,6 +56,8 @@ const ragAnswer = ref<RagAnswerPayload | null>(null);
 const multimodalDiagnosis = ref<MultimodalDiagnosisPayload | null>(null);
 const providerStatus = ref<ProviderStatusPayload | null>(null);
 const reviewPanel = ref<InstanceType<typeof ReviewPanel> | null>(null);
+const authTokenInput = ref("");
+const authTokenConfigured = ref(hasAuthToken());
 
 const caseForm = ref({
   deviceType: "",
@@ -227,6 +232,20 @@ async function refreshProviderStatus() {
     providerStatus.value = null;
     ElMessage.warning("后端服务暂不可用，请确认服务已启动。");
   }
+}
+
+function saveSessionAuthToken() {
+  setAuthToken(authTokenInput.value);
+  authTokenConfigured.value = hasAuthToken();
+  authTokenInput.value = "";
+  ElMessage.success("Access token saved for this browser session.");
+}
+
+function clearSessionAuthToken() {
+  clearAuthToken();
+  authTokenConfigured.value = false;
+  authTokenInput.value = "";
+  ElMessage.success("Access token cleared.");
 }
 
 async function runSearch() {
@@ -548,6 +567,25 @@ refreshProviderStatus();
       </section>
 
       <section class="status-detail-grid">
+        <article class="system-card auth-session-card">
+          <h3>Session access token</h3>
+          <p v-if="systemStatus?.auth?.mode === 'off'">AUTH_MODE=off. Offline demo mode has API protection disabled.</p>
+          <p v-else-if="systemStatus?.auth?.mode === 'token'">AUTH_MODE=token. Protected actions require a bearer token.</p>
+          <p v-else>Auth mode status is unavailable or misconfigured.</p>
+          <el-input
+            v-model="authTokenInput"
+            type="password"
+            show-password
+            placeholder="Paste operator, reviewer, or admin token"
+          />
+          <div class="auth-actions">
+            <el-button type="primary" @click="saveSessionAuthToken">Save for session</el-button>
+            <el-button plain @click="clearSessionAuthToken">Clear</el-button>
+          </div>
+          <small>{{ authTokenConfigured ? "Token configured for current session." : "No session token configured." }}</small>
+          <small>Stored only in sessionStorage; it disappears when this browser session ends and is not bundled into source or build output.</small>
+        </article>
+
         <article class="system-card">
           <h3>系统指标</h3>
           <div v-if="systemMetricItems.length" class="status-metrics">

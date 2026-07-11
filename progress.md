@@ -95,3 +95,5 @@
 - R05 added controlled knowledge document file access at `/api/knowledge/documents/{document_id}/file` with reviewer authorization, fixed new and returned document URLs to use the controlled API, and kept the old public `/knowledge` path inaccessible.
 - R05 frontend document opening now fetches the controlled file endpoint with Authorization headers and opens a blob URL instead of using a raw public link.
 - R05 validation passed: backend `106 passed in 14.41s`; frontend build passed in `5.48s` with existing Vite/Rollup warnings.
+- R06 removed frontend build-time API token configuration, switched browser credentials to `sessionStorage.softwareCupAuthToken`, exported token session helpers and `ApiRequestError`, and added a status-page token save/clear UI that never displays the token value.
+- R06 validation passed: frontend build passed in `5.29s`; build artifact scan for `VITE_API_AUTH_TOKEN|operator-token|review-token|admin-token` returned no matches.

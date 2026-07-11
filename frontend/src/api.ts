@@ -198,11 +198,45 @@ export interface ProviderStatusPayload {
   system?: SystemStatusPayload;
 }
 
+const AUTH_TOKEN_KEY = "softwareCupAuthToken";
+
+export class ApiRequestError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiRequestError";
+    this.status = status;
+  }
+}
+
+export function getAuthToken(): string {
+  return typeof window !== "undefined" ? window.sessionStorage.getItem(AUTH_TOKEN_KEY)?.trim() ?? "" : "";
+}
+
+export function setAuthToken(token: string): void {
+  if (typeof window !== "undefined") {
+    const normalized = token.trim();
+    if (normalized) {
+      window.sessionStorage.setItem(AUTH_TOKEN_KEY, normalized);
+    } else {
+      window.sessionStorage.removeItem(AUTH_TOKEN_KEY);
+    }
+  }
+}
+
+export function clearAuthToken(): void {
+  if (typeof window !== "undefined") {
+    window.sessionStorage.removeItem(AUTH_TOKEN_KEY);
+  }
+}
+
+export function hasAuthToken(): boolean {
+  return Boolean(getAuthToken());
+}
+
 function authHeaders(): Record<string, string> {
-  const storageToken =
-    typeof window !== "undefined" ? window.localStorage.getItem("softwareCupAuthToken")?.trim() : "";
-  const envToken = (import.meta.env.VITE_API_AUTH_TOKEN as string | undefined)?.trim();
-  const token = storageToken || envToken || "";
+  const token = getAuthToken();
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
@@ -223,7 +257,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   });
   const payload = (await response.json()) as ApiResponse<T>;
   if (!response.ok || !payload.success) {
-    throw new Error(payload.message || "请求失败");
+    throw new ApiRequestError(payload.message || "Request failed", response.status);
   }
   return payload.data;
 }
@@ -237,7 +271,7 @@ async function requestBlob(path: string, options?: RequestInit): Promise<Blob> {
     }
   });
   if (!response.ok) {
-    throw new Error("璇锋眰澶辫触");
+    throw new ApiRequestError("Request failed", response.status);
   }
   return response.blob();
 }

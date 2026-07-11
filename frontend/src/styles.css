@@ -1424,6 +1424,13 @@ h2 {
   margin: 10px 0;
 }
 
+.auth-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 10px 0;
+}
+
 .command-list code {
   display: block;
   border: 1px solid var(--line);
