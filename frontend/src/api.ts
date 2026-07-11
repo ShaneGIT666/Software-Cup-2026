@@ -228,6 +228,20 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   return payload.data;
 }
 
+async function requestBlob(path: string, options?: RequestInit): Promise<Blob> {
+  const response = await fetch(path, {
+    ...options,
+    headers: {
+      ...authHeaders(),
+      ...options?.headers
+    }
+  });
+  if (!response.ok) {
+    throw new Error("璇锋眰澶辫触");
+  }
+  return response.blob();
+}
+
 export function searchKnowledge(deviceModel: string, faultText: string, maintenanceLevel?: string) {
   return request<SearchPayload>("/api/search", {
     method: "POST",
@@ -662,6 +676,10 @@ export function fetchKnowledgeParseTask(taskId: string) {
 
 export function fetchKnowledgeDocumentChunks(documentId: string) {
   return request<KnowledgeChunkListPayload>(`/api/knowledge/documents/${documentId}/chunks`);
+}
+
+export function downloadKnowledgeDocumentFile(documentId: string) {
+  return requestBlob(`/api/knowledge/documents/${documentId}/file`);
 }
 
 export function fetchKnowledgeDocumentRevisions(documentId: string) {

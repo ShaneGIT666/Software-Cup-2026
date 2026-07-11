@@ -92,3 +92,6 @@
 - R04 completed the role-based API authorization matrix: token mode now rejects unsupported `AUTH_MODE`, invalid `AUTH_TOKEN_ROLE`, duplicate cross-role tokens, and missing admin token; operator submission routes, reviewer review/list routes, and admin validation/maintenance routes are explicitly protected.
 - R04 status reporting exposes auth booleans and redacted configuration errors without token material.
 - R04 backend validation passed: `105 passed in 14.37s`.
+- R05 added controlled knowledge document file access at `/api/knowledge/documents/{document_id}/file` with reviewer authorization, fixed new and returned document URLs to use the controlled API, and kept the old public `/knowledge` path inaccessible.
+- R05 frontend document opening now fetches the controlled file endpoint with Authorization headers and opens a blob URL instead of using a raw public link.
+- R05 validation passed: backend `106 passed in 14.41s`; frontend build passed in `5.48s` with existing Vite/Rollup warnings.

@@ -487,6 +487,29 @@ def mark_initial_asset_analysis_state(document: dict[str, Any]) -> dict[str, Any
     }
 
 
+def controlled_document_url(document: dict[str, Any]) -> str:
+    return f"/api/knowledge/documents/{document['id']}/file"
+
+
+def public_document(document: dict[str, Any]) -> dict[str, Any]:
+    return {**document, "url": controlled_document_url(document)}
+
+
+def resolve_document_file(document: dict[str, Any]) -> Path:
+    root = (knowledge_dir() / "files").resolve()
+    suffix = str(document.get("suffix") or "").strip().lstrip(".")
+    if not suffix:
+        raise HTTPException(status_code=404, detail="knowledge document file not found")
+    candidate = (root / f"{document['id']}.{suffix}").resolve()
+    try:
+        candidate.relative_to(root)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="knowledge document file not found") from exc
+    if not candidate.exists() or not candidate.is_file():
+        raise HTTPException(status_code=404, detail="knowledge document file not found")
+    return candidate
+
+
 def should_enqueue_asset_analysis(document: dict[str, Any]) -> bool:
     return (
         auto_analyze_assets_enabled()
@@ -911,7 +934,7 @@ def ingest_knowledge_document_bytes(
         "parserFallbackReason": parse_result.get("fallbackReason", ""),
         "parseArtifacts": parse_artifacts,
         "uploadedAt": utc_now(),
-        "url": f"/knowledge/files/{target.name}",
+        "url": f"/api/knowledge/documents/{document_id}/file",
     }
     document = mark_initial_asset_analysis_state(document)
 
@@ -923,7 +946,7 @@ def ingest_knowledge_document_bytes(
     existing_chunks.extend(chunks)
     save_document_chunks(existing_chunks)
 
-    return {**document, "chunks": chunks[:3]}
+    return {**public_document(document), "chunks": chunks[:3]}
 
 
 async def ingest_knowledge_document(file: UploadFile, source_name: str | None = None) -> dict[str, Any]:
@@ -1122,7 +1145,7 @@ def analyze_knowledge_document(document_id: str, provider: str | None = None) ->
 
 def list_knowledge_documents() -> dict[str, Any]:
     documents = sorted(load_documents(), key=lambda item: item.get("uploadedAt", ""), reverse=True)
-    return {"items": documents, "total": len(documents)}
+    return {"items": [public_document(document) for document in documents], "total": len(documents)}
 
 
 def get_knowledge_document(document_id: str) -> dict[str, Any]:
@@ -1131,7 +1154,7 @@ def get_knowledge_document(document_id: str) -> dict[str, Any]:
             chunks = [chunk for chunk in load_document_chunks() if chunk.get("documentId") == document_id]
             revisions = [item for item in load_knowledge_revisions() if item.get("documentId") == document_id]
             return {
-                **document,
+                **public_document(document),
                 "chunks": chunks[:10],
                 "chunkTotal": len(chunks),
                 "revisionCount": len(revisions),

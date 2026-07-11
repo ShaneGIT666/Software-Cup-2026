@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
-import { Database, History, Pencil, UploadCloud, WandSparkles } from "@lucide/vue";
+import { Database, Download, History, Pencil, UploadCloud, WandSparkles } from "@lucide/vue";
 import { ElMessage } from "element-plus";
 import {
   analyzeKnowledgeDocument,
+  downloadKnowledgeDocumentFile,
   fetchKnowledgeDocumentChunks,
   fetchKnowledgeDocumentRevisions,
   fetchKnowledgeDocuments,
@@ -170,6 +171,17 @@ async function handleAnalyze(document: KnowledgeDocument) {
     ElMessage.error("资料分析失败，请稍后重试。");
   } finally {
     analyzingId.value = "";
+  }
+}
+
+async function openDocumentFile(document: KnowledgeDocument) {
+  try {
+    const blob = await downloadKnowledgeDocumentFile(document.id);
+    const url = URL.createObjectURL(blob);
+    window.open(url, "_blank", "noopener,noreferrer");
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  } catch {
+    ElMessage.error("Document file could not be opened. Check the current access token.");
   }
 }
 
@@ -352,6 +364,10 @@ defineExpose({ loadDocuments });
           <el-tag v-for="item in document.analysis.keyComponents" :key="item" size="small" effect="plain">{{ item }}</el-tag>
         </div>
         <div class="knowledge-actions">
+          <el-button class="knowledge-analyze-button" type="info" size="small" plain @click="openDocumentFile(document)">
+            <Download :size="14" />
+            Open file
+          </el-button>
           <el-button
             v-if="canAnalyze(document)"
             class="knowledge-analyze-button"

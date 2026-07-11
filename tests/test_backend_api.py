@@ -1304,6 +1304,47 @@ def test_knowledge_directory_is_not_public_static_mount(tmp_path, monkeypatch) -
     assert client.get("/knowledge/%2E%2E/examples/repair-cases.json").status_code == 404
 
 
+def test_controlled_knowledge_document_file_access(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("AUTH_MODE", "token")
+    monkeypatch.setenv("AUTH_OPERATOR_TOKEN", "operator-token")
+    monkeypatch.setenv("AUTH_REVIEWER_TOKEN", "review-token")
+    monkeypatch.setenv("AUTH_ADMIN_TOKEN", "admin-token")
+    client = make_client(tmp_path, monkeypatch)
+    operator_headers = {"Authorization": "Bearer operator-token"}
+    reviewer_headers = {"Authorization": "Bearer review-token"}
+
+    content = b"controlled knowledge file contents"
+    upload = client.post(
+        "/api/knowledge/documents",
+        headers=operator_headers,
+        files={"file": ("controlled-manual.txt", content, "text/plain")},
+        data={"source_name": "controlled manual"},
+    )
+    assert upload.status_code == 200
+    document = upload.json()["data"]
+    assert document["url"] == f"/api/knowledge/documents/{document['id']}/file"
+
+    file_url = document["url"]
+    assert client.get(file_url).status_code == 401
+    assert client.get(file_url, headers=operator_headers).status_code == 403
+    reviewer_download = client.get(file_url, headers=reviewer_headers)
+    assert reviewer_download.status_code == 200
+    assert reviewer_download.content == content
+    assert str(tmp_path) not in reviewer_download.text
+
+    detail = client.get(f"/api/knowledge/documents/{document['id']}", headers=reviewer_headers).json()["data"]
+    assert detail["url"] == file_url
+    listed = client.get("/api/knowledge/documents", headers=reviewer_headers).json()["data"]["items"]
+    assert any(item["id"] == document["id"] and item["url"] == file_url for item in listed)
+
+    assert client.get("/api/knowledge/documents/missing/file", headers=reviewer_headers).status_code == 404
+    stored_file = tmp_path / "knowledge" / "files" / f"{document['id']}.txt"
+    stored_file.unlink()
+    assert client.get(file_url, headers=reviewer_headers).status_code == 404
+    assert client.get("/api/knowledge/documents/../file", headers=reviewer_headers).status_code == 404
+    assert client.get("/api/knowledge/documents/%2E%2E/file", headers=reviewer_headers).status_code == 404
+
+
 def save_pending_review_chunk() -> None:
     data_store.save_documents(
         [

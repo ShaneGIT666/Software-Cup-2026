@@ -29,6 +29,7 @@ from .knowledge import (
     list_knowledge_parse_tasks,
     process_knowledge_parse_task,
     review_knowledge_chunk,
+    resolve_document_file,
     revise_knowledge_chunk,
     set_knowledge_chunk_status,
     should_enqueue_asset_analysis,
@@ -570,6 +571,17 @@ def get_knowledge_document_detail(
     _auth: dict[str, Any] = Depends(require_role("reviewer")),
 ) -> ApiResponse:
     return ApiResponse(data=get_knowledge_document(document_id))
+
+
+@app.get("/api/knowledge/documents/{document_id}/file")
+def get_knowledge_document_file(
+    document_id: str,
+    _auth: dict[str, Any] = Depends(require_role("reviewer")),
+) -> FileResponse:
+    document = get_knowledge_document(document_id)
+    file_path = resolve_document_file(document)
+    file_name = Path(str(document.get("fileName") or file_path.name)).name
+    return FileResponse(file_path, media_type=document.get("fileType") or None, filename=file_name)
 
 
 @app.get("/api/knowledge/documents/{document_id}/chunks", response_model=ApiResponse)
