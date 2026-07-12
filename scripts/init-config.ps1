@@ -5,6 +5,7 @@ param(
     [string]$Model = "",
     [string]$ApiKey = "",
     [switch]$Force,
+    [switch]$UnsafeNoAuth,
     [switch]$Help
 )
 
@@ -19,6 +20,7 @@ function Show-Help {
     Write-Host "Usage:"
     Write-Host "  powershell -ExecutionPolicy Bypass -File .\scripts\init-config.ps1 -Mode offline"
     Write-Host "  powershell -ExecutionPolicy Bypass -File .\scripts\init-config.ps1 -Mode llm -BaseUrl <url> -Model <model>"
+    Write-Host "  powershell -ExecutionPolicy Bypass -File .\scripts\init-config.ps1 -Mode offline -UnsafeNoAuth"
     Write-Host ""
     Write-Host "Modes:"
     Write-Host "  offline  Demo fallback mode without remote API keys."
@@ -26,6 +28,7 @@ function Show-Help {
     Write-Host ""
     Write-Host "Safety:"
     Write-Host "  The script writes only local .env, backs up existing .env first, and masks API keys in output."
+    Write-Host "  UnsafeNoAuth is for local loopback-only demonstration and must not be used for competition delivery."
 }
 
 function Mask-Key([string]$Key) {
@@ -36,6 +39,18 @@ function Mask-Key([string]$Key) {
         return "****"
     }
     return "$($Key.Substring(0, 3))****$($Key.Substring($Key.Length - 4))"
+}
+
+function New-SecureToken {
+    $bytes = New-Object byte[] 32
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try {
+        $rng.GetBytes($bytes)
+    }
+    finally {
+        $rng.Dispose()
+    }
+    return -join ($bytes | ForEach-Object { $_.ToString("x2") })
 }
 
 function Ensure-GitIgnore {
@@ -83,6 +98,26 @@ if (Test-Path $EnvPath) {
     Write-Host "Backed up existing .env to $backup"
 }
 
+$authLines = if ($UnsafeNoAuth) {
+    @(
+        "APP_ENV=development",
+        "AUTH_MODE=off",
+        "ALLOW_INSECURE_AUTH_OFF=true"
+    )
+} else {
+    $OperatorToken = New-SecureToken
+    $ReviewerToken = New-SecureToken
+    $AdminToken = New-SecureToken
+    @(
+        "APP_ENV=competition",
+        "AUTH_MODE=token",
+        "ALLOW_INSECURE_AUTH_OFF=false",
+        "AUTH_OPERATOR_TOKEN=$OperatorToken",
+        "AUTH_REVIEWER_TOKEN=$ReviewerToken",
+        "AUTH_ADMIN_TOKEN=$AdminToken"
+    )
+}
+
 if ($Mode -eq "llm") {
     if (-not $BaseUrl) {
         $BaseUrl = Read-Host "OpenAI-compatible Base URL"
@@ -99,7 +134,7 @@ if ($Mode -eq "llm") {
             [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr)
         }
     }
-    $lines = @(
+    $lines = @($authLines + @(
         "REMOTE_API_MODE=auto",
         "LLM_PROVIDER=openai",
         "OPENAI_BASE_URL=$BaseUrl",
@@ -111,15 +146,15 @@ if ($Mode -eq "llm") {
         "MULTIMODAL_PROVIDER=mock",
         "OCR_PROVIDER=mock",
         "RAG_VECTOR_FALLBACK_LOCAL=on"
-    )
+    ))
 } else {
-    $lines = @(
+    $lines = @($authLines + @(
         "REMOTE_API_MODE=off",
         "LLM_PROVIDER=mock",
         "MULTIMODAL_PROVIDER=mock",
         "OCR_PROVIDER=mock",
         "RAG_VECTOR_FALLBACK_LOCAL=on"
-    )
+    ))
 }
 
 Set-Content -LiteralPath $EnvPath -Value ($lines -join "`n") -Encoding UTF8
@@ -134,9 +169,15 @@ Write-Host "  Mode: $Mode"
 Write-Host "  Base URL: $displayBaseUrl"
 Write-Host "  Model: $displayModel"
 Write-Host "  API Key: $(Mask-Key $ApiKey)"
+if (-not $UnsafeNoAuth) {
+    Write-Host "  Operator token: $(Mask-Key $OperatorToken)"
+    Write-Host "  Reviewer token: $(Mask-Key $ReviewerToken)"
+    Write-Host "  Admin token: $(Mask-Key $AdminToken)"
+}
 Write-Host ""
 Write-Host "Next start commands:"
-Write-Host "  .\backend\.venv\Scripts\python.exe -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000"
+$HostAddress = if ($UnsafeNoAuth) { "127.0.0.1" } else { "0.0.0.0" }
+Write-Host "  .\backend\.venv\Scripts\python.exe -m uvicorn backend.app.main:app --host $HostAddress --port 8000"
 Write-Host "  cd frontend; npm.cmd run dev"
 Write-Host ""
 Write-Host "Validate provider status:"

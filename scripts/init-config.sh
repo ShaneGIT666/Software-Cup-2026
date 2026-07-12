@@ -9,6 +9,7 @@ BASE_URL=""
 MODEL=""
 API_KEY=""
 FORCE="false"
+UNSAFE_NO_AUTH="false"
 
 show_help() {
   cat <<'EOF'
@@ -17,6 +18,7 @@ Initialize local configuration for Software Cup maintenance assistant.
 Usage:
   bash scripts/init-config.sh --mode offline
   bash scripts/init-config.sh --mode llm --base-url <url> --model <model>
+  bash scripts/init-config.sh --mode offline --unsafe-no-auth
 
 Modes:
   offline  Demo fallback mode without remote API keys.
@@ -24,6 +26,7 @@ Modes:
 
 Safety:
   The script writes only local .env, backs up existing .env first, and masks API keys in output.
+  --unsafe-no-auth is for local loopback-only demonstration and must not be used for competition delivery.
 EOF
 }
 
@@ -35,6 +38,17 @@ mask_key() {
     printf '****'
   else
     printf '%s****%s' "${key:0:3}" "${key: -4}"
+  fi
+}
+
+new_secure_token() {
+  if command -v python3 >/dev/null 2>&1; then
+    python3 -c 'import secrets; print(secrets.token_hex(32))'
+  elif command -v openssl >/dev/null 2>&1; then
+    openssl rand -hex 32
+  else
+    echo "python3 or openssl is required to generate secure tokens" >&2
+    exit 1
   fi
 }
 
@@ -67,6 +81,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --force)
       FORCE="true"
+      shift
+      ;;
+    --unsafe-no-auth)
+      UNSAFE_NO_AUTH="true"
       shift
       ;;
     -h|--help)
@@ -114,6 +132,15 @@ if [[ -f "$ENV_PATH" ]]; then
   echo "Backed up existing .env to $backup"
 fi
 
+if [[ "$UNSAFE_NO_AUTH" == "true" ]]; then
+  AUTH_LINES=$'APP_ENV=development\nAUTH_MODE=off\nALLOW_INSECURE_AUTH_OFF=true'
+else
+  OPERATOR_TOKEN="$(new_secure_token)"
+  REVIEWER_TOKEN="$(new_secure_token)"
+  ADMIN_TOKEN="$(new_secure_token)"
+  AUTH_LINES=$"APP_ENV=competition\nAUTH_MODE=token\nALLOW_INSECURE_AUTH_OFF=false\nAUTH_OPERATOR_TOKEN=$OPERATOR_TOKEN\nAUTH_REVIEWER_TOKEN=$REVIEWER_TOKEN\nAUTH_ADMIN_TOKEN=$ADMIN_TOKEN"
+fi
+
 if [[ "$MODE" == "llm" ]]; then
   [[ -n "$BASE_URL" ]] || read -r -p "OpenAI-compatible Base URL: " BASE_URL
   [[ -n "$MODEL" ]] || read -r -p "Model name: " MODEL
@@ -122,6 +149,7 @@ if [[ "$MODE" == "llm" ]]; then
     echo
   fi
   cat > "$ENV_PATH" <<EOF
+$AUTH_LINES
 REMOTE_API_MODE=auto
 LLM_PROVIDER=openai
 OPENAI_BASE_URL=$BASE_URL
@@ -136,6 +164,7 @@ RAG_VECTOR_FALLBACK_LOCAL=on
 EOF
 else
   cat > "$ENV_PATH" <<'EOF'
+$AUTH_LINES
 REMOTE_API_MODE=off
 LLM_PROVIDER=mock
 MULTIMODAL_PROVIDER=mock
@@ -156,9 +185,16 @@ else
   echo "  Model: mock"
 fi
 echo "  API Key: $(mask_key "$API_KEY")"
+if [[ "$UNSAFE_NO_AUTH" != "true" ]]; then
+  echo "  Operator token: $(mask_key "$OPERATOR_TOKEN")"
+  echo "  Reviewer token: $(mask_key "$REVIEWER_TOKEN")"
+  echo "  Admin token: $(mask_key "$ADMIN_TOKEN")"
+fi
 echo
 echo "Next start commands:"
-echo "  ./backend/.venv/Scripts/python.exe -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000"
+HOST_ADDRESS="0.0.0.0"
+if [[ "$UNSAFE_NO_AUTH" == "true" ]]; then HOST_ADDRESS="127.0.0.1"; fi
+echo "  ./backend/.venv/Scripts/python.exe -m uvicorn backend.app.main:app --host $HOST_ADDRESS --port 8000"
 echo "  cd frontend && npm run dev"
 echo
 echo "Validate provider status:"

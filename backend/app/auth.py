@@ -10,10 +10,29 @@ from fastapi import Header, HTTPException
 ROLE_ORDER = {"viewer": 0, "operator": 1, "reviewer": 2, "admin": 3}
 VALID_AUTH_MODES = {"off", "token"}
 CONFIGURABLE_ROLES = {"operator", "reviewer", "admin"}
+TRUTHY_VALUES = {"1", "true", "yes", "on"}
+PROTECTED_APP_ENVS = {"production", "competition", "submission"}
 
 
 def auth_mode() -> str:
     return (os.getenv("AUTH_MODE") or "off").strip().lower()
+
+
+def app_environment() -> str:
+    return (os.getenv("APP_ENV") or "development").strip().lower()
+
+
+def env_flag(name: str, default: bool = False) -> bool:
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+    return raw_value.strip().lower() in TRUTHY_VALUES
+
+
+def insecure_auth_off_allowed() -> bool:
+    if app_environment() in PROTECTED_APP_ENVS:
+        return False
+    return env_flag("ALLOW_INSECURE_AUTH_OFF", False)
 
 
 def configured_token_pairs() -> list[tuple[str, str]]:
@@ -37,6 +56,11 @@ def auth_config_errors() -> list[str]:
     mode = auth_mode()
     if mode not in VALID_AUTH_MODES:
         errors.append(f"Unsupported AUTH_MODE: {mode}")
+    if mode == "off":
+        if app_environment() in PROTECTED_APP_ENVS:
+            errors.append("AUTH_MODE=off is forbidden in protected application environments")
+        elif not insecure_auth_off_allowed():
+            errors.append("AUTH_MODE=off requires ALLOW_INSECURE_AUTH_OFF=true")
     generic_role = (os.getenv("AUTH_TOKEN_ROLE") or "admin").strip().lower() or "admin"
     if generic_role not in CONFIGURABLE_ROLES:
         errors.append("AUTH_TOKEN_ROLE must be one of operator, reviewer, admin")
@@ -84,6 +108,8 @@ def auth_status() -> dict[str, Any]:
         "mode": mode,
         "enabled": mode == "token",
         "valid": not errors,
+        "appEnvironment": app_environment(),
+        "insecureAuthOffAllowed": insecure_auth_off_allowed(),
         "operatorConfigured": "operator" in roles,
         "reviewerConfigured": "reviewer" in roles,
         "adminConfigured": "admin" in roles,
@@ -110,9 +136,9 @@ def require_role(min_role: str) -> Callable[..., dict[str, Any]]:
         x_api_token: Annotated[str | None, Header(alias="X-API-Token")] = None,
     ) -> dict[str, Any]:
         mode = auth_mode()
+        validate_auth_config()
         if mode == "off":
             return {"role": "admin", "authMode": mode or "off"}
-        validate_auth_config()
 
         token = bearer_token(authorization, x_api_token)
         if not token:

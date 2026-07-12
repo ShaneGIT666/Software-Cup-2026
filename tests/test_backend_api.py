@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 from pathlib import Path
@@ -36,6 +37,12 @@ def make_client(tmp_path, monkeypatch) -> TestClient:
     shutil.copytree("data/examples", source)
     monkeypatch.setenv("APP_EXAMPLES_DIR", str(source))
     monkeypatch.setenv("APP_KNOWLEDGE_DIR", str(tmp_path / "knowledge"))
+    if "APP_ENV" not in os.environ:
+        monkeypatch.setenv("APP_ENV", "test")
+    if "AUTH_MODE" not in os.environ:
+        monkeypatch.setenv("AUTH_MODE", "off")
+    if "ALLOW_INSECURE_AUTH_OFF" not in os.environ:
+        monkeypatch.setenv("ALLOW_INSECURE_AUTH_OFF", "true")
     return TestClient(app)
 
 
@@ -1374,6 +1381,41 @@ def test_auth_mode_off_is_explicit_in_status(tmp_path, monkeypatch) -> None:
     assert status["system"]["auth"]["mode"] == "off"
     assert status["system"]["auth"]["enabled"] is False
     assert any("AUTH_MODE=off" in item for item in status["system"]["warnings"])
+
+
+def test_auth_off_requires_explicit_unsafe_local_flag(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("APP_ENV", "development")
+    monkeypatch.setenv("AUTH_MODE", "off")
+    client = make_client(tmp_path, monkeypatch)
+    monkeypatch.delenv("ALLOW_INSECURE_AUTH_OFF", raising=False)
+
+    response = client.post("/api/uploads", files={"file": ("fault.png", b"test", "image/png")})
+
+    assert response.status_code == 500
+    assert "AUTH_MODE=off requires ALLOW_INSECURE_AUTH_OFF=true" in response.json()["message"]
+
+
+def test_auth_off_is_forbidden_in_competition_environment(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("APP_ENV", "competition")
+    monkeypatch.setenv("AUTH_MODE", "off")
+    monkeypatch.setenv("ALLOW_INSECURE_AUTH_OFF", "true")
+    client = make_client(tmp_path, monkeypatch)
+
+    response = client.post("/api/uploads", files={"file": ("fault.png", b"test", "image/png")})
+
+    assert response.status_code == 500
+    assert "AUTH_MODE=off is forbidden in protected application environments" in response.json()["message"]
+
+
+def test_explicit_local_unsafe_auth_off_still_supports_loopback_demo(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("APP_ENV", "development")
+    monkeypatch.setenv("AUTH_MODE", "off")
+    monkeypatch.setenv("ALLOW_INSECURE_AUTH_OFF", "true")
+    client = make_client(tmp_path, monkeypatch)
+
+    response = client.post("/api/uploads", files={"file": ("fault.png", b"test", "image/png")})
+
+    assert response.status_code == 200
 
 
 def test_token_auth_rejects_invalid_configuration(tmp_path, monkeypatch) -> None:

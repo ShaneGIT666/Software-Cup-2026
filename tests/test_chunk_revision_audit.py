@@ -19,6 +19,50 @@ def make_client(tmp_path, monkeypatch) -> TestClient:
     return TestClient(app)
 
 
+def test_document_review_summary_does_not_keep_indexed_for_mixed_terminal_states() -> None:
+    document = {"id": "doc-1", "status": "indexed"}
+    knowledge.update_document_review_summary(
+        document,
+        [
+            {"id": "c1", "review_status": "rejected", "is_current": False},
+            {"id": "c2", "review_status": "deprecated", "is_current": False},
+        ],
+    )
+
+    assert document["status"] == "pending_review"
+    assert document["currentApprovedCount"] == 0
+
+
+def test_document_review_summary_does_not_index_noncurrent_approved_chunk() -> None:
+    document = {"id": "doc-1", "status": "indexed"}
+    knowledge.update_document_review_summary(
+        document,
+        [{"id": "c1", "review_status": "approved", "is_current": False}],
+    )
+
+    assert document["status"] != "indexed"
+    assert document["currentApprovedCount"] == 0
+
+
+def test_document_review_summary_does_not_keep_indexed_when_chunks_are_empty() -> None:
+    document = {"id": "doc-1", "status": "indexed"}
+    knowledge.update_document_review_summary(document, [])
+
+    assert document["status"] == "pending_review"
+    assert document["chunkCount"] == 0
+
+
+def test_document_review_summary_indexes_current_approved_chunk() -> None:
+    document = {"id": "doc-1", "status": "pending_review"}
+    knowledge.update_document_review_summary(
+        document,
+        [{"id": "c1", "review_status": "approved", "is_current": True}],
+    )
+
+    assert document["status"] == "indexed"
+    assert document["currentApprovedCount"] == 1
+
+
 def upload_and_approve_chunk(client: TestClient) -> tuple[str, str]:
     upload = client.post(
         "/api/knowledge/documents",

@@ -1186,20 +1186,23 @@ def update_document_review_summary(document: dict[str, Any], chunks: list[dict[s
         status = normalize_review_status(chunk.get("review_status"))
         status_counts[status] = status_counts.get(status, 0) + 1
     pending_count = status_counts.get("pending_review", 0)
-    approved_count = status_counts.get("approved", 0)
     unknown_count = status_counts.get("unknown", 0)
+    current_approved_count = sum(1 for chunk in chunks if is_current_approved_chunk(chunk))
     document["chunkCount"] = len(chunks)
     document["pendingReviewCount"] = pending_count
     document["unknownReviewCount"] = unknown_count
-    if pending_count or unknown_count:
+    document["currentApprovedCount"] = current_approved_count
+    if not chunks or pending_count or unknown_count:
         document["status"] = "pending_review"
-    elif approved_count:
+    elif current_approved_count:
         document["status"] = "indexed"
-    elif chunks:
+    else:
         for status in ("rejected", "deprecated", "replaced", "draft"):
             if status_counts.get(status, 0) == len(chunks):
                 document["status"] = status
                 break
+        else:
+            document["status"] = "pending_review"
 
 
 def chunk_logical_id(chunk: dict[str, Any]) -> str:
