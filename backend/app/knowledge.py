@@ -1183,13 +1183,15 @@ def list_knowledge_revisions(document_id: str) -> dict[str, Any]:
 def update_document_review_summary(document: dict[str, Any], chunks: list[dict[str, Any]]) -> None:
     status_counts: dict[str, int] = {}
     for chunk in chunks:
-        status = str(chunk.get("review_status", "approved"))
+        status = normalize_review_status(chunk.get("review_status"))
         status_counts[status] = status_counts.get(status, 0) + 1
     pending_count = status_counts.get("pending_review", 0)
     approved_count = status_counts.get("approved", 0)
+    unknown_count = status_counts.get("unknown", 0)
     document["chunkCount"] = len(chunks)
     document["pendingReviewCount"] = pending_count
-    if pending_count:
+    document["unknownReviewCount"] = unknown_count
+    if pending_count or unknown_count:
         document["status"] = "pending_review"
     elif approved_count:
         document["status"] = "indexed"

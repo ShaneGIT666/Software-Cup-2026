@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import json
+import re
 import shutil
 from pathlib import Path
 from typing import Any
@@ -137,6 +138,7 @@ def test_provider_status_includes_system_observability(tmp_path, monkeypatch) ->
                 "content": "approved content",
                 "snippet": "approved content",
                 "review_status": "approved",
+                "is_current": True,
                 "updated_at": "2026-06-20T02:00:00Z",
             },
             {
@@ -807,6 +809,76 @@ def test_upload_uses_configured_upload_dir(tmp_path, monkeypatch) -> None:
     assert payload["success"] is True
     assert payload["data"]["fileName"] == "fault-image.jpg"
     assert (upload_dir / f"{payload['data']['id']}.jpg").exists()
+
+
+def test_uploaded_fault_files_require_role_protected_access(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("AUTH_MODE", "token")
+    monkeypatch.setenv("AUTH_OPERATOR_TOKEN", "operator-token")
+    monkeypatch.setenv("AUTH_REVIEWER_TOKEN", "review-token")
+    monkeypatch.setenv("AUTH_ADMIN_TOKEN", "admin-token")
+    monkeypatch.setenv("APP_UPLOAD_DIR", str(tmp_path / "uploads"))
+    client = make_client(tmp_path, monkeypatch)
+    operator_headers = {"Authorization": "Bearer operator-token"}
+    reviewer_headers = {"Authorization": "Bearer review-token"}
+    admin_headers = {"Authorization": "Bearer admin-token"}
+    content = b"protected fault artifact"
+
+    assert client.post("/api/uploads", files={"file": ("fault.png", content, "image/png")}).status_code == 401
+    assert client.post(
+        "/api/uploads",
+        headers={"Authorization": "Bearer invalid-token"},
+        files={"file": ("fault.png", content, "image/png")},
+    ).status_code == 401
+    upload = client.post(
+        "/api/uploads",
+        headers=operator_headers,
+        files={"file": ("fault.png", content, "image/png")},
+    )
+    assert upload.status_code == 200
+    payload = upload.json()["data"]
+    assert re.fullmatch(r"file-[0-9a-f]{32}", payload["id"])
+    assert payload["url"] == f"/api/uploads/{payload['id']}/file"
+
+    assert client.get(payload["url"]).status_code == 401
+    for headers in (operator_headers, reviewer_headers, admin_headers):
+        download = client.get(payload["url"], headers=headers)
+        assert download.status_code == 200
+        assert download.content == content
+    assert client.get(f"/uploads/{payload['id']}.png").status_code == 404
+    for path in (
+        "/api/uploads/../data/file",
+        "/api/uploads/%2e%2e/file",
+        "/api/uploads/file-abc/file",
+        "/api/uploads/file-12345678.png/file",
+        "/api/uploads/C:%5CWindows/file",
+    ):
+        assert client.get(path, headers=operator_headers).status_code == 404
+
+    legacy = tmp_path / "uploads" / "file-deadbeef.png"
+    legacy.write_bytes(b"legacy artifact")
+    assert client.get("/api/uploads/file-deadbeef/file", headers=operator_headers).content == b"legacy artifact"
+
+
+def test_status_counts_fail_closed_for_unknown_and_noncurrent_items(tmp_path, monkeypatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+    data_store.save_document_chunks(
+        [
+            {"id": "chunk-unknown", "documentId": "doc-unknown", "content": "unknown", "is_current": True},
+            {"id": "chunk-old", "documentId": "doc-old", "content": "old", "review_status": "approved", "is_current": False},
+        ]
+    )
+    data_store.save_cases([{"id": "case-unknown", "deviceModel": "unknown"}])
+
+    knowledge_status = client.get("/api/providers/status").json()["data"]["system"]["knowledge"]
+    assert knowledge_status["unknownChunkCount"] == 1
+    assert knowledge_status["unknownCaseCount"] == 1
+    assert knowledge_status["approvedChunkCount"] == 0
+    assert knowledge_status["retrievableSourceCount"] == knowledge_status["manualCount"]
+
+    document = {"id": "doc-unknown"}
+    knowledge.update_document_review_summary(document, [{"id": "chunk-unknown", "is_current": True}])
+    assert document["status"] == "pending_review"
+    assert document["unknownReviewCount"] == 1
 
 
 def test_upload_accepts_allowed_file_types(tmp_path, monkeypatch) -> None:

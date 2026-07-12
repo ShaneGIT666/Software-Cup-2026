@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 import logging
+import mimetypes
+import re
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -11,7 +13,6 @@ from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
 
 from .auth import require_role
 from .data_store import PROJECT_ROOT, knowledge_dir, upload_dir
@@ -80,6 +81,7 @@ ALLOWED_UPLOAD_TYPES = {
     "webp": {"image/webp"},
     "pdf": {"application/pdf"},
 }
+UPLOAD_FILE_ID_PATTERN = re.compile(r"^file-[0-9a-f]{8}(?:[0-9a-f]{24})?$")
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="设备检修知识检索与作业辅助系统", version="0.1.0")
@@ -92,15 +94,36 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
-
-
 def error_response(status_code: int, message: str) -> JSONResponse:
     payload = ApiResponse(success=False, data=None, message=message)
     return JSONResponse(
         status_code=status_code,
         content=payload.model_dump() if hasattr(payload, "model_dump") else payload.dict(),
     )
+
+
+def validate_upload_file_id(file_id: str) -> str:
+    normalized = file_id.strip().lower()
+    if not UPLOAD_FILE_ID_PATTERN.fullmatch(normalized):
+        raise HTTPException(status_code=404, detail="uploaded file not found")
+    return normalized
+
+
+def resolve_uploaded_file(file_id: str) -> Path:
+    normalized = validate_upload_file_id(file_id)
+    root = upload_dir().resolve()
+    matches: list[Path] = []
+    for suffix in ALLOWED_UPLOAD_TYPES:
+        candidate = (root / f"{normalized}.{suffix}").resolve()
+        try:
+            candidate.relative_to(root)
+        except ValueError:
+            continue
+        if candidate.exists() and candidate.is_file():
+            matches.append(candidate)
+    if len(matches) != 1:
+        raise HTTPException(status_code=404, detail="uploaded file not found")
+    return matches[0]
 
 
 def validation_message(errors: list[dict[str, Any]]) -> str:
@@ -501,7 +524,7 @@ async def upload_file(
         logger.warning("Rejected oversized upload: %s bytes=%s", file.filename, len(content))
         raise HTTPException(status_code=400, detail="上传文件不能超过 10MB")
 
-    file_id = f"file-{uuid4().hex[:8]}"
+    file_id = f"file-{uuid4().hex}"
     target_dir = upload_dir()
     target_dir.mkdir(parents=True, exist_ok=True)
     target = target_dir / f"{file_id}.{suffix}"
@@ -511,9 +534,19 @@ async def upload_file(
             "id": file_id,
             "fileName": file.filename,
             "fileType": file.content_type,
-            "url": f"/uploads/{target.name}",
+            "url": f"/api/uploads/{file_id}/file",
         }
     )
+
+
+@app.get("/api/uploads/{file_id}/file")
+def get_uploaded_file(
+    file_id: str,
+    _auth: dict[str, Any] = Depends(require_role("operator")),
+) -> FileResponse:
+    file_path = resolve_uploaded_file(file_id)
+    media_type = mimetypes.guess_type(file_path.name)[0] or "application/octet-stream"
+    return FileResponse(file_path, media_type=media_type)
 
 
 @app.post("/api/knowledge/documents", response_model=ApiResponse)

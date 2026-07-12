@@ -18,6 +18,7 @@ from .data_store import (
     load_seed_data,
 )
 from .mineru_adapter import mineru_available, mineru_enabled, mineru_timeout_seconds
+from .review_policy import is_current_approved_chunk
 from .vector_store import (
     json_vector_index_path,
     sqlite_vector_index_path,
@@ -27,7 +28,7 @@ from .vector_store import (
 )
 
 
-REVIEW_STATUSES = ("draft", "pending_review", "approved", "rejected", "deprecated", "replaced")
+REVIEW_STATUSES = ("draft", "pending_review", "approved", "rejected", "deprecated", "replaced", "unknown")
 
 
 def utc_now() -> str:
@@ -50,7 +51,7 @@ def safe_seed_data(warnings: list[str]) -> dict[str, list[dict[str, Any]]]:
         return {"devices": [], "manuals": [], "cases": [], "workflows": []}
 
 
-def count_statuses(items: list[dict[str, Any]], key: str, default: str = "approved") -> dict[str, int]:
+def count_statuses(items: list[dict[str, Any]], key: str, default: str = "unknown") -> dict[str, int]:
     counts = Counter(str(item.get(key) or default) for item in items)
     for status in REVIEW_STATUSES:
         counts.setdefault(status, 0)
@@ -136,7 +137,7 @@ def index_activity(documents: list[dict[str, Any]], chunks: list[dict[str, Any]]
                 inferred_candidates.append(str(document[key]))
 
     for chunk in chunks:
-        if str(chunk.get("review_status") or "approved") != "approved":
+        if not is_current_approved_chunk(chunk):
             continue
         for key in ("indexedAt", "updatedAt", "updated_at", "created_at", "createdAt"):
             if chunk.get(key):
@@ -341,10 +342,10 @@ def build_system_status() -> dict[str, Any]:
     parse_tasks = safe_load_list(load_parse_tasks, "parse tasks", warnings)
     cases = safe_load_list(load_cases, "repair cases", warnings) or seed_data.get("cases", [])
 
-    chunk_status_counts = count_statuses(chunks, "review_status")
-    case_status_counts = count_statuses(cases, "status")
+    chunk_status_counts = count_statuses(chunks, "review_status", default="unknown")
+    case_status_counts = count_statuses(cases, "status", default="unknown")
     document_status_counts = count_statuses(documents, "status", default="unknown")
-    approved_chunks = chunk_status_counts.get("approved", 0)
+    approved_chunks = len([chunk for chunk in chunks if is_current_approved_chunk(chunk)])
     approved_cases = case_status_counts.get("approved", 0)
 
     parser_fallback_count = sum(1 for document in documents if document.get("parserFallback"))
@@ -361,6 +362,8 @@ def build_system_status() -> dict[str, Any]:
             "documentCount": len(documents),
             "chunkCount": len(chunks),
             "approvedChunkCount": approved_chunks,
+            "unknownChunkCount": chunk_status_counts.get("unknown", 0),
+            "unknownCaseCount": case_status_counts.get("unknown", 0),
             "retrievableSourceCount": len(seed_data.get("manuals", [])) + approved_cases + approved_chunks,
             "pendingReviewCount": chunk_status_counts.get("pending_review", 0) + pending_documents + pending_cases,
             "chunkStatusCounts": chunk_status_counts,

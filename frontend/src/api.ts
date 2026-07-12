@@ -242,18 +242,19 @@ function authHeaders(): Record<string, string> {
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const isFormData = options?.body instanceof FormData;
+  const headers = isFormData
+    ? {
+        ...authHeaders(),
+        ...options?.headers
+      }
+    : {
+        "Content-Type": "application/json",
+        ...authHeaders(),
+        ...options?.headers
+      };
   const response = await fetch(path, {
-    headers: isFormData
-      ? {
-          ...authHeaders(),
-          ...options?.headers
-        }
-      : {
-          "Content-Type": "application/json",
-          ...authHeaders(),
-          ...options?.headers
-        },
-    ...options
+    ...options,
+    headers
   });
   const payload = (await response.json()) as ApiResponse<T>;
   if (!response.ok || !payload.success) {
@@ -405,6 +406,10 @@ export function uploadFaultFile(file: File) {
     method: "POST",
     body: formData
   });
+}
+
+export function downloadUploadedFaultFile(fileId: string): Promise<Blob> {
+  return requestBlob(`/api/uploads/${encodeURIComponent(fileId)}/file`);
 }
 
 export interface CaseItem {

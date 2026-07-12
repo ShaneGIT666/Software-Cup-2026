@@ -102,3 +102,5 @@
 - R08 final validation: removed the dead `RAG_REQUIRE_GROUNDED_REPAIR_STEPS` sample setting because runtime code does not read it; full backend suite passed `205 passed in 50.39s`, affected regression passed `146 passed in 12.91s`, and frontend production build passed in `5.81s` with only existing Rollup annotation/chunk-size warnings.
 - R08 regression closure: strong approved cases may use a comparable keyword score when document vector/RRF scores dominate, while weak vector-only and low-score cases remain ineligible for diversity promotion; focused verification passed `42 passed in 36.14s`.
 - R08 artifact secret scan returned no matches; `git diff --check` passed; `data/examples/repair-cases.json` and `tmp/` remain uncommitted user content. T09-T15 remains pending.
+- Started post-R08 review closure H01-H02. T09-T15 remains pending.
+- H01 completed: uploaded fault artifacts now use operator-protected file access; public /uploads paths return 404; review status summaries default missing states to unknown and exclude them from approved/retrievable counts.
