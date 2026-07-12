@@ -132,14 +132,28 @@ if [[ -f "$ENV_PATH" ]]; then
   echo "Backed up existing .env to $backup"
 fi
 
-if [[ "$UNSAFE_NO_AUTH" == "true" ]]; then
-  AUTH_LINES=$'APP_ENV=development\nAUTH_MODE=off\nALLOW_INSECURE_AUTH_OFF=true'
-else
+if [[ "$UNSAFE_NO_AUTH" != "true" ]]; then
   OPERATOR_TOKEN="$(new_secure_token)"
   REVIEWER_TOKEN="$(new_secure_token)"
   ADMIN_TOKEN="$(new_secure_token)"
-  AUTH_LINES=$"APP_ENV=competition\nAUTH_MODE=token\nALLOW_INSECURE_AUTH_OFF=false\nAUTH_OPERATOR_TOKEN=$OPERATOR_TOKEN\nAUTH_REVIEWER_TOKEN=$REVIEWER_TOKEN\nAUTH_ADMIN_TOKEN=$ADMIN_TOKEN"
 fi
+
+write_auth_config() {
+  if [[ "$UNSAFE_NO_AUTH" == "true" ]]; then
+    printf '%s\n' \
+      'APP_ENV=development' \
+      'AUTH_MODE=off' \
+      'ALLOW_INSECURE_AUTH_OFF=true'
+  else
+    printf '%s\n' \
+      'APP_ENV=competition' \
+      'AUTH_MODE=token' \
+      'ALLOW_INSECURE_AUTH_OFF=false' \
+      "AUTH_OPERATOR_TOKEN=$OPERATOR_TOKEN" \
+      "AUTH_REVIEWER_TOKEN=$REVIEWER_TOKEN" \
+      "AUTH_ADMIN_TOKEN=$ADMIN_TOKEN"
+  fi
+}
 
 if [[ "$MODE" == "llm" ]]; then
   [[ -n "$BASE_URL" ]] || read -r -p "OpenAI-compatible Base URL: " BASE_URL
@@ -148,29 +162,31 @@ if [[ "$MODE" == "llm" ]]; then
     read -r -s -p "API Key: " API_KEY
     echo
   fi
-  cat > "$ENV_PATH" <<EOF
-$AUTH_LINES
-REMOTE_API_MODE=auto
-LLM_PROVIDER=openai
-OPENAI_BASE_URL=$BASE_URL
-OPENAI_API_STYLE=chat_completions
-OPENAI_MODEL=$MODEL
-OPENAI_API_KEY=$API_KEY
-LLM_TIMEOUT_SECONDS=60
-RAG_USE_STRUCTURED_LLM_ANSWER=true
-MULTIMODAL_PROVIDER=mock
-OCR_PROVIDER=mock
-RAG_VECTOR_FALLBACK_LOCAL=on
-EOF
+  {
+    write_auth_config
+    printf '%s\n' \
+      'REMOTE_API_MODE=auto' \
+      'LLM_PROVIDER=openai' \
+      "OPENAI_BASE_URL=$BASE_URL" \
+      'OPENAI_API_STYLE=chat_completions' \
+      "OPENAI_MODEL=$MODEL" \
+      "OPENAI_API_KEY=$API_KEY" \
+      'LLM_TIMEOUT_SECONDS=60' \
+      'RAG_USE_STRUCTURED_LLM_ANSWER=true' \
+      'MULTIMODAL_PROVIDER=mock' \
+      'OCR_PROVIDER=mock' \
+      'RAG_VECTOR_FALLBACK_LOCAL=on'
+  } > "$ENV_PATH"
 else
-  cat > "$ENV_PATH" <<'EOF'
-$AUTH_LINES
-REMOTE_API_MODE=off
-LLM_PROVIDER=mock
-MULTIMODAL_PROVIDER=mock
-OCR_PROVIDER=mock
-RAG_VECTOR_FALLBACK_LOCAL=on
-EOF
+  {
+    write_auth_config
+    printf '%s\n' \
+      'REMOTE_API_MODE=off' \
+      'LLM_PROVIDER=mock' \
+      'MULTIMODAL_PROVIDER=mock' \
+      'OCR_PROVIDER=mock' \
+      'RAG_VECTOR_FALLBACK_LOCAL=on'
+  } > "$ENV_PATH"
 fi
 
 echo
@@ -194,7 +210,7 @@ echo
 echo "Next start commands:"
 HOST_ADDRESS="0.0.0.0"
 if [[ "$UNSAFE_NO_AUTH" == "true" ]]; then HOST_ADDRESS="127.0.0.1"; fi
-echo "  ./backend/.venv/Scripts/python.exe -m uvicorn backend.app.main:app --host $HOST_ADDRESS --port 8000"
+echo "  backend/.venv/bin/python -m uvicorn backend.app.main:app --host $HOST_ADDRESS --port 8000"
 echo "  cd frontend && npm run dev"
 echo
 echo "Validate provider status:"
