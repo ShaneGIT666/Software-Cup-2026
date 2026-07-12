@@ -52,11 +52,11 @@ Execute the 2026-07-11 full-trust hardening plan in `E:/Download/Downloads/Softw
 3. [complete] T03-T04 knowledge review governance: version revised chunks and make approved-only filtering fail closed.
 4. [complete] T05-T06 RAG answer safety: preserve safety-processed structured output as the only final answer and refuse concrete steps without approved evidence.
 5. [complete] T07-T08 business metadata and role protection.
-6. [pending] T09-T15 metadata, Chinese query expansion, corrective retrieval, structured validation, multimodal consistency, and safety rules.
-7. [pending] T16-T17 JSON transaction protection and index/task recovery.
-8. [pending] T18-T19 evaluation dataset, runner, ablation modes, and hard gates.
-9. [pending] T20-T21 frontend contract, deployment config, README, and submission docs.
-10. [pending] T22 final full verification and execution report.
+6. [replaced] T09-T15 metadata, Chinese query expansion, corrective retrieval, structured validation, multimodal consistency, and safety rules.
+7. [replaced] T16-T17 JSON transaction protection and index/task recovery.
+8. [replaced] T18-T19 evaluation dataset, runner, ablation modes, and hard gates.
+9. [replaced] T20-T21 frontend contract, deployment config, README, and submission docs.
+10. [replaced] T22 final full verification and execution report.
 
 ## Full Trust Hardening Starting State
 
@@ -66,3 +66,13 @@ Execute the 2026-07-11 full-trust hardening plan in `E:/Download/Downloads/Softw
 - Pre-existing user changes: `data/examples/repair-cases.json`, `tmp/`
 - Baseline targeted backend tests: `21 passed in 2.70s`
 - Baseline frontend build: passed in `5.88s`
+
+## Five-Stage Final Plan
+
+The previous T09-T22 backlog is replaced by this final competition plan and must not be treated as active implementation work.
+
+1. [complete] Stage 1: audit closure and secure delivery baseline.
+2. [pending] Stage 2: core capability freeze and first LoongArch verification. This stage becomes complete only with real LoongArch/Kylin evidence.
+3. [pending] Stage 3: scoring features and frontend redesign.
+4. [pending] Stage 4: evaluation, stability, installer package, and delivery materials.
+5. [pending] Stage 5: final physical-machine acceptance and version freeze.
