@@ -40,3 +40,7 @@ target/
 out/
 *.tsbuildinfo
 release/
+
+# Raw target acceptance evidence may contain environment and provider responses.
+docs/final-audit/evidence/*
+!docs/final-audit/evidence/.gitkeep

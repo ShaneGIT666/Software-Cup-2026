@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from pathlib import Path
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 
 import backend.app.llm_adapter as llm_adapter
@@ -13,7 +15,16 @@ import backend.app.multimodal_adapter as multimodal_adapter
 from backend.app.main import app
 
 
-MANUAL_PATH = Path("E:/Download/Downloads/摩托车发动机维修手册.pdf")
+DEFAULT_MANUAL_PATH = Path("E:/Download/Downloads/摩托车发动机维修手册.pdf")
+MANUAL_PATH = Path(
+    os.getenv("OFFICIAL_MANUAL_PATH")
+    or os.getenv("MOTORCYCLE_MANUAL_PATH")
+    or DEFAULT_MANUAL_PATH
+)
+pytestmark = pytest.mark.skipif(
+    not MANUAL_PATH.exists(),
+    reason="official motorcycle manual fixture is unavailable",
+)
 
 
 def make_client(tmp_path, monkeypatch) -> TestClient:
