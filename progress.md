@@ -121,3 +121,11 @@
 - Docker acceptance now uses an allowlisted `mktemp` env file outside evidence, removes it immediately after startup, and runs the backend suite before production/token smoke.
 - Fail-closed result rules and ignored raw evidence are covered by delivery contract tests. Local validation passed: targeted `125 passed in 173.97s`, full backend `231 passed in 213.03s`, frontend build `built in 6.76s`, Bash syntax passed, and x86_64 preflight remained `TARGET_VERIFICATION_PENDING`.
 - LoongArch/Kylin, real LLM, real multimodal, and target Docker remain `OPTIONAL_UNVERIFIED` until the connected target produces reviewed evidence.
+- Connected to the real target and confirmed `loongarch64`, Kylin Linux Advanced Server V11, Loongson-3A5000, Python 3.11.6, npm 10.8.2, and Docker 24.0.9.
+- Installed Git 2.43.0 from the official LoongArch RPM into the user directory because system Git was absent and sudo required a password; transferred the current branch through a verified Git bundle/archive path after target GitHub HTTPS resets.
+- Target frontend dependency install and production build passed in 17.93s. Node 20.18.2 emitted the expected Vite 20.19+ engine warning.
+- Transferred the official 17,615,124-byte, 41-page motorcycle manual PDF. Generated competition/token role configuration with masked tokens; no real API key was present.
+- Normalized the allowed target harness to an executable LF Git blob after Kylin Bash rejected the baseline CRLF scripts. `init-config.sh` remains CRLF outside this task's allowed modification set; setup used an immediately removed LF copy.
+- First strict LoongArch/Kylin venv run at `dc8e0d4` correctly produced `NO-GO` with all acceptance booleans false after rejecting the missing real image. Evidence: `docs/final-audit/evidence/20260712T105156Z-dc8e0d4/summary.json` on the target.
+- Target backend tests exposed a clean-install blocker: requirements select Pydantic 1.10.26 while code imports Pydantic 2 `field_validator`, causing 12 collection errors. A temporary Pydantic 2 override stalled building `pydantic-core` from source and was terminated after no progress.
+- Stage 2 remains `OPTIONAL_UNVERIFIED`; real provider credentials, a real device fault image, and a corrected reproducible Pydantic dependency route are required before rerunning strict venv and Docker acceptance.

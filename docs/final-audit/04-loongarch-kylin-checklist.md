@@ -8,3 +8,14 @@
 6. Run `bash scripts/loongarch-final-verify.sh --venv --strict-target` and require every summary gate, including `officialManualVerified`, to be true.
 7. Run `bash scripts/loongarch-final-verify.sh --docker --strict-target` only when Docker exists; otherwise record Docker as `OPTIONAL_UNVERIFIED`.
 8. Inspect the ignored evidence directory, redact any provider responses before reporting, and require `summary.json` to report `GO` before marking Stage 2 complete.
+
+## First-round result (2026-07-12)
+
+- Target: `loongarch64`, Kylin Linux Advanced Server V11, Loongson-3A5000.
+- Current harness SHA: `dc8e0d4b02649d744f1b64e2073f0a63a249c769`.
+- Frontend: built successfully on target; Node 20.18.2 emitted a Vite engine warning.
+- Official fixture: 41-page, non-empty PDF transferred to `/home/vmuser/official-motorcycle-manual.pdf`.
+- Strict venv summary: `NO-GO`; missing real fault image stopped the run before backend/auth/API/manual/provider gates.
+- Backend preparation: clean requirements install selected Pydantic 1.10.26, but code requires Pydantic 2 and pytest collection failed with 12 import errors.
+- Real LLM and multimodal: not verified; no real API key or real device fault image was available.
+- Docker: installed, but strict Docker acceptance was not run because the same dependency and provider prerequisites remain unresolved.
