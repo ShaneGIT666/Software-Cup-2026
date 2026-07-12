@@ -17,6 +17,7 @@ def test_maintenance_level_adds_preparation_risk_and_compliance_sections() -> No
                 "snippet": "停机后检查燃油管路，确认无泄漏后恢复启动。",
                 "content": "停机后检查燃油管路，确认无泄漏后恢复启动。",
                 "riskLevel": "critical",
+                "reviewStatus": "approved",
                 "score": 0.95,
                 "page": 2,
                 "section": "应急检修",

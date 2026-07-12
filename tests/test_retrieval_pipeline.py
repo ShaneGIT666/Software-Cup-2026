@@ -228,6 +228,31 @@ def test_source_diversity_does_not_replace_with_low_scoring_case() -> None:
     assert [hit.id for hit in final_hits] == ["doc-0", "doc-1", "doc-2", "doc-3", "doc-4"]
 
 
+def test_source_diversity_promotes_keyword_comparable_case_despite_vector_score_gap() -> None:
+    hits = [
+        make_hit(
+            f"doc-{index}",
+            source_type="document",
+            fusion_score=0.04 - index * 0.001,
+            keyword_score=10,
+        )
+        for index in range(5)
+    ]
+    case_hit = make_hit(
+        "case-keyword-match",
+        source_type="case",
+        fusion_score=0.01,
+        keyword_rank=6,
+        keyword_score=12,
+        matched_terms=["hard-start"],
+    )
+
+    final_hits = pipeline.apply_source_diversity_policy(make_context(), [*hits, case_hit], top_k=5)
+
+    assert final_hits[-1].id == "case-keyword-match"
+    assert case_hit.score_breakdown["sourceDiversityPromotion"] is True
+
+
 def test_source_diversity_skips_small_top_k() -> None:
     hits = [
         make_hit("doc-1", source_type="document", fusion_score=0.04),

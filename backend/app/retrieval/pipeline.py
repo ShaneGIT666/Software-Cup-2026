@@ -125,7 +125,13 @@ def can_promote_case(context: QueryContext, case_hit: RetrievalHit, last_hit: Re
     last_score = comparable_score(last_hit)
     if last_score <= 0:
         return case_hit.keyword_rank is not None and bool(case_hit.matched_terms)
-    return case_score >= last_score * 0.8
+    if case_score >= last_score * 0.8:
+        return True
+    return bool(
+        case_hit.keyword_score is not None
+        and last_hit.keyword_score is not None
+        and case_hit.keyword_score >= last_hit.keyword_score
+    )
 
 
 def apply_source_diversity_policy(context: QueryContext, hits: list[RetrievalHit], top_k: int) -> list[RetrievalHit]:
