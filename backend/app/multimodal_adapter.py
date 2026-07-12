@@ -15,7 +15,7 @@ from .llm_adapter import _post_json, parse_openai_chat_response
 from .ocr_adapter import analyze_ocr_document
 from .provider_policy import (
     configured_multimodal_provider as configured_multimodal_provider_from_policy,
-    key_configured,
+    multimodal_key_configured,
     record_fallback,
     remote_api_disabled,
 )
@@ -124,6 +124,40 @@ def local_multimodal_api_key() -> str:
     return os.getenv("LOCAL_MULTIMODAL_API_KEY", "").strip() or os.getenv("LOCAL_LLM_API_KEY", "").strip() or "ollama"
 
 
+def multimodal_openai_base_url() -> str:
+    return (
+        os.getenv("MULTIMODAL_OPENAI_BASE_URL", "").strip()
+        or os.getenv("OPENAI_BASE_URL", "").strip()
+        or "https://api.openai.com/v1"
+    ).rstrip("/")
+
+
+def multimodal_openai_api_key() -> str:
+    return os.getenv("MULTIMODAL_OPENAI_API_KEY", "").strip() or os.getenv("OPENAI_API_KEY", "").strip()
+
+
+def multimodal_openai_model() -> str:
+    return (
+        os.getenv("MULTIMODAL_OPENAI_MODEL", "").strip()
+        or os.getenv("OPENAI_MODEL", "").strip()
+        or "gpt-4.1-mini"
+    )
+
+
+def multimodal_openai_api_style() -> str:
+    value = os.getenv("MULTIMODAL_OPENAI_API_STYLE", "chat_completions").strip().lower()
+    return value if value in {"chat_completions", "responses"} else "chat_completions"
+
+
+def multimodal_openai_thinking_enabled() -> bool:
+    return os.getenv("MULTIMODAL_OPENAI_ENABLE_THINKING", "false").strip().lower() not in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }
+
+
 def structured_from_model_text(
     text: str,
     file_name: str,
@@ -177,33 +211,65 @@ def real_multimodal_analysis(
     )
 
     if provider == "openai":
-        api_key = os.getenv("OPENAI_API_KEY", "")
+        api_key = multimodal_openai_api_key()
         if not api_key:
             raise RuntimeError("OPENAI_API_KEY 未配置")
-        base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
-        model = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
-        payload = _post_json(
-            f"{base_url}/responses",
-            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-            payload={
+        base_url = multimodal_openai_base_url()
+        model = multimodal_openai_model()
+        api_style = multimodal_openai_api_style()
+        if api_style == "chat_completions":
+            if suffix == "pdf":
+                raise RuntimeError(
+                    "chat_completions multimodal accepts image input only; "
+                    "use OCR/page visual assets for PDF ingestion"
+                )
+            request_payload: dict[str, Any] = {
                 "model": model,
-                "input": [
+                "messages": [
                     {
                         "role": "user",
                         "content": [
-                            {"type": "input_text", "text": prompt},
-                            {
-                                "type": "input_file" if suffix == "pdf" else "input_image",
-                                "filename": file_name,
-                                "file_data" if suffix == "pdf" else "image_url": data_url(content, suffix),
-                            },
+                            {"type": "text", "text": prompt},
+                            {"type": "image_url", "image_url": {"url": data_url(content, suffix)}},
                         ],
                     }
                 ],
-            },
-            timeout=timeout,
-        )
-        text = parse_openai_multimodal_response(payload)
+                "max_tokens": int(os.getenv("MULTIMODAL_MAX_TOKENS", "1200")),
+                "temperature": float(os.getenv("MULTIMODAL_TEMPERATURE", "0.2")),
+                "stream": False,
+            }
+            if multimodal_openai_thinking_enabled():
+                request_payload["enable_thinking"] = True
+            payload = _post_json(
+                f"{base_url}/chat/completions",
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                payload=request_payload,
+                timeout=timeout,
+            )
+            text = parse_openai_chat_response(payload)
+        else:
+            payload = _post_json(
+                f"{base_url}/responses",
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                payload={
+                    "model": model,
+                    "input": [
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "input_text", "text": prompt},
+                                {
+                                    "type": "input_file" if suffix == "pdf" else "input_image",
+                                    "filename": file_name,
+                                    "file_data" if suffix == "pdf" else "image_url": data_url(content, suffix),
+                                },
+                            ],
+                        }
+                    ],
+                },
+                timeout=timeout,
+            )
+            text = parse_openai_multimodal_response(payload)
     elif provider == "local":
         if suffix == "pdf":
             raise RuntimeError("local multimodal provider supports image files directly; use OCR ingestion for PDFs.")
@@ -331,7 +397,7 @@ def document_file_for_validation(document_id: str) -> tuple[Path, str, str]:
 def validate_multimodal_provider(request: Any) -> dict[str, Any]:
     provider = configured_multimodal_provider(getattr(request, "provider", None))
     if provider == "openai":
-        model = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
+        model = multimodal_openai_model()
     elif provider == "local":
         model = local_multimodal_model()
     else:
@@ -373,7 +439,7 @@ def validate_multimodal_provider(request: Any) -> dict[str, Any]:
                 "latencyMs": round((time.perf_counter() - start) * 1000),
             }
 
-        if not key_configured(provider):
+        if not multimodal_key_configured(provider):
             reason = f"{provider} API key 未配置。"
             record_fallback("multimodal", reason)
             logger.info("Multimodal validation fallback: %s", reason)

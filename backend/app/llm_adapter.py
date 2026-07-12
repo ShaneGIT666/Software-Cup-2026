@@ -67,6 +67,10 @@ def env_flag(name: str, default: bool) -> bool:
     return raw_value.strip().lower() not in {"0", "false", "no", "off"}
 
 
+def openai_thinking_enabled() -> bool:
+    return env_flag("OPENAI_ENABLE_THINKING", False)
+
+
 def structured_llm_answer_enabled() -> bool:
     return env_flag("RAG_USE_STRUCTURED_LLM_ANSWER", True)
 
@@ -351,15 +355,19 @@ def real_rag_answer(
             raise RuntimeError("OPENAI_API_KEY 未配置")
         base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
         if api_style == "chat_completions":
+            request_payload: dict[str, Any] = {
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}],
+                "max_tokens": llm_max_tokens(),
+                "temperature": llm_temperature(),
+                "stream": False,
+            }
+            if openai_thinking_enabled():
+                request_payload["enable_thinking"] = True
             payload = _post_json(
                 f"{base_url}/chat/completions",
                 headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-                payload={
-                    "model": model,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "max_tokens": llm_max_tokens(),
-                    "temperature": llm_temperature(),
-                },
+                payload=request_payload,
                 timeout=timeout,
             )
             answer = parse_openai_chat_response(payload)

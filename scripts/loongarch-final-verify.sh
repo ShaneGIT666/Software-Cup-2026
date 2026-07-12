@@ -19,6 +19,8 @@ API_SMOKE_PASSED="false"
 OFFICIAL_MANUAL_VERIFIED="false"
 REAL_LLM_VERIFIED="false"
 REAL_MULTIMODAL_VERIFIED="false"
+CORE_TARGET_VERIFIED="false"
+FINAL_REAL_PROVIDER_VERIFIED="false"
 OFFICIAL_DOCUMENT_ID=""
 PYTHON_BIN=""
 
@@ -62,6 +64,7 @@ write_summary() {
   export AUDIT_AUTH_SMOKE="$AUTH_SMOKE_PASSED" AUDIT_API_SMOKE="$API_SMOKE_PASSED"
   export AUDIT_OFFICIAL_MANUAL="$OFFICIAL_MANUAL_VERIFIED"
   export AUDIT_REAL_LLM="$REAL_LLM_VERIFIED" AUDIT_REAL_MM="$REAL_MULTIMODAL_VERIFIED"
+  export AUDIT_CORE_TARGET="$CORE_TARGET_VERIFIED" AUDIT_FINAL_PROVIDER="$FINAL_REAL_PROVIDER_VERIFIED"
   "$PYTHON_BIN" - "$RUN_DIR/summary.json" "$result" <<'PY'
 import json, os, sys
 path, result = sys.argv[1:]
@@ -78,6 +81,8 @@ payload = {
     "officialManualVerified": os.environ.get("AUDIT_OFFICIAL_MANUAL", "false") == "true",
     "realLlmVerified": os.environ.get("AUDIT_REAL_LLM", "false") == "true",
     "realMultimodalVerified": os.environ.get("AUDIT_REAL_MM", "false") == "true",
+    "coreTargetVerified": os.environ.get("AUDIT_CORE_TARGET", "false") == "true",
+    "finalRealProviderVerified": os.environ.get("AUDIT_FINAL_PROVIDER", "false") == "true",
     "result": result,
 }
 with open(path, "w", encoding="utf-8") as handle:
@@ -104,7 +109,21 @@ cleanup() {
   if command -v docker >/dev/null 2>&1; then docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true; fi
   [[ -z "$TEMP_DOCKER_ENV" ]] || rm -f "$TEMP_DOCKER_ENV"
   if [[ "$STRICT_TARGET" == "true" && "$MODE" != "--preflight" ]]; then
-    if [[ "$status" -eq 0 ]] && strict_gates_passed; then result="GO"; else result="NO-GO"; status=1; fi
+    if [[ "$status" -eq 0 ]] && strict_gates_passed; then
+      CORE_TARGET_VERIFIED="true"
+      if [[ "$REAL_LLM_VERIFIED" == "true" && "$REAL_MULTIMODAL_VERIFIED" == "true" ]]; then
+        FINAL_REAL_PROVIDER_VERIFIED="true"
+        result="GO"
+      elif [[ "$REAL_LLM_VERIFIED" == "true" && "${REQUIRE_REAL_MULTIMODAL:-false}" != "true" ]]; then
+        result="TARGET_CORE_GO"
+      else
+        result="NO-GO"
+        status=1
+      fi
+    else
+      result="NO-GO"
+      status=1
+    fi
   fi
   write_summary "$result"
   exit "$status"
@@ -373,8 +392,10 @@ run_venv() {
 build_docker_env() {
   local target="$1" key value
   local keys=(APP_ENV AUTH_MODE ALLOW_INSECURE_AUTH_OFF AUTH_OPERATOR_TOKEN AUTH_REVIEWER_TOKEN AUTH_ADMIN_TOKEN
-    REMOTE_API_MODE LLM_PROVIDER OPENAI_BASE_URL OPENAI_API_STYLE OPENAI_MODEL OPENAI_API_KEY
+    REMOTE_API_MODE LLM_PROVIDER OPENAI_BASE_URL OPENAI_API_STYLE OPENAI_MODEL OPENAI_API_KEY OPENAI_ENABLE_THINKING
     ANTHROPIC_BASE_URL ANTHROPIC_MODEL ANTHROPIC_API_KEY MULTIMODAL_PROVIDER MULTIMODAL_TIMEOUT_SECONDS
+    MULTIMODAL_OPENAI_BASE_URL MULTIMODAL_OPENAI_API_KEY MULTIMODAL_OPENAI_MODEL MULTIMODAL_OPENAI_API_STYLE
+    MULTIMODAL_OPENAI_ENABLE_THINKING MULTIMODAL_MAX_TOKENS MULTIMODAL_TEMPERATURE
     LOCAL_MULTIMODAL_BASE_URL LOCAL_MULTIMODAL_MODEL LOCAL_MULTIMODAL_API_KEY LOCAL_MULTIMODAL_MAX_TOKENS
     LOCAL_MULTIMODAL_TEMPERATURE OCR_PROVIDER RAG_VECTOR_STORE RAG_VECTOR_SQLITE_ENGINE RAG_VECTOR_ENHANCER
     RAG_VECTOR_FALLBACK_LOCAL)

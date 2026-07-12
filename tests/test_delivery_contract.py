@@ -112,6 +112,9 @@ def test_result_state_machine_is_fail_closed() -> None:
     assert 'result="TARGET_VERIFICATION_PENDING"' in cleanup
     assert 'if [[ "$STRICT_TARGET" == "true" && "$MODE" != "--preflight" ]]' in cleanup
     assert 'result="GO"' in cleanup and 'result="NO-GO"' in cleanup
+    assert 'result="TARGET_CORE_GO"' in cleanup
+    assert 'CORE_TARGET_VERIFIED="true"' in cleanup
+    assert 'FINAL_REAL_PROVIDER_VERIFIED="true"' in cleanup
     for gate in (
         "BACKEND_TESTS_PASSED",
         "FRONTEND_PASSED",
@@ -133,3 +136,20 @@ def test_raw_evidence_is_gitignored_and_manual_fixture_is_portable() -> None:
     assert 'os.getenv("OFFICIAL_MANUAL_PATH")' in manual_test
     assert 'os.getenv("MOTORCYCLE_MANUAL_PATH")' in manual_test
     assert "pytest.mark.skipif" in manual_test
+
+
+def test_docker_allowlist_carries_bailian_text_and_multimodal_config() -> None:
+    script = Path("scripts/loongarch-final-verify.sh").read_text(encoding="utf-8")
+    docker_env = script[script.index("build_docker_env()"):script.index("run_docker()")]
+
+    for key in (
+        "OPENAI_ENABLE_THINKING",
+        "MULTIMODAL_OPENAI_BASE_URL",
+        "MULTIMODAL_OPENAI_API_KEY",
+        "MULTIMODAL_OPENAI_MODEL",
+        "MULTIMODAL_OPENAI_API_STYLE",
+        "MULTIMODAL_OPENAI_ENABLE_THINKING",
+        "MULTIMODAL_MAX_TOKENS",
+        "MULTIMODAL_TEMPERATURE",
+    ):
+        assert key in docker_env

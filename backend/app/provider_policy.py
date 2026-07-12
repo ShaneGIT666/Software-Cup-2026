@@ -59,6 +59,15 @@ def key_configured(provider: str) -> bool:
     return False
 
 
+def multimodal_key_configured(provider: str) -> bool:
+    if provider == "openai":
+        return bool(
+            os.getenv("MULTIMODAL_OPENAI_API_KEY", "").strip()
+            or os.getenv("OPENAI_API_KEY", "").strip()
+        )
+    return key_configured(provider)
+
+
 def local_provider_enabled(provider: str) -> bool:
     return provider in LOCAL_PROVIDERS
 
@@ -90,15 +99,29 @@ def provider_status() -> dict[str, Any]:
             "remoteCapable": llm_provider in REMOTE_PROVIDERS,
             "keyConfigured": key_configured(llm_provider),
             "effectiveProvider": "mock" if offline or llm_provider == "mock" else llm_provider,
+            "model": os.getenv("OPENAI_MODEL", "gpt-4.1-mini") if llm_provider == "openai" else "mock",
+            "apiStyle": os.getenv("OPENAI_API_STYLE", "chat_completions") if llm_provider == "openai" else "mock",
+            "thinkingEnabled": os.getenv("OPENAI_ENABLE_THINKING", "false").strip().lower()
+            in {"1", "true", "yes", "on"},
             "lastFallbackReason": LAST_FALLBACK["llm"],
         },
         "multimodal": {
             "provider": multimodal_provider,
             "remoteCapable": multimodal_provider in REMOTE_PROVIDERS,
             "localCapable": local_provider_enabled(multimodal_provider),
-            "keyConfigured": key_configured(multimodal_provider),
+            "keyConfigured": multimodal_key_configured(multimodal_provider),
             "effectiveProvider": "mock"
             if (offline and not local_provider_enabled(multimodal_provider)) or multimodal_provider == "mock"
+            else multimodal_provider,
+            "model": (
+                os.getenv("MULTIMODAL_OPENAI_MODEL", "").strip()
+                or os.getenv("OPENAI_MODEL", "").strip()
+                or "gpt-4.1-mini"
+            )
+            if multimodal_provider == "openai"
+            else multimodal_provider,
+            "apiStyle": os.getenv("MULTIMODAL_OPENAI_API_STYLE", "chat_completions")
+            if multimodal_provider == "openai"
             else multimodal_provider,
             "lastFallbackReason": LAST_FALLBACK["multimodal"],
         },
