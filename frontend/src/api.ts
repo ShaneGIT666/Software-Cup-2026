@@ -114,6 +114,8 @@ export interface SystemStatusPayload {
     documentCount: number;
     chunkCount: number;
     approvedChunkCount: number;
+    unknownChunkCount?: number;
+    unknownCaseCount?: number;
     retrievableSourceCount: number;
     pendingReviewCount: number;
     chunkStatusCounts: StatusCountMap;
@@ -322,6 +324,13 @@ export interface MultimodalDiagnosisPayload {
   provider: string;
   fallback: boolean;
   fallbackReason?: string;
+  answerMode?: "grounded" | "grounded_with_caution" | "insufficient_evidence";
+  llmAnswerUsed?: boolean;
+  llmCandidateAccepted?: boolean;
+  finalAnswerSource?: "template" | "validated_llm" | string;
+  correctiveRag?: CorrectiveRagDecision;
+  safetyRules?: SafetyRuleReport;
+  riskReviewRequired?: boolean;
   raw?: RagAnswerPayload;
 }
 

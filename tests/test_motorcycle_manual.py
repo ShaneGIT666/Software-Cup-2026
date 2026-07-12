@@ -524,6 +524,22 @@ def test_end_to_end_manual_workflow(tmp_path, monkeypatch) -> None:
     case_in_results = [r for r in results2 if r["id"] == case_id and r["sourceType"] == "case"]
     assert case_in_results == []
 
+    search3_resp = client.post(
+        "/api/search",
+        json={
+            "deviceModel": "摩托车发动机",
+            "faultText": "火花塞积碳严重 电极间隙过大 更换新火花塞",
+            "inputType": "text",
+            "topK": 20,
+        },
+    )
+    assert search3_resp.status_code == 200
+    results3 = search3_resp.json()["data"]["results"]
+    assert any(
+        item["id"] == case_id and item["sourceType"] == "case"
+        for item in results3
+    ), "approved case must remain retrievable for an exact query"
+
 
 # ---------------------------------------------------------------------------
 # 资料管理 — 列表、详情、删除

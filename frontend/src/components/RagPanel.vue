@@ -47,6 +47,15 @@ const structuredAnswer = computed(() => props.ragAnswer?.structuredAnswer ?? nul
 const correctiveRag = computed(() => props.ragAnswer?.correctiveRag ?? null);
 const safetyRules = computed(() => props.ragAnswer?.safetyRules ?? null);
 
+function answerModeLabel(mode?: string) {
+  const labels: Record<string, string> = {
+    grounded: "证据充分",
+    grounded_with_caution: "基于证据谨慎回答",
+    insufficient_evidence: "证据不足"
+  };
+  return mode ? labels[mode] ?? mode : "";
+}
+
 const evidenceItems = computed<EvidenceItem[]>(() => {
   if (props.ragAnswer?.evidencePack?.items?.length) {
     return props.ragAnswer.evidencePack.items;
@@ -68,7 +77,7 @@ const evidenceItems = computed<EvidenceItem[]>(() => {
     snippet: citation.snippet,
     reason: citation.reason ?? "",
     confidence: citation.confidence,
-    reviewStatus: citation.reviewStatus ?? "approved",
+    reviewStatus: citation.reviewStatus ?? "unknown",
     riskLevel: citation.riskLevel ?? citation.scoreBreakdown?.riskLevel ?? "unknown",
     score: citation.scoreBreakdown?.score ?? null,
     trace: {
@@ -192,6 +201,18 @@ async function submitFeedback() {
       <el-tag v-if="ragAnswer?.fallback" type="warning">离线兜底</el-tag>
       <el-tag v-if="ragAnswer && !ragAnswer.fallback" type="success">真实模型增强</el-tag>
       <el-tag v-if="ragAnswer?.llmAnswerUsed" type="success">结构化回答已采纳</el-tag>
+      <el-tag
+        v-if="ragAnswer?.answerMode"
+        :type="
+          ragAnswer.answerMode === 'grounded'
+            ? 'success'
+            : ragAnswer.answerMode === 'grounded_with_caution'
+              ? 'warning'
+              : 'danger'
+        "
+      >
+        {{ answerModeLabel(ragAnswer.answerMode) }}
+      </el-tag>
       <el-tag v-if="ragAnswer" type="info">{{ ragAnswer.provider }} / requested {{ ragAnswer.requestedProvider }}</el-tag>
       <el-tag v-if="ragAnswer?.model" type="info">{{ ragAnswer.model }} / {{ ragAnswer.apiStyle }}</el-tag>
       <el-tag v-if="ragAnswer?.contextCount !== undefined" type="info">

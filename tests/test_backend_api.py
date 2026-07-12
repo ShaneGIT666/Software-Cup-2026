@@ -265,7 +265,7 @@ def test_search_returns_seed_results(tmp_path, monkeypatch) -> None:
     assert payload["success"] is True
     assert payload["data"]["results"]
     first_result = payload["data"]["results"][0]
-    assert "字段权重" in payload["data"]["summary"]
+    assert "RRF" in payload["data"]["summary"]
     assert first_result["matchedTerms"]
     assert first_result["scoreBreakdown"]["score"] > 0
     assert first_result["scoreBreakdown"]["fieldMatches"]
@@ -341,6 +341,60 @@ def test_diagnosis_reuses_search_and_rag_citations(tmp_path, monkeypatch) -> Non
     assert payload["citations"]
     assert payload["provider"] == "mock"
     assert "queryId" in payload
+    assert payload["answerMode"] in {"grounded", "grounded_with_caution", "insufficient_evidence"}
+    assert "llmAnswerUsed" in payload
+    assert "llmCandidateAccepted" in payload
+    assert "finalAnswerSource" in payload
+    action = payload["correctiveRag"]["action"]
+    if action == "needs_more_evidence":
+        assert payload["answerMode"] == "insufficient_evidence"
+    elif action == "answer_with_caution":
+        assert payload["answerMode"] == "grounded_with_caution"
+    else:
+        assert payload["answerMode"] == "grounded"
+
+
+def test_diagnosis_propagates_insufficient_evidence_answer_semantics(tmp_path, monkeypatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+
+    response = client.post(
+        "/api/diagnosis",
+        json={"deviceModel": "", "faultText": "UNIQUE-NO-EVIDENCE-FAULT-20260712", "evidenceIds": []},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    assert payload["correctiveRag"]["action"] == "needs_more_evidence"
+    assert payload["answerMode"] == "insufficient_evidence"
+    assert payload["structuredAnswer"]["repairSteps"] == []
+    assert payload["llmAnswerUsed"] is False
+    assert payload["llmCandidateAccepted"] is False
+    assert payload["finalAnswerSource"] == "template"
+
+
+def test_multimodal_diagnosis_propagates_rag_answer_semantics(tmp_path, monkeypatch) -> None:
+    client = make_client(tmp_path, monkeypatch)
+
+    response = client.post(
+        "/api/multimodal/diagnosis",
+        data={
+            "deviceModel": "",
+            "faultText": "UNIQUE-MULTIMODAL-NO-EVIDENCE-20260712",
+            "maintenanceLevel": "normal_repair",
+            "riskLevel": "medium",
+            "topK": "3",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    assert payload["answerMode"] == "insufficient_evidence"
+    assert payload["finalAnswerSource"] == "template"
+    assert payload["llmAnswerUsed"] is False
+    assert payload["llmCandidateAccepted"] is False
+    assert payload["raw"]["answerMode"] == payload["answerMode"]
+    assert payload["raw"]["finalAnswerSource"] == payload["finalAnswerSource"]
+    assert payload["raw"]["structuredAnswer"]["repairSteps"] == []
 
 
 def test_rag_answer_openai_provider_falls_back_to_mock(tmp_path, monkeypatch) -> None:

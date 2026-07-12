@@ -138,12 +138,12 @@ const systemMetricItems = computed(() => {
     {
       label: "知识片段",
       value: system.knowledge.chunkCount,
-      detail: `${system.knowledge.approvedChunkCount} 已审核`
+      detail: `${system.knowledge.approvedChunkCount} 已审核 / ${system.knowledge.unknownChunkCount ?? 0} 状态未知`
     },
     {
       label: "待审核",
       value: system.knowledge.pendingReviewCount,
-      detail: "资料 / 片段 / 案例"
+      detail: `资料 / 片段 / 案例，未知案例 ${system.knowledge.unknownCaseCount ?? 0}`
     },
     {
       label: "可检索来源",

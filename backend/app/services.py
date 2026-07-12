@@ -155,7 +155,8 @@ def build_search_summary(results: list[dict[str, Any]], query_tokens: list[str])
     top = results[0]
     terms = "、".join(top.get("matchedTerms", [])[:4]) or "输入关键词"
     return (
-        f"已按字段权重、来源类型和短语命中排序，返回 {source_text}。"
+        f"已通过关键词字段召回、向量召回与 RRF 融合排序，返回 {source_text}。"
+        "在满足融合分下限时，可能补充高相关 approved 维修案例。"
         f"当前首要参考《{top['title']}》，主要命中：{terms}。"
     )
 
