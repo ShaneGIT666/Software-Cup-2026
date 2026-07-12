@@ -338,6 +338,11 @@ def real_rag_answer(
         "在【不确定信息】明确说明证据不足。不得编造参数、页码、故障码或维修结论。"
         "high 或 critical 风险必须提示人工复核。"
     )
+    prompt += (
+        "\n\n输出格式硬性要求：必须优先完整输出以下 11 个标题，标题不得改写或省略；"
+        "每个标题下保持简洁，确保在 token 限额内完成全部标题。\n"
+        + "\n".join(REQUIRED_RAG_HEADINGS)
+    )
     timeout = float(os.getenv("LLM_TIMEOUT_SECONDS", "20"))
     citations = [citation_from_result(item) for item in compressed_contexts]
     evidence_pack = build_evidence_pack(citations)

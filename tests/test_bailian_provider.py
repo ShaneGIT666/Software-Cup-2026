@@ -50,6 +50,8 @@ def test_bailian_text_chat_payload(monkeypatch: pytest.MonkeyPatch, thinking: bo
     assert payload["model"] == "qwen3.6-flash"
     assert payload["stream"] is False
     assert isinstance(payload["messages"][0]["content"], str)
+    assert all(heading in payload["messages"][0]["content"] for heading in llm_adapter.REQUIRED_RAG_HEADINGS)
+    assert "必须优先完整输出以下 11 个标题" in payload["messages"][0]["content"]
     assert "extra_body" not in payload
     assert payload.get("enable_thinking") is True if thinking else "enable_thinking" not in payload
     assert result["provider"] == "openai"
