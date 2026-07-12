@@ -88,3 +88,5 @@ def test_missing_review_status_is_not_treated_as_approved() -> None:
     assert pack["items"][0]["reviewStatus"] == "unknown"
     assert structured["repairSteps"] == []
     assert structured["riskReviewRequired"] is True
+    assert "存在未 approved 内容" in structured["preliminaryJudgment"]
+    assert "条 approved 证据" not in structured["preliminaryJudgment"]

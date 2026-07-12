@@ -228,7 +228,7 @@ def test_source_diversity_does_not_replace_with_low_scoring_case() -> None:
     assert [hit.id for hit in final_hits] == ["doc-0", "doc-1", "doc-2", "doc-3", "doc-4"]
 
 
-def test_source_diversity_promotes_keyword_comparable_case_despite_vector_score_gap() -> None:
+def test_source_diversity_does_not_promote_case_below_score_floor_despite_keyword_match() -> None:
     hits = [
         make_hit(
             f"doc-{index}",
@@ -241,6 +241,7 @@ def test_source_diversity_promotes_keyword_comparable_case_despite_vector_score_
     case_hit = make_hit(
         "case-keyword-match",
         source_type="case",
+        device_model=make_context().device_model,
         fusion_score=0.01,
         keyword_rank=6,
         keyword_score=12,
@@ -249,8 +250,70 @@ def test_source_diversity_promotes_keyword_comparable_case_despite_vector_score_
 
     final_hits = pipeline.apply_source_diversity_policy(make_context(), [*hits, case_hit], top_k=5)
 
-    assert final_hits[-1].id == "case-keyword-match"
-    assert case_hit.score_breakdown["sourceDiversityPromotion"] is True
+    assert final_hits[-1].id == "doc-4"
+
+
+def test_source_diversity_promotes_metadata_matched_case_in_guarded_score_band() -> None:
+    context = make_context()
+    hits = [
+        make_hit(f"doc-{index}", source_type="document", fusion_score=0.04 - index * 0.001, keyword_score=10)
+        for index in range(5)
+    ]
+    case_hit = make_hit(
+        "case-guarded-match",
+        source_type="case",
+        device_model=context.device_model,
+        fusion_score=0.025,
+        keyword_rank=6,
+        keyword_score=12,
+        matched_terms=["hard-start"],
+    )
+
+    final_hits = pipeline.apply_source_diversity_policy(context, [*hits, case_hit], top_k=5)
+
+    assert final_hits[-1].id == "case-guarded-match"
+
+
+def test_source_diversity_rejects_guarded_score_band_without_exact_metadata() -> None:
+    context = make_context()
+    hits = [
+        make_hit(f"doc-{index}", source_type="document", fusion_score=0.04 - index * 0.001, keyword_score=10)
+        for index in range(5)
+    ]
+    case_hit = make_hit(
+        "case-wrong-model",
+        source_type="case",
+        device_model="engine-b",
+        fusion_score=0.025,
+        keyword_rank=6,
+        keyword_score=12,
+        matched_terms=["hard-start"],
+    )
+
+    final_hits = pipeline.apply_source_diversity_policy(context, [*hits, case_hit], top_k=5)
+
+    assert final_hits[-1].id == "doc-4"
+
+
+def test_source_diversity_rejects_case_below_guarded_score_band() -> None:
+    context = make_context()
+    hits = [
+        make_hit(f"doc-{index}", source_type="document", fusion_score=0.044 - index * 0.001, keyword_score=10)
+        for index in range(5)
+    ]
+    case_hit = make_hit(
+        "case-below-guarded-band",
+        source_type="case",
+        device_model=context.device_model,
+        fusion_score=0.025,
+        keyword_rank=6,
+        keyword_score=12,
+        matched_terms=["hard-start"],
+    )
+
+    final_hits = pipeline.apply_source_diversity_policy(context, [*hits, case_hit], top_k=5)
+
+    assert final_hits[-1].id == "doc-4"
 
 
 def test_source_diversity_skips_small_top_k() -> None:

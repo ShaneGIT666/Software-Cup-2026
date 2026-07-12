@@ -124,14 +124,29 @@ def can_promote_case(context: QueryContext, case_hit: RetrievalHit, last_hit: Re
     case_score = comparable_score(case_hit)
     last_score = comparable_score(last_hit)
     if last_score <= 0:
-        return case_hit.keyword_rank is not None and bool(case_hit.matched_terms)
-    if case_score >= last_score * 0.8:
+        return (
+            case_hit.keyword_rank is not None
+            and bool(case_hit.matched_terms)
+            and (
+                exact_match(context.device_model, case_hit.device_model)
+                or exact_match(context.device_type, case_hit.device_type)
+            )
+        )
+
+    score_ratio = case_score / last_score
+    if score_ratio >= 0.8:
         return True
-    return bool(
+
+    metadata_match = (
+        exact_match(context.device_model, case_hit.device_model)
+        or exact_match(context.device_type, case_hit.device_type)
+    )
+    keyword_comparable = (
         case_hit.keyword_score is not None
         and last_hit.keyword_score is not None
         and case_hit.keyword_score >= last_hit.keyword_score
     )
+    return score_ratio >= 0.65 and metadata_match and keyword_comparable
 
 
 def apply_source_diversity_policy(context: QueryContext, hits: list[RetrievalHit], top_k: int) -> list[RetrievalHit]:

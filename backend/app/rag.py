@@ -16,14 +16,27 @@ from .services import search_knowledge
 def finalize_rag_answer_semantics(payload: dict[str, Any]) -> dict[str, Any]:
     updated = dict(payload)
     evidence_pack = updated.get("evidencePack") or {}
+    corrective = updated.get("correctiveRag") or {}
     raw_answer = str(updated.get("rawAnswer") or "").strip()
     final_answer = str(updated.get("answer") or "").strip()
-    answer_mode = (
-        "grounded"
-        if evidence_pack.get("evidenceCount", 0) and evidence_pack.get("approvedOnly", False)
-        else "insufficient_evidence"
+    evidence_grounded = bool(
+        evidence_pack.get("evidenceCount", 0)
+        and evidence_pack.get("approvedOnly", False)
     )
-    raw_answer_used = bool(raw_answer and final_answer == raw_answer and updated.get("llmAnswerUsed"))
+    corrective_action = str(corrective.get("action") or "").strip()
+    if not evidence_grounded or corrective_action == "needs_more_evidence":
+        answer_mode = "insufficient_evidence"
+    elif corrective_action == "answer_with_caution":
+        answer_mode = "grounded_with_caution"
+    else:
+        answer_mode = "grounded"
+
+    raw_answer_used = bool(
+        raw_answer
+        and final_answer == raw_answer
+        and updated.get("llmAnswerUsed")
+        and answer_mode != "insufficient_evidence"
+    )
     updated["llmCandidateAccepted"] = raw_answer_used
     updated["llmAnswerUsed"] = raw_answer_used
     updated["finalAnswerSource"] = "validated_llm" if raw_answer_used else "template"

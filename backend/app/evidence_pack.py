@@ -208,10 +208,16 @@ def build_structured_rag_output(
 
     approved_only = bool(evidence_pack.get("approvedOnly", False))
     top_labels = "、".join(_evidence_label(item) for item in items[:3])
-    preliminary = (
-        f"已检索到 {len(items)} 条 approved 证据，当前判断仅限于 {device_model or '未指明设备'} "
-        f"的“{fault_text or '未指明故障'}”场景；优先参考 {top_labels}。"
-    )
+    if approved_only:
+        preliminary = (
+            f"已检索到 {len(items)} 条 approved 证据，当前判断仅限于 {device_model or '未指明设备'} "
+            f"的“{fault_text or '未指明故障'}”场景；优先参考 {top_labels}。"
+        )
+    else:
+        preliminary = (
+            f"已检索到 {len(items)} 条候选证据，但其中存在未 approved 内容；"
+            "当前不能生成具体维修步骤，必须先完成审核。"
+        )
     inspection_steps = [
         f"核对 {_evidence_label(item)} 的适用设备、故障现象与现场记录是否一致。"
         for item in items[:3]

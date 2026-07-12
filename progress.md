@@ -104,3 +104,4 @@
 - R08 artifact secret scan returned no matches; `git diff --check` passed; `data/examples/repair-cases.json` and `tmp/` remain uncommitted user content. T09-T15 remains pending.
 - Started post-R08 review closure H01-H02. T09-T15 remains pending.
 - H01 completed: uploaded fault artifacts now use operator-protected file access; public /uploads paths return 404; review status summaries default missing states to unknown and exclude them from approved/retrievable counts.
+- H02 completed: source diversity promotion now requires an RRF/rerank score floor, and RAG answerMode now follows Corrective RAG outcomes with grounded, grounded_with_caution, and insufficient_evidence states.

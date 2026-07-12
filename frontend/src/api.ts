@@ -930,7 +930,7 @@ export interface RagAnswerPayload {
   fallbackReason?: string;
   llmCandidateAccepted?: boolean;
   finalAnswerSource?: "template" | "validated_llm" | string;
-  answerMode?: "grounded" | "insufficient_evidence" | string;
+  answerMode?: "grounded" | "grounded_with_caution" | "insufficient_evidence";
   llmAnswerUsed?: boolean;
   llmAnswerMode?: string;
   llmAnswerPreservedAfterRules?: boolean;

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from backend.app.corrective_rag import apply_corrective_rag, assess_corrective_rag
+from backend.app.rag import finalize_rag_answer_semantics
 
 
 def test_corrective_rag_requests_more_evidence_when_empty() -> None:
@@ -104,3 +105,26 @@ def test_apply_corrective_rag_merges_uncertainty_into_structured_answer() -> Non
     assert updated["recommendedActions"] == []
     assert any("Corrective RAG" in item for item in updated["structuredAnswer"]["uncertainInformation"])
     assert "Corrective RAG" in updated["answer"]
+
+
+def test_finalize_rag_answer_mode_follows_corrective_outcome() -> None:
+    base_payload = {
+        "rawAnswer": "candidate answer",
+        "answer": "candidate answer",
+        "llmAnswerUsed": True,
+        "evidencePack": {"evidenceCount": 1, "approvedOnly": True},
+        "structuredAnswer": {"inspectionSteps": ["inspect"], "repairSteps": ["repair"]},
+    }
+
+    grounded = finalize_rag_answer_semantics({**base_payload, "correctiveRag": {"action": "answer"}})
+    caution = finalize_rag_answer_semantics({**base_payload, "correctiveRag": {"action": "answer_with_caution"}})
+    insufficient = finalize_rag_answer_semantics({**base_payload, "correctiveRag": {"action": "needs_more_evidence"}})
+
+    assert grounded["answerMode"] == "grounded"
+    assert caution["answerMode"] == "grounded_with_caution"
+    assert insufficient["answerMode"] == "insufficient_evidence"
+    assert insufficient["structuredAnswer"]["repairSteps"] == []
+    assert insufficient["riskReviewRequired"] is True
+    assert insufficient["llmAnswerUsed"] is False
+    assert insufficient["llmCandidateAccepted"] is False
+    assert insufficient["finalAnswerSource"] == "template"
