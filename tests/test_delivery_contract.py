@@ -161,3 +161,16 @@ def test_config_value_assigns_key_before_indirect_expansion() -> None:
 
     assert body.index('local key="$1"') < body.index('local current="${!key:-}"')
     assert 'local key="$1" current="${!key:-}"' not in body
+
+
+def test_api_smoke_keeps_state_in_current_shell_and_isolates_examples() -> None:
+    script = Path("scripts/loongarch-final-verify.sh").read_text(encoding="utf-8")
+    start = script[script.index("start_backend()"):script.index("assert_status()")]
+    venv = script[script.index("run_venv()"):script.index("build_docker_env()")]
+    docker = script[script.index("run_docker()"):script.index("while [[ $# -gt 0 ]]")]
+
+    assert 'cp -R "$ROOT_DIR/data/examples" "$runtime/examples"' in start
+    assert 'export APP_EXAMPLES_DIR="$runtime/examples"' in start
+    assert 'api_smoke http://127.0.0.1:18000 > >(tee ' in venv
+    assert 'api_smoke http://127.0.0.1:18000 | tee ' not in venv
+    assert 'api_smoke "http://127.0.0.1:${DOCKER_PORT}" > >(tee ' in docker

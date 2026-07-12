@@ -218,6 +218,7 @@ start_backend() {
   [[ -x backend/.venv/bin/python ]] || { echo "backend/.venv/bin/python is required" >&2; return 1; }
   local runtime="$RUN_DIR/runtime"
   mkdir -p "$runtime/knowledge" "$runtime/uploads"
+  cp -R "$ROOT_DIR/data/examples" "$runtime/examples"
   (
     while IFS='=' read -r key value; do
       [[ -z "$key" || "$key" == \#* ]] && continue
@@ -226,6 +227,7 @@ start_backend() {
     done < "$ROOT_DIR/.env"
     export APP_KNOWLEDGE_DIR="$runtime/knowledge"
     export APP_UPLOAD_DIR="$runtime/uploads"
+    export APP_EXAMPLES_DIR="$runtime/examples"
     export MINERU_ENABLED=false
     exec backend/.venv/bin/python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 18000
   ) >"$RUN_DIR/backend-start.log" 2>&1 &
@@ -386,7 +388,7 @@ run_venv() {
   BACKEND_TESTS_PASSED="true"
   require_frontend
   start_backend
-  api_smoke http://127.0.0.1:18000 | tee "$RUN_DIR/auth-smoke.log"
+  api_smoke http://127.0.0.1:18000 > >(tee "$RUN_DIR/auth-smoke.log") 2>&1
   check_real_providers http://127.0.0.1:18000
 }
 
@@ -429,7 +431,7 @@ run_docker() {
   curl -fsS "http://127.0.0.1:${DOCKER_PORT}/api/health" >/dev/null
   curl -fsS "http://127.0.0.1:${DOCKER_PORT}/api/providers/status" >"$RUN_DIR/provider-status.json"
   assert_provider_auth "$RUN_DIR/provider-status.json"
-  api_smoke "http://127.0.0.1:${DOCKER_PORT}" | tee "$RUN_DIR/auth-smoke.log"
+  api_smoke "http://127.0.0.1:${DOCKER_PORT}" > >(tee "$RUN_DIR/auth-smoke.log") 2>&1
   check_real_providers "http://127.0.0.1:${DOCKER_PORT}"
 }
 
