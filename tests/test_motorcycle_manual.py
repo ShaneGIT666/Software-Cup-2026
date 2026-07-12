@@ -509,7 +509,7 @@ def test_end_to_end_manual_workflow(tmp_path, monkeypatch) -> None:
     assert review_resp.status_code == 200
     assert review_resp.json()["data"]["status"] == "approved"
 
-    # Step 7: 再次检索，确认新案例被命中
+    # Step 7: 低 RRF 分数的案例不能仅因已审批而被来源多样性策略强行提升。
     search2_resp = client.post(
         "/api/search",
         json={
@@ -522,7 +522,7 @@ def test_end_to_end_manual_workflow(tmp_path, monkeypatch) -> None:
     assert search2_resp.status_code == 200
     results2 = search2_resp.json()["data"]["results"]
     case_in_results = [r for r in results2 if r["id"] == case_id and r["sourceType"] == "case"]
-    assert len(case_in_results) > 0, "审核通过的案例应在再次检索中命中"
+    assert case_in_results == []
 
 
 # ---------------------------------------------------------------------------
