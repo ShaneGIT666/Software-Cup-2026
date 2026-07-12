@@ -105,3 +105,4 @@
 - Started post-R08 review closure H01-H02. T09-T15 remains pending.
 - H01 completed: uploaded fault artifacts now use operator-protected file access; public /uploads paths return 404; review status summaries default missing states to unknown and exclude them from approved/retrievable counts.
 - H02 completed: source diversity promotion now requires an RRF/rerank score floor, and RAG answerMode now follows Corrective RAG outcomes with grounded, grounded_with_caution, and insufficient_evidence states.
+- Post-R08 review closure validation: full backend suite passed 211 tests in 48.62s; affected regression passed 154 tests in 12.90s; frontend production build passed in 5.22s; artifact credential scan returned no matches; public /uploads and /knowledge paths remain unavailable; user-owned data/examples/repair-cases.json and tmp/ remain uncommitted; T09-T15 remains pending.
