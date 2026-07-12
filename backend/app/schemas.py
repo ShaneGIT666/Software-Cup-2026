@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, validator
 
 
 class ApiResponse(BaseModel):
@@ -90,24 +90,21 @@ class CaseCreateRequest(BaseModel):
     lessonsLearned: str = ""
     maintenanceLevel: str = "normal_repair"
 
-    @field_validator("riskLevel")
-    @classmethod
+    @validator("riskLevel", allow_reuse=True)
     def validate_risk_level(cls, value: str) -> str:
         normalized = (value or "medium").strip().lower()
         if normalized not in {"low", "medium", "high", "critical"}:
             raise ValueError("riskLevel must be one of low, medium, high, critical")
         return normalized
 
-    @field_validator("maintenanceLevel")
-    @classmethod
+    @validator("maintenanceLevel", allow_reuse=True)
     def validate_maintenance_level(cls, value: str) -> str:
         normalized = (value or "normal_repair").strip().lower()
         if normalized not in {"daily_check", "normal_repair", "focused_repair", "major_repair", "emergency"}:
             raise ValueError("maintenanceLevel is not supported")
         return normalized
 
-    @field_validator("workflowId")
-    @classmethod
+    @validator("workflowId", allow_reuse=True)
     def normalize_workflow_id(cls, value: str | None) -> str | None:
         normalized = (value or "").strip()
         return normalized or None
