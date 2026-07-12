@@ -153,3 +153,11 @@ def test_docker_allowlist_carries_bailian_text_and_multimodal_config() -> None:
         "MULTIMODAL_TEMPERATURE",
     ):
         assert key in docker_env
+
+
+def test_config_value_assigns_key_before_indirect_expansion() -> None:
+    script = Path("scripts/loongarch-final-verify.sh").read_text(encoding="utf-8")
+    body = script[script.index("config_value()"):script.index("require_role_tokens()")]
+
+    assert body.index('local key="$1"') < body.index('local current="${!key:-}"')
+    assert 'local key="$1" current="${!key:-}"' not in body

@@ -138,7 +138,8 @@ read_env_value() {
 }
 
 config_value() {
-  local key="$1" current="${!key:-}"
+  local key="$1"
+  local current="${!key:-}"
   if [[ -n "$current" ]]; then printf '%s' "$current"; else read_env_value "$key" || true; fi
 }
 
