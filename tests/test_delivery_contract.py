@@ -15,7 +15,9 @@ def test_dockerfile_requires_runtime_injected_token_authentication() -> None:
 
 
 def test_loongarch_harness_has_strict_target_and_secret_safe_contracts() -> None:
-    script = Path("scripts/loongarch-final-verify.sh").read_text(encoding="utf-8")
+    script_path = Path("scripts/loongarch-final-verify.sh")
+    assert b"\r\n" not in script_path.read_bytes()
+    script = script_path.read_text(encoding="utf-8")
 
     for option in ("--preflight", "--venv", "--docker", "--strict-target"):
         assert option in script
