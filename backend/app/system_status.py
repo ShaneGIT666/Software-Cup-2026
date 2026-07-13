@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import Counter
 from datetime import datetime, timezone
 import importlib.util
+import os
 import sqlite3
 from typing import Any, Callable
 
@@ -17,7 +18,9 @@ from .data_store import (
     load_review_events,
     load_seed_data,
 )
-from .mineru_adapter import mineru_available, mineru_enabled, mineru_timeout_seconds
+from .mineru_adapter import mineru_readiness
+from .parser_modes import DEFAULT_PARSER_MODE, resolve_parser_policy
+from .pdf_renderer import renderer_readiness
 from .review_policy import is_current_approved_chunk
 from .vector_store import (
     json_vector_index_path,
@@ -86,9 +89,16 @@ def latest_parse_task(documents: list[dict[str, Any]]) -> dict[str, Any] | None:
         "documentId": document.get("id", ""),
         "fileName": document.get("fileName", ""),
         "status": document.get("status", ""),
+        "parserMode": document.get("parserModeEffective", document.get("parserModeRequested", "")),
         "parser": document.get("parser", ""),
         "parserFallback": bool(document.get("parserFallback", False)),
         "parserFallbackReason": document.get("parserFallbackReason", ""),
+        "mineruSucceeded": bool(document.get("mineruSucceeded", False)),
+        "pageCount": int(document.get("pageCount") or 0),
+        "visualCoverageRatio": float(document.get("visualCoverageRatio") or 0),
+        "realMultimodalCoverageRatio": float(document.get("realMultimodalCoverageRatio") or 0),
+        "visualAnalysisStatus": document.get("visualAnalysisStatus", "not_requested"),
+        "fallbackReason": document.get("parserFallbackReason", ""),
         "uploadedAt": document.get("uploadedAt", ""),
         "analyzedAt": analysis.get("analyzedAt", ""),
         "chunkCount": int(document.get("chunkCount") or 0),
@@ -154,23 +164,32 @@ def index_activity(documents: list[dict[str, Any]], chunks: list[dict[str, Any]]
 
 
 def mineru_status() -> dict[str, Any]:
-    enabled = mineru_enabled()
-    try:
-        available = mineru_available()
-    except Exception:
-        available = False
-    if not enabled:
-        status = "disabled"
-    elif available:
-        status = "available"
-    else:
-        status = "fallback"
+    readiness = mineru_readiness()
     return {
-        "enabled": enabled,
-        "available": available,
-        "status": status,
-        "timeoutSeconds": mineru_timeout_seconds(),
-        "fallbackEnabled": not enabled or not available,
+        **readiness,
+        "smartTimeoutSeconds": resolve_parser_policy("smart_multimodal").mineru_timeout_seconds,
+        "fullTimeoutSeconds": resolve_parser_policy("full_visual").mineru_timeout_seconds,
+    }
+
+
+def manual_visual_status() -> dict[str, Any]:
+    smart = resolve_parser_policy("smart_multimodal")
+    full = resolve_parser_policy("full_visual")
+    provider = os.getenv("MULTIMODAL_PROVIDER", "mock").strip().lower()
+    real_configured = bool(
+        provider in {"openai", "local"}
+        and os.getenv("MULTIMODAL_OPENAI_API_KEY", "").strip()
+        and os.getenv("MULTIMODAL_OPENAI_MODEL", "").strip()
+        and os.getenv("REMOTE_API_MODE", "off").strip().lower() != "off"
+    )
+    return {
+        "defaultMode": DEFAULT_PARSER_MODE,
+        "smartMaxPages": smart.visual_page_limit,
+        "fullMaxPages": full.visual_page_limit,
+        "fullMaxAssets": max(0, int(os.getenv("FULL_VISUAL_MAX_ASSETS", "500"))),
+        "smartDpi": smart.render_dpi,
+        "fullDpi": full.render_dpi,
+        "realMultimodalConfigured": real_configured,
     }
 
 
@@ -351,6 +370,8 @@ def build_system_status() -> dict[str, Any]:
     parser_fallback_count = sum(1 for document in documents if document.get("parserFallback"))
     pending_documents = sum(1 for document in documents if document.get("status") == "pending_review")
     pending_cases = case_status_counts.get("pending_review", 0)
+    chroma = chroma_status()
+    chroma.pop("path", None)
 
     return {
         "generatedAt": utc_now(),
@@ -375,10 +396,13 @@ def build_system_status() -> dict[str, Any]:
         "indexing": {
             **index_activity(documents, chunks),
             "vector": vector_backend_status(),
-            "chroma": chroma_status(),
+            "chroma": chroma,
         },
         "parsing": {
             "mineru": mineru_status(),
+            "pdfRenderer": renderer_readiness(),
+            "manualVisual": manual_visual_status(),
+            "lastParse": latest_parse_task(documents),
             "latestTask": latest_parse_task(documents),
             "latestAsyncTask": latest_async_parse_task(parse_tasks),
             "asyncTaskCount": len(parse_tasks),

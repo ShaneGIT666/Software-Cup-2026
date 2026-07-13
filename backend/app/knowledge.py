@@ -6,7 +6,9 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import Any
+import re
+import time
+from typing import Any, Callable
 from uuid import uuid4
 
 from fastapi import HTTPException, UploadFile
@@ -37,6 +39,8 @@ from .llm_adapter import (
 from .multimodal_adapter import analyze_multimodal_document
 from .ocr_adapter import analyze_ocr_document
 from .parser_router import parse_document, save_parse_artifacts
+from .parser_modes import ParserPolicy, resolve_parser_policy
+from .manual_visual_pipeline import run_manual_visual_pipeline
 from .provider_policy import configured_llm_provider, key_configured, record_fallback, remote_api_disabled
 from .schemas import KnowledgeChunkReviewRequest, KnowledgeChunkRevisionRequest, KnowledgeChunkStatusRequest
 from .review_policy import is_current_approved_chunk, normalize_review_status
@@ -62,6 +66,18 @@ IMAGE_SUFFIXES = {"jpg", "jpeg", "png", "webp"}
 ASSET_ANALYSIS_ORIGIN = "mineru_asset_analysis"
 ASSET_IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 PDF_PAGE_VISUAL_ASSET_TYPE = "pdf_page_visual_asset"
+VISUAL_ASSET_ID_PATTERN = re.compile(r"^(?:page-[0-9]{4}|mineru-[a-z0-9][a-z0-9_-]{0,63})$")
+DOCUMENT_ID_PATTERN = re.compile(r"^kdoc-[A-Za-z0-9_-]{1,64}$")
+VISUAL_PUBLIC_FIELDS = (
+    "assetId",
+    "assetType",
+    "previewUrl",
+    "visualType",
+    "semanticVerified",
+    "analysisProvider",
+    "analysisFallback",
+    "page",
+)
 PDF_VISUAL_KEYWORDS = (
     "图",
     "图示",
@@ -492,7 +508,50 @@ def controlled_document_url(document: dict[str, Any]) -> str:
 
 
 def public_document(document: dict[str, Any]) -> dict[str, Any]:
-    return {**document, "url": controlled_document_url(document)}
+    public = {
+        key: value
+        for key, value in document.items()
+        if key not in {"parseArtifacts", "queuedFile", "assetPath", "outputDir", "command", "stdout", "stderr"}
+    }
+    if document.get("parseArtifacts"):
+        public["parseArtifacts"] = {
+            "rawParseResult": "raw_parse_result.json",
+            "parsedMarkdown": "parsed.md",
+            "assetsDir": "assets",
+        }
+    return {**public, "url": controlled_document_url(document)}
+
+
+def public_chunk(chunk: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: value
+        for key, value in chunk.items()
+        if key not in {"assetRelativePath", "assetPath", "absolutePath"}
+    }
+
+
+def enrich_visual_evidence(payload: dict[str, Any]) -> dict[str, Any]:
+    visual_chunks = {
+        str(chunk.get("id")): chunk
+        for chunk in load_document_chunks()
+        if chunk.get("origin") == "manual_visual_pipeline" and is_current_approved_chunk(chunk)
+    }
+
+    def enrich(value: Any) -> Any:
+        if isinstance(value, list):
+            return [enrich(item) for item in value]
+        if not isinstance(value, dict):
+            return value
+        enriched = {key: enrich(item) for key, item in value.items()}
+        chunk_id = str(enriched.get("chunkId") or enriched.get("chunk_id") or "")
+        chunk = visual_chunks.get(chunk_id)
+        if chunk:
+            for field in VISUAL_PUBLIC_FIELDS:
+                if field in chunk:
+                    enriched[field] = chunk[field]
+        return enriched
+
+    return enrich(payload)
 
 
 def resolve_document_file(document: dict[str, Any]) -> Path:
@@ -507,6 +566,38 @@ def resolve_document_file(document: dict[str, Any]) -> Path:
         raise HTTPException(status_code=404, detail="knowledge document file not found") from exc
     if not candidate.exists() or not candidate.is_file():
         raise HTTPException(status_code=404, detail="knowledge document file not found")
+    return candidate
+
+
+def resolve_visual_asset_file(document_id: str, asset_id: str) -> Path:
+    if not DOCUMENT_ID_PATTERN.fullmatch(document_id) or not VISUAL_ASSET_ID_PATTERN.fullmatch(asset_id):
+        raise HTTPException(status_code=404, detail="visual asset not found")
+    chunk = next(
+        (
+            item
+            for item in load_document_chunks()
+            if item.get("documentId") == document_id and item.get("assetId") == asset_id
+        ),
+        None,
+    )
+    if chunk is None:
+        raise HTTPException(status_code=404, detail="visual asset not found")
+    relative_path = str(chunk.get("assetRelativePath") or "")
+    if not relative_path:
+        raise HTTPException(status_code=404, detail="visual asset not found")
+    parsed_root = (knowledge_dir() / "parsed").resolve()
+    root = (parsed_root / document_id).resolve()
+    try:
+        root.relative_to(parsed_root)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="visual asset not found") from exc
+    candidate = (root / relative_path).resolve()
+    try:
+        candidate.relative_to(root)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="visual asset not found") from exc
+    if not candidate.exists() or not candidate.is_file():
+        raise HTTPException(status_code=404, detail="visual asset not found")
     return candidate
 
 
@@ -786,6 +877,9 @@ def build_pdf_page_visual_asset_chunks(document: dict[str, Any], reason: str = "
             fallback_reason=fallback_reason,
         )
         chunk["assetFallbackType"] = PDF_PAGE_VISUAL_ASSET_TYPE
+        chunk["semanticVerified"] = False
+        chunk["analysisFallback"] = True
+        chunk["is_current"] = False
         chunks.append(chunk)
     return chunks
 
@@ -889,7 +983,11 @@ def ingest_knowledge_document_bytes(
     file_name: str | None,
     content_type: str | None,
     source_name: str | None = None,
+    parser_mode: str | None = None,
+    progress_callback: Callable[[str, int, int], None] | None = None,
 ) -> dict[str, Any]:
+    started_at = time.monotonic()
+    policy = resolve_parser_policy(parser_mode)
     suffix = validate_knowledge_file_info(file_name, content_type, content)
     document_id = f"kdoc-{uuid4().hex[:8]}"
     file_name = file_name or f"{document_id}.{suffix}"
@@ -899,26 +997,38 @@ def ingest_knowledge_document_bytes(
     target = target_dir / f"{document_id}.{suffix}"
     target.write_bytes(content)
 
-    parse_result = parse_document(target, suffix, content)
+    if progress_callback:
+        progress_callback("text_parsing", 0, 0)
+    parse_result = parse_document(target, suffix, content, policy)
     parse_artifacts = save_parse_artifacts(knowledge_dir() / "parsed" / document_id, parse_result)
+    raw_parse_path = Path(parse_artifacts["rawParseResult"])
+    stored_parse_result = json.loads(raw_parse_path.read_text(encoding="utf-8"))
     pages = parse_result.get("pages", [])
     parser = str(parse_result.get("parser", "parser-router"))
-    chunks: list[dict[str, Any]] = []
+    text_chunks: list[dict[str, Any]] = []
     for page in pages:
         for chunk_text in split_text(str(page.get("text", ""))):
-            chunks.append(
+            text_chunks.append(
                 build_chunk(
                     document_id=document_id,
                     file_name=file_name,
                     source_name=display_source,
                     chunk_text=chunk_text,
-                    chunk_index=len(chunks) + 1,
+                    chunk_index=len(text_chunks) + 1,
                     page=page.get("page"),
                     section=page.get("section"),
                     review_status="pending_review",
                 )
             )
-    status = "pending_review" if chunks else str(parse_result.get("status", "needs_parser"))
+    chunks = list(text_chunks)
+    page_count = 0
+    if suffix == "pdf":
+        try:
+            from pypdf import PdfReader  # type: ignore[import-not-found]
+
+            page_count = len(PdfReader(BytesIO(content)).pages)
+        except Exception:
+            page_count = len(pages)
 
     document = {
         "id": document_id,
@@ -926,16 +1036,77 @@ def ingest_knowledge_document_bytes(
         "fileType": content_type or "",
         "suffix": suffix,
         "sourceName": display_source,
+    }
+    visual_result = {
+        "pageCount": page_count,
+        "visualCandidatePages": 0,
+        "visualPagesRendered": 0,
+        "visualPagesOcrProcessed": 0,
+        "visualPagesAnalyzed": 0,
+        "realMultimodalPages": 0,
+        "fallbackVisualPages": 0,
+        "mineruAssetCount": len(stored_parse_result.get("mineruAssets", [])),
+        "analyzedMineruAssetCount": 0,
+        "visualCoverageRatio": 0.0,
+        "realMultimodalCoverageRatio": 0.0,
+        "visualFailedPages": [],
+        "renderer": "unavailable",
+        "status": "completed",
+        "visualChunks": [],
+    }
+    visual_requested = parser_mode is not None and suffix == "pdf" and policy.render_scope != "none"
+    if visual_requested:
+        if progress_callback:
+            progress_callback("page_inventory", 0, page_count)
+        visual_result = run_manual_visual_pipeline(
+            document=document,
+            pdf_path=target,
+            policy=policy,
+            mineru_assets=stored_parse_result.get("mineruAssets", []),
+            progress_callback=progress_callback,
+        )
+        chunks.extend(visual_result["visualChunks"])
+    if progress_callback:
+        progress_callback("chunking", len(chunks), len(chunks))
+    status = "pending_review" if chunks else str(parse_result.get("status", "needs_parser"))
+    visual_status = str(visual_result["status"] if visual_requested else "not_requested")
+    terminal_phase = "completed_with_warnings" if visual_status == "completed_with_warnings" else "completed"
+    document.update({
         "status": status,
         "chunkCount": len(chunks),
         "pendingReviewCount": len(chunks),
+        "parserModeRequested": policy.mode,
+        "parserModeEffective": policy.mode,
         "parser": parser,
         "parserFallback": bool(parse_result.get("fallback", False)),
         "parserFallbackReason": parse_result.get("fallbackReason", ""),
+        "mineruAttempted": bool(parse_result.get("mineruAttempted", False)),
+        "mineruSucceeded": bool(parse_result.get("mineruSucceeded", False)),
+        "mineruTimeoutSeconds": policy.mineru_timeout_seconds,
+        "parseDurationMs": int((time.monotonic() - started_at) * 1000),
+        "pageCount": int(visual_result["pageCount"]),
+        "textChunkCount": len(text_chunks),
+        "visualAnalysisRequested": visual_requested,
+        "visualAnalysisStatus": visual_status,
+        "visualCandidatePages": int(visual_result["visualCandidatePages"]),
+        "visualPagesRendered": int(visual_result["visualPagesRendered"]),
+        "visualPagesOcrProcessed": int(visual_result["visualPagesOcrProcessed"]),
+        "visualPagesAnalyzed": int(visual_result["visualPagesAnalyzed"]),
+        "realMultimodalPages": int(visual_result["realMultimodalPages"]),
+        "fallbackVisualPages": int(visual_result["fallbackVisualPages"]),
+        "mineruAssetCount": int(visual_result["mineruAssetCount"]),
+        "analyzedMineruAssetCount": int(visual_result["analyzedMineruAssetCount"]),
+        "visualCoverageRatio": float(visual_result["visualCoverageRatio"]),
+        "realMultimodalCoverageRatio": float(visual_result["realMultimodalCoverageRatio"]),
+        "visualFailedPages": visual_result["visualFailedPages"],
+        "renderer": visual_result["renderer"],
+        "currentPhase": terminal_phase,
+        "progressCurrent": len(chunks),
+        "progressTotal": len(chunks),
         "parseArtifacts": parse_artifacts,
         "uploadedAt": utc_now(),
         "url": f"/api/knowledge/documents/{document_id}/file",
-    }
+    })
     document = mark_initial_asset_analysis_state(document)
 
     documents = load_documents()
@@ -946,7 +1117,7 @@ def ingest_knowledge_document_bytes(
     existing_chunks.extend(chunks)
     save_document_chunks(existing_chunks)
 
-    return {**public_document(document), "chunks": chunks[:3]}
+    return {**public_document(document), "chunks": [public_chunk(chunk) for chunk in chunks[:3]]}
 
 
 async def ingest_knowledge_document(file: UploadFile, source_name: str | None = None) -> dict[str, Any]:
@@ -976,9 +1147,26 @@ def parse_task_response(task: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in task.items() if key != "queuedFile"}
 
 
-async def create_knowledge_parse_task(file: UploadFile, source_name: str | None = None) -> dict[str, Any]:
+async def create_knowledge_parse_task(
+    file: UploadFile,
+    source_name: str | None = None,
+    parser_mode: str | None = None,
+) -> dict[str, Any]:
     content = await file.read()
     suffix = validate_knowledge_file(file, content)
+    policy = resolve_parser_policy(parser_mode)
+    if suffix == "pdf" and policy.mode == "full_visual":
+        try:
+            from pypdf import PdfReader  # type: ignore[import-not-found]
+
+            page_count = len(PdfReader(BytesIO(content)).pages)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail="PDF file could not be parsed") from exc
+        if page_count > policy.visual_page_limit:
+            raise HTTPException(
+                status_code=422,
+                detail=f"full_visual supports at most {policy.visual_page_limit} pages; split the document",
+            )
     task_id = f"ptask-{uuid4().hex[:8]}"
     queue_dir = knowledge_dir() / "parse-queue"
     queue_dir.mkdir(parents=True, exist_ok=True)
@@ -993,6 +1181,11 @@ async def create_knowledge_parse_task(file: UploadFile, source_name: str | None 
         "fileType": file.content_type or "",
         "suffix": suffix,
         "sourceName": source_name or file.filename or task_id,
+        "parserModeRequested": policy.mode,
+        "parserModeEffective": policy.mode,
+        "currentPhase": "queued",
+        "progressCurrent": 0,
+        "progressTotal": 0,
         "createdAt": now,
         "updatedAt": now,
         "queuedFile": str(queued_file),
@@ -1003,41 +1196,88 @@ async def create_knowledge_parse_task(file: UploadFile, source_name: str | None 
 
 
 def process_knowledge_parse_task(task_id: str) -> None:
-    task = update_parse_task(task_id, status="running", startedAt=utc_now(), error="")
+    task = update_parse_task(
+        task_id,
+        status="running",
+        currentPhase="text_parsing",
+        startedAt=utc_now(),
+        error="",
+    )
     queued_file = Path(str(task.get("queuedFile") or ""))
     try:
         if not queued_file.exists():
             raise FileNotFoundError(f"queued file not found: {queued_file}")
+        def report_progress(phase: str, current: int, total: int) -> None:
+            update_parse_task(
+                task_id,
+                currentPhase=phase,
+                progressCurrent=current,
+                progressTotal=total,
+            )
+
         document = ingest_knowledge_document_bytes(
             content=queued_file.read_bytes(),
             file_name=str(task.get("fileName") or queued_file.name),
             content_type=str(task.get("fileType") or ""),
             source_name=str(task.get("sourceName") or ""),
+            parser_mode=str(task.get("parserModeRequested") or "smart_multimodal"),
+            progress_callback=report_progress,
         )
+        terminal_status = str(document.get("visualAnalysisStatus") or "completed")
+        if terminal_status not in {"completed", "completed_with_warnings"}:
+            terminal_status = "completed"
+        metric_fields = {
+            key: document.get(key)
+            for key in (
+                "parserModeRequested",
+                "parserModeEffective",
+                "parser",
+                "parserFallback",
+                "parserFallbackReason",
+                "mineruAttempted",
+                "mineruSucceeded",
+                "mineruTimeoutSeconds",
+                "parseDurationMs",
+                "pageCount",
+                "textChunkCount",
+                "visualAnalysisRequested",
+                "visualAnalysisStatus",
+                "visualCandidatePages",
+                "visualPagesRendered",
+                "visualPagesOcrProcessed",
+                "visualPagesAnalyzed",
+                "realMultimodalPages",
+                "fallbackVisualPages",
+                "mineruAssetCount",
+                "analyzedMineruAssetCount",
+                "visualCoverageRatio",
+                "realMultimodalCoverageRatio",
+                "visualFailedPages",
+                "renderer",
+                "progressCurrent",
+                "progressTotal",
+            )
+        }
         update_parse_task(
             task_id,
-            status="completed",
+            status=terminal_status,
+            currentPhase=terminal_status,
             completedAt=utc_now(),
             documentId=document.get("id"),
             documentStatus=document.get("status"),
             chunkCount=document.get("chunkCount", 0),
-            parser=document.get("parser", ""),
-            parserFallback=document.get("parserFallback", False),
-            parserFallbackReason=document.get("parserFallbackReason", ""),
             assetAnalysisStatus=document.get("assetAnalysisStatus", "skipped"),
+            **metric_fields,
         )
-        if should_enqueue_asset_analysis(document):
-            analyzed_document = analyze_document_assets(str(document["id"]))
-            update_parse_task(
-                task_id,
-                assetAnalysisStatus=analyzed_document.get("assetAnalysisStatus", ""),
-                assetAnalysisCount=analyzed_document.get("assetAnalysisCount", 0),
-                assetAnalysisFallbackCount=analyzed_document.get("assetAnalysisFallbackCount", 0),
-                assetAnalysisError=analyzed_document.get("assetAnalysisError", ""),
-            )
     except Exception as exc:  # pragma: no cover - exact parser failures vary by dependency
         logger.exception("Knowledge parse task failed: %s", task_id)
-        update_parse_task(task_id, status="failed", completedAt=utc_now(), error=str(exc))
+        update_parse_task(
+            task_id,
+            status="failed",
+            currentPhase="failed",
+            completedAt=utc_now(),
+            error=str(exc),
+        )
 
 
 def list_knowledge_parse_tasks(status: str | None = None) -> dict[str, Any]:
@@ -1155,7 +1395,7 @@ def get_knowledge_document(document_id: str) -> dict[str, Any]:
             revisions = [item for item in load_knowledge_revisions() if item.get("documentId") == document_id]
             return {
                 **public_document(document),
-                "chunks": chunks[:10],
+                "chunks": [public_chunk(chunk) for chunk in chunks[:10]],
                 "chunkTotal": len(chunks),
                 "revisionCount": len(revisions),
                 "latestRevision": revisions[-1] if revisions else None,
@@ -1168,7 +1408,7 @@ def list_knowledge_document_chunks(document_id: str) -> dict[str, Any]:
     if not any(document["id"] == document_id for document in documents):
         raise HTTPException(status_code=404, detail="入库资料不存在")
     chunks = [chunk for chunk in load_document_chunks() if chunk.get("documentId") == document_id]
-    return {"items": chunks, "total": len(chunks)}
+    return {"items": [public_chunk(chunk) for chunk in chunks], "total": len(chunks)}
 
 
 def list_knowledge_revisions(document_id: str) -> dict[str, Any]:

@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import signal
 import shutil
 import subprocess
 import sys
@@ -22,7 +23,40 @@ class MinerUUnavailable(RuntimeError):
 
 
 def mineru_available() -> bool:
+    return mineru_module_available()
+
+
+def mineru_module_available() -> bool:
     return any(importlib.util.find_spec(name) is not None for name in MINERU_MODULE_CANDIDATES)
+
+
+def mineru_cli_available() -> bool:
+    try:
+        mineru_executable()
+        return True
+    except MinerUUnavailable:
+        return False
+
+
+def mineru_readiness() -> dict[str, Any]:
+    enabled = mineru_enabled()
+    module_available = mineru_module_available()
+    cli_available = mineru_cli_available()
+    if not enabled:
+        status = "disabled"
+    elif not module_available:
+        status = "module_missing"
+    elif not cli_available:
+        status = "cli_missing"
+    else:
+        status = "ready"
+    return {
+        "enabled": enabled,
+        "moduleAvailable": module_available,
+        "cliAvailable": cli_available,
+        "ready": status == "ready",
+        "status": status,
+    }
 
 
 def mineru_executable() -> str:
@@ -123,6 +157,66 @@ def pages_from_markdown(markdown: str) -> list[dict[str, Any]]:
     return [{"page": None, "section": "document", "text": text}]
 
 
+def _safe_asset_records(content: Any, output_dir: Path, assets: list[str]) -> list[dict[str, Any]]:
+    raw_records: list[dict[str, Any]] = []
+    if isinstance(content, list):
+        raw_records = [item for item in content if isinstance(item, dict)]
+    by_path: dict[str, dict[str, Any]] = {}
+    for item in raw_records:
+        raw_path = next(
+            (
+                str(item[key])
+                for key in ("img_path", "image_path", "asset_path", "path")
+                if isinstance(item.get(key), str) and str(item[key]).strip()
+            ),
+            "",
+        )
+        if not raw_path:
+            continue
+        candidate = Path(raw_path)
+        if not candidate.is_absolute():
+            candidate = output_dir / candidate
+        try:
+            relative = candidate.resolve().relative_to(output_dir.resolve())
+        except ValueError:
+            continue
+        page = page_from_content_item(item)
+        caption = next(
+            (
+                str(item[key]).strip()
+                for key in ("caption", "image_caption", "text")
+                if isinstance(item.get(key), str) and str(item[key]).strip()
+            ),
+            "",
+        )
+        item_type = str(item.get("type") or item.get("category") or "image").lower()
+        by_path[str(relative).replace("\\", "/")] = {
+            "page": page,
+            "caption": caption,
+            "assetType": "table" if "table" in item_type else "image",
+        }
+
+    records: list[dict[str, Any]] = []
+    for index, raw_path in enumerate(assets, start=1):
+        path = Path(raw_path)
+        try:
+            relative = path.resolve().relative_to(output_dir.resolve())
+        except ValueError:
+            continue
+        relative_text = str(relative).replace("\\", "/")
+        metadata = by_path.get(relative_text, {})
+        records.append(
+            {
+                "assetId": f"mineru-{index:04d}",
+                "relativePath": relative_text,
+                "page": metadata.get("page"),
+                "caption": metadata.get("caption", ""),
+                "assetType": metadata.get("assetType", "image"),
+            }
+        )
+    return records
+
+
 def collect_mineru_outputs(output_dir: Path) -> tuple[str, list[dict[str, Any]], list[str], dict[str, Any]]:
     markdown_files = sorted(output_dir.rglob("*.md"), key=lambda path: path.stat().st_size, reverse=True)
     json_files = sorted(output_dir.rglob("*.json"))
@@ -151,6 +245,7 @@ def collect_mineru_outputs(output_dir: Path) -> tuple[str, list[dict[str, Any]],
         "markdownFiles": [str(path.relative_to(output_dir)) for path in markdown_files],
         "jsonFiles": raw_json_files,
         "assetFiles": [str(Path(path).relative_to(output_dir)) for path in assets],
+        "mineruAssets": _safe_asset_records(content_list, output_dir, assets),
     }
     return markdown, pages, assets, metadata
 
@@ -171,6 +266,7 @@ def run_mineru_command(command: list[str], timeout_seconds: int) -> subprocess.C
             encoding="utf-8",
             errors="replace",
             creationflags=creationflags,
+            start_new_session=os.name != "nt",
         )
         try:
             process.wait(timeout=timeout_seconds)
@@ -183,7 +279,20 @@ def run_mineru_command(command: list[str], timeout_seconds: int) -> subprocess.C
                     check=False,
                 )
             else:  # pragma: no cover - Windows is the active dev target here
+                try:
+                    os.killpg(process.pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                if os.name != "nt":
+                    try:
+                        os.killpg(process.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
                 process.kill()
+                process.wait(timeout=5)
             raise MinerUUnavailable(f"MinerU timed out after {timeout_seconds} seconds.") from exc
 
     try:
@@ -197,7 +306,15 @@ def run_mineru_command(command: list[str], timeout_seconds: int) -> subprocess.C
     return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
 
 
-def parse_with_mineru(file_path: Path, suffix: str) -> dict[str, Any]:
+def parse_with_mineru(
+    file_path: Path,
+    suffix: str,
+    *,
+    timeout_seconds: int,
+    backend: str | None = None,
+    lang: str | None = None,
+    api_url: str | None = None,
+) -> dict[str, Any]:
     if not mineru_enabled():
         raise MinerUUnavailable("MinerU is disabled by MINERU_ENABLED.")
     if not mineru_available():
@@ -211,16 +328,16 @@ def parse_with_mineru(file_path: Path, suffix: str) -> dict[str, Any]:
         "-o",
         str(output_root),
         "-b",
-        os.getenv("MINERU_BACKEND", DEFAULT_MINERU_BACKEND),
+        backend or os.getenv("MINERU_BACKEND", DEFAULT_MINERU_BACKEND),
         "-l",
-        os.getenv("MINERU_LANG", DEFAULT_MINERU_LANG),
+        lang or os.getenv("MINERU_LANG", DEFAULT_MINERU_LANG),
     ]
-    api_url = os.getenv("MINERU_API_URL", "").strip()
-    if api_url:
-        command.extend(["--api-url", api_url])
+    effective_api_url = api_url if api_url is not None else os.getenv("MINERU_API_URL", "").strip()
+    if effective_api_url:
+        command.extend(["--api-url", effective_api_url])
 
     try:
-        completed = run_mineru_command(command, mineru_timeout_seconds())
+        completed = run_mineru_command(command, timeout_seconds)
     except OSError as exc:
         raise MinerUUnavailable(f"MinerU failed to start: {exc}") from exc
 
@@ -238,6 +355,7 @@ def parse_with_mineru(file_path: Path, suffix: str) -> dict[str, Any]:
         "pages": pages,
         "markdown": markdown,
         "assets": assets,
+        "mineruAssets": metadata.get("mineruAssets", []),
         "fallback": False,
         "fallbackReason": "",
         "mineru": {

@@ -21,6 +21,7 @@ from .knowledge import (
     analyze_knowledge_document,
     create_knowledge_parse_task,
     delete_knowledge_document,
+    enrich_visual_evidence,
     get_knowledge_parse_task,
     get_knowledge_document,
     ingest_knowledge_document,
@@ -31,6 +32,7 @@ from .knowledge import (
     process_knowledge_parse_task,
     review_knowledge_chunk,
     resolve_document_file,
+    resolve_visual_asset_file,
     revise_knowledge_chunk,
     set_knowledge_chunk_status,
     should_enqueue_asset_analysis,
@@ -241,12 +243,12 @@ def validate_multimodal(
 
 @app.post("/api/search", response_model=ApiResponse)
 def search(request: SearchRequest) -> ApiResponse:
-    return ApiResponse(data=search_knowledge(request))
+    return ApiResponse(data=enrich_visual_evidence(search_knowledge(request)))
 
 
 @app.post("/api/diagnosis", response_model=ApiResponse)
 def diagnosis(request: DiagnosisRequest) -> ApiResponse:
-    return ApiResponse(data=diagnose_with_rag(request), message="诊断建议已生成")
+    return ApiResponse(data=enrich_visual_evidence(diagnose_with_rag(request)), message="诊断建议已生成")
 
 
 @app.post("/api/multimodal/diagnosis", response_model=ApiResponse)
@@ -407,7 +409,7 @@ async def multimodal_diagnosis(
 
 @app.post("/api/rag/answer", response_model=ApiResponse)
 def rag_answer(request: RagAnswerRequest) -> ApiResponse:
-    return ApiResponse(data=answer_with_rag(request), message="当前为 Mock RAG 回答")
+    return ApiResponse(data=enrich_visual_evidence(answer_with_rag(request)), message="当前为 Mock RAG 回答")
 
 
 @app.post("/api/rag/feedback", response_model=ApiResponse)
@@ -577,9 +579,10 @@ async def upload_knowledge_document_async(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     source_name: str | None = Form(default=None),
+    parser_mode: str = Form(default="smart_multimodal"),
     _auth: dict[str, Any] = Depends(require_role("operator")),
 ) -> ApiResponse:
-    task = await create_knowledge_parse_task(file, source_name)
+    task = await create_knowledge_parse_task(file, source_name, parser_mode)
     background_tasks.add_task(process_knowledge_parse_task, task["id"])
     return ApiResponse(data=task, message="资料解析任务已提交")
 
@@ -592,7 +595,7 @@ def get_knowledge_documents(_auth: dict[str, Any] = Depends(require_role("review
 @app.get("/api/knowledge/parse-tasks", response_model=ApiResponse)
 def get_knowledge_parse_tasks(
     status: str | None = None,
-    _auth: dict[str, Any] = Depends(require_role("reviewer")),
+    _auth: dict[str, Any] = Depends(require_role("operator")),
 ) -> ApiResponse:
     return ApiResponse(data=list_knowledge_parse_tasks(status))
 
@@ -600,7 +603,7 @@ def get_knowledge_parse_tasks(
 @app.get("/api/knowledge/parse-tasks/{task_id}", response_model=ApiResponse)
 def get_knowledge_parse_task_detail(
     task_id: str,
-    _auth: dict[str, Any] = Depends(require_role("reviewer")),
+    _auth: dict[str, Any] = Depends(require_role("operator")),
 ) -> ApiResponse:
     return ApiResponse(data=get_knowledge_parse_task(task_id))
 
@@ -622,6 +625,17 @@ def get_knowledge_document_file(
     file_path = resolve_document_file(document)
     file_name = Path(str(document.get("fileName") or file_path.name)).name
     return FileResponse(file_path, media_type=document.get("fileType") or None, filename=file_name)
+
+
+@app.get("/api/knowledge/documents/{document_id}/visual-assets/{asset_id}/file")
+def get_knowledge_visual_asset_file(
+    document_id: str,
+    asset_id: str,
+    _auth: dict[str, Any] = Depends(require_role("operator")),
+) -> FileResponse:
+    file_path = resolve_visual_asset_file(document_id, asset_id)
+    media_type = mimetypes.guess_type(file_path.name)[0] or "application/octet-stream"
+    return FileResponse(file_path, media_type=media_type)
 
 
 @app.get("/api/knowledge/documents/{document_id}/chunks", response_model=ApiResponse)

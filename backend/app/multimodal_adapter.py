@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import logging
 import os
 import tempfile
@@ -65,7 +66,13 @@ def mock_multimodal_analysis(
         text_segments.extend(str(segment) for segment in ocr_result.get("textSegments", []) if str(segment).strip())
 
     return {
+        "visualType": "unknown",
         "summary": text,
+        "components": [],
+        "operations": [],
+        "figureLabels": [],
+        "safetyWarnings": [],
+        "uncertainties": ["当前结果为 mock/OCR 上下文降级，不是经过验证的图片语义理解。"],
         "keyComponents": ["发动机", "火花塞", "高压包", "燃油供给", "进气管路"],
         "faultSymptoms": ["无法启动", "启动困难", "怠速不稳", "排气异常"],
         "inspectionSteps": [
@@ -80,6 +87,8 @@ def mock_multimodal_analysis(
         "requestedProvider": provider,
         "fallback": True,
         "fallbackReason": fallback_reason or "未配置真实多模态模型或真实模型不可用，已使用 mock provider 保证演示连续性。",
+        "semanticVerified": False,
+        "model": "mock",
         "fileName": file_name,
         "ocr": ocr_result or {},
     }
@@ -181,6 +190,62 @@ def structured_from_model_text(
     }
 
 
+def manual_page_from_model_text(
+    text: str,
+    file_name: str,
+    provider: str,
+    model: str,
+) -> dict[str, Any]:
+    clean_text = text.strip()
+    try:
+        payload = json.loads(clean_text)
+        if not isinstance(payload, dict):
+            raise ValueError("manual page response must be a JSON object")
+    except (json.JSONDecodeError, ValueError) as exc:
+        return {
+            "visualType": "unknown",
+            "summary": clean_text[:500],
+            "components": [],
+            "operations": [],
+            "figureLabels": [],
+            "safetyWarnings": [],
+            "uncertainties": ["模型输出不是有效 JSON，结果需要人工复核。"],
+            "textSegments": [clean_text[:1000]] if clean_text else [],
+            "provider": provider,
+            "requestedProvider": provider,
+            "model": model,
+            "fallback": True,
+            "fallbackReason": f"manual page JSON parse failed: {exc}",
+            "semanticVerified": False,
+            "fileName": file_name,
+        }
+    allowed_types = {
+        "photo", "exploded_view", "assembly_diagram", "wiring_diagram",
+        "table", "warning", "mixed", "unknown",
+    }
+    visual_type = str(payload.get("visualType") or "unknown")
+    if visual_type not in allowed_types:
+        visual_type = "unknown"
+    result = {
+        "visualType": visual_type,
+        "summary": str(payload.get("summary") or "").strip(),
+        "components": [str(item) for item in payload.get("components", []) if str(item).strip()],
+        "operations": [str(item) for item in payload.get("operations", []) if str(item).strip()],
+        "figureLabels": [str(item) for item in payload.get("figureLabels", []) if str(item).strip()],
+        "safetyWarnings": [str(item) for item in payload.get("safetyWarnings", []) if str(item).strip()],
+        "uncertainties": [str(item) for item in payload.get("uncertainties", []) if str(item).strip()],
+        "provider": provider,
+        "requestedProvider": provider,
+        "model": model,
+        "fallback": False,
+        "fallbackReason": "",
+        "semanticVerified": provider in {"openai", "local"},
+        "fileName": file_name,
+    }
+    result["textSegments"] = [result["summary"]] if result["summary"] else []
+    return result
+
+
 def enrich_with_ocr(analysis: dict[str, Any], ocr_result: dict[str, Any]) -> dict[str, Any]:
     if not ocr_result or not ocr_result.get("textSegments"):
         analysis["ocr"] = ocr_result or {}
@@ -200,15 +265,30 @@ def real_multimodal_analysis(
     source_name: str,
     suffix: str,
     provider: str,
+    *,
+    context_text: str = "",
+    analysis_task: str = "generic",
+    timeout_seconds: float | None = None,
 ) -> dict[str, Any]:
     content = file_path.read_bytes()
     file_name = file_path.name
-    timeout = float(os.getenv("MULTIMODAL_TIMEOUT_SECONDS", os.getenv("LLM_TIMEOUT_SECONDS", "30")))
-    prompt = (
-        "你是设备检修知识库入库助手。请分析这份摩托车/设备检修资料中的文字、图片、表格或结构图，"
-        "输出中文摘要、关键部件、故障现象、检查步骤、安全注意事项，以及适合进入检索知识库的文本片段。"
-        "如果资料内容不足，请明确说明限制，不要编造不存在的页码或结论。"
-    )
+    timeout = timeout_seconds or float(os.getenv("MULTIMODAL_TIMEOUT_SECONDS", os.getenv("LLM_TIMEOUT_SECONDS", "30")))
+    if analysis_task == "manual_page":
+        prompt = (
+            "你是设备维修手册页面视觉分析器。只能根据当前图片、OCR 和附近正文判断；不得编造页码，"
+            "不得编造扭矩、尺寸、间隙、故障码或维修步骤。数值无法辨认时必须写入 uncertainties。"
+            "区分实物照片、爆炸图、装配图、电路图和表格。summary 使用简明中文。"
+            "输出纯 JSON，不加 Markdown 代码块，结构必须为："
+            '{"visualType":"photo | exploded_view | assembly_diagram | wiring_diagram | table | warning | mixed | unknown",'
+            '"summary":"","components":[],"operations":[],"figureLabels":[],"safetyWarnings":[],"uncertainties":[]}\n'
+            f"OCR 与附近正文（最多 2000 字符）：{context_text[:2000]}"
+        )
+    else:
+        prompt = (
+            "你是设备检修知识库入库助手。请分析这份摩托车/设备检修资料中的文字、图片、表格或结构图，"
+            "输出中文摘要、关键部件、故障现象、检查步骤、安全注意事项，以及适合进入检索知识库的文本片段。"
+            "如果资料内容不足，请明确说明限制，不要编造不存在的页码或结论。"
+        )
 
     if provider == "openai":
         api_key = multimodal_openai_api_key()
@@ -338,14 +418,31 @@ def real_multimodal_analysis(
 
     if not text:
         raise RuntimeError("多模态模型返回内容为空")
-    return structured_from_model_text(text, file_name, source_name, provider, provider)
+    if analysis_task == "manual_page":
+        return manual_page_from_model_text(text, file_name, provider, model)
+    result = structured_from_model_text(text, file_name, source_name, provider, provider)
+    result["model"] = model
+    result["semanticVerified"] = False
+    return result
+
+
+def _retryable_multimodal_error(exc: Exception) -> bool:
+    status_code = getattr(getattr(exc, "response", None), "status_code", None)
+    if status_code is not None:
+        return int(status_code) == 429 or int(status_code) >= 500
+    message = str(exc).lower()
+    return isinstance(exc, (TimeoutError, ConnectionError)) or "timed out" in message or "timeout" in message
 
 
 def analyze_multimodal_document(
     file_path: Path,
     source_name: str,
     suffix: str,
-    requested_provider: str | None,
+    requested_provider: str | None = None,
+    *,
+    context_text: str = "",
+    analysis_task: str = "generic",
+    timeout_seconds: float | None = None,
 ) -> dict[str, Any]:
     provider = configured_multimodal_provider(requested_provider)
     ocr_result = analyze_ocr_document(file_path, source_name, suffix)
@@ -357,20 +454,46 @@ def analyze_multimodal_document(
         logger.info("Multimodal fallback: %s", reason)
         return mock_multimodal_analysis(file_path.name, source_name, suffix, provider, fallback_reason=reason, ocr_result=ocr_result)
 
-    try:
-        return enrich_with_ocr(real_multimodal_analysis(file_path, source_name, suffix, provider), ocr_result)
-    except Exception as exc:
-        reason = f"{provider} 多模态 provider 调用失败，已降级到 mock：{exc}"
-        record_fallback("multimodal", reason)
-        logger.warning("Multimodal fallback: %s", reason)
-        return mock_multimodal_analysis(
-            file_path.name,
-            source_name,
-            suffix,
-            provider,
-            fallback_reason=reason,
-            ocr_result=ocr_result,
-        )
+    retry_count = min(1, max(0, int(os.getenv("MANUAL_VISUAL_RETRY_COUNT", "1")))) if analysis_task == "manual_page" else 0
+    attempts = retry_count + 1
+    last_error: Exception | None = None
+    for attempt in range(attempts):
+        try:
+            analysis = real_multimodal_analysis(
+                file_path,
+                source_name,
+                suffix,
+                provider,
+                context_text="\n\n".join(
+                    part
+                    for part in (str(ocr_result.get("text") or "")[:2000], context_text[:2000])
+                    if part
+                ),
+                analysis_task=analysis_task,
+                timeout_seconds=timeout_seconds,
+            )
+            return enrich_with_ocr(analysis, ocr_result)
+        except Exception as exc:
+            last_error = exc
+            if attempt >= attempts - 1 or not _retryable_multimodal_error(exc):
+                break
+            time.sleep(max(0.0, float(os.getenv("MANUAL_VISUAL_RETRY_DELAY_SECONDS", "2"))))
+
+    reason = (
+        f"{provider} multimodal request failed; OCR/context fallback used."
+        if analysis_task == "manual_page"
+        else f"{provider} 多模态 provider 调用失败，已降级到 mock：{last_error}"
+    )
+    record_fallback("multimodal", reason)
+    logger.warning("Multimodal fallback: %s", reason)
+    return mock_multimodal_analysis(
+        file_path.name,
+        source_name,
+        suffix,
+        provider,
+        fallback_reason=reason,
+        ocr_result=ocr_result,
+    )
 
 
 def validation_sample_file() -> tuple[Path, str, str]:

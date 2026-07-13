@@ -2153,12 +2153,14 @@ def test_async_knowledge_document_parse_task_ingests_pending_review_document(tmp
                 "text/markdown",
             )
         },
-        data={"source_name": "异步检修手册"},
+        data={"source_name": "异步检修手册", "parser_mode": "text_fast"},
     )
 
     assert response.status_code == 200
     queued_task = response.json()["data"]
     assert queued_task["status"] == "queued"
+    assert queued_task["parserModeRequested"] == "text_fast"
+    assert queued_task["currentPhase"] == "queued"
     assert queued_task["documentId"] is None
     assert "queuedFile" not in queued_task
 
@@ -2170,6 +2172,10 @@ def test_async_knowledge_document_parse_task_ingests_pending_review_document(tmp
     assert task["documentId"].startswith("kdoc-")
     assert task["documentStatus"] == "pending_review"
     assert task["chunkCount"] == 1
+    assert task["parserModeEffective"] == "text_fast"
+    assert task["currentPhase"] == "completed"
+    assert task["mineruAttempted"] is False
+    assert task["visualPagesRendered"] == 0
 
     document_response = client.get(f"/api/knowledge/documents/{task['documentId']}")
     assert document_response.status_code == 200
@@ -2249,7 +2255,7 @@ def test_docx_upload_falls_back_to_mock_parser_pending_review(tmp_path, monkeypa
     assert payload["status"] == "needs_parser"
     assert payload["parser"] == "mock-parser"
     assert payload["parserFallback"] is True
-    assert "MinerU unavailable" in payload["parserFallbackReason"]
+    assert payload["parserFallbackReason"] == "MinerU parsing failed; fallback parser used."
     assert (tmp_path / "knowledge" / "parsed" / payload["id"] / "raw_parse_result.json").exists()
 
 
