@@ -83,6 +83,7 @@ const providerStatus = ref<ProviderStatusPayload | null>(null);
 const providerStatusChecked = ref(false);
 const providerStatusError = ref("");
 const managementServiceError = ref("");
+const managementReloadKey = ref(0);
 const reviewPanel = ref<InstanceType<typeof ReviewPanel> | null>(null);
 const authTokenInput = ref("");
 const authTokenConfigured = ref(hasAuthToken());
@@ -148,7 +149,29 @@ const topbarModelLabel = computed(() => {
   }
   return providerStatus.value?.llm.model || "未上报";
 });
-const managementPageError = computed(() => managementServiceError.value || providerStatusError.value);
+const authStatusLabel = computed(() => {
+  if (!providerStatusChecked.value) {
+    return "读取中";
+  }
+  const auth = systemStatus.value?.auth;
+  if (!auth) {
+    return "未上报";
+  }
+  if (auth.valid === false) {
+    return "配置无效";
+  }
+  if (auth.mode === "off") {
+    return "演示免认证";
+  }
+  if (auth.mode === "token") {
+    return authTokenConfigured.value ? "Token 已配置" : "需要 Token";
+  }
+  return "未上报";
+});
+const authTokenInputDisabled = computed(() => {
+  const auth = systemStatus.value?.auth;
+  return !auth || auth.mode !== "token" || auth.valid === false;
+});
 
 const diagnosisSummary = computed(() => {
   const diagnosis = multimodalDiagnosis.value;
@@ -288,6 +311,7 @@ function switchArea(area: ActiveArea) {
 }
 
 function openManagementTab(tab: ManagementTab) {
+  managementServiceError.value = "";
   activeManagementTab.value = tab;
   if (tab === "graph") {
     loadKnowledgeGraphOverview();
@@ -334,6 +358,9 @@ async function refreshProviderStatus() {
 }
 
 function handleManagementServiceError(message: string) {
+  if (message === managementServiceError.value) {
+    return;
+  }
   managementServiceError.value = message;
 }
 
@@ -344,9 +371,16 @@ function clearManagementServiceError() {
 async function reconnectServices() {
   managementServiceError.value = "";
   await refreshProviderStatus();
+  managementReloadKey.value += 1;
+  if (activeManagementTab.value === "graph") {
+    await loadKnowledgeGraphOverview();
+  }
 }
 
 function saveSessionAuthToken() {
+  if (authTokenInputDisabled.value) {
+    return;
+  }
   if (!authTokenInput.value.trim()) {
     ElMessage.warning("请输入有效的会话 Token。");
     return;
@@ -628,7 +662,7 @@ refreshProviderStatus();
                   : "读取中"
             }}
           </span>
-          <span>认证：{{ authTokenConfigured ? "已配置" : "未配置" }}</span>
+          <span>认证：{{ authStatusLabel }}</span>
         </div>
       </header>
 
@@ -739,32 +773,35 @@ refreshProviderStatus();
             {{ tab.label }}
           </button>
         </nav>
-        <section v-if="managementPageError" class="page-error-state" role="alert">
+        <section v-if="managementServiceError" class="page-error-state" role="alert">
           <TriangleAlert :size="20" />
           <div>
             <strong>管理服务暂不可用</strong>
-            <p>{{ managementPageError }}</p>
+            <p>{{ managementServiceError }}</p>
             <small>服务连接后将加载资料与审核数据。</small>
           </div>
           <div class="page-error-actions">
-            <el-button type="primary" @click="reconnectServices"><RefreshCw :size="15" />重新连接</el-button>
+              <el-button type="primary" @click="reconnectServices"><RefreshCw :size="15" />重新加载当前标签</el-button>
             <el-button plain @click="switchArea('status')">前往系统状态</el-button>
           </div>
         </section>
-        <section v-if="!managementPageError" class="management-workspace">
+        <section class="management-workspace">
           <KnowledgePanel
             v-if="activeManagementTab === 'knowledge'"
+            :key="`knowledge-${managementReloadKey}`"
             @service-error="handleManagementServiceError"
             @service-ready="clearManagementServiceError"
           />
           <ReviewPanel
             v-else-if="activeManagementTab === 'review'"
+            :key="`review-${managementReloadKey}`"
             ref="reviewPanel"
             @service-error="handleManagementServiceError"
             @service-ready="clearManagementServiceError"
           />
           <CasePanel
             v-else-if="activeManagementTab === 'cases'"
+            :key="`cases-${managementReloadKey}`"
             v-model:device-type="caseForm.deviceType"
             v-model:component="caseForm.component"
             v-model:fault-code="caseForm.faultCode"
@@ -780,6 +817,7 @@ refreshProviderStatus();
           />
           <KnowledgeGraphPanel
             v-else-if="activeManagementTab === 'graph'"
+            :key="`graph-${managementReloadKey}`"
             :graph="knowledgeGraph"
             :loading="graphLoading"
             @refresh="refreshKnowledgeGraph"
@@ -788,6 +826,7 @@ refreshProviderStatus();
           />
           <ReviewEventsPanel
             v-else
+            :key="`history-${managementReloadKey}`"
             @service-error="handleManagementServiceError"
             @service-ready="clearManagementServiceError"
           />
@@ -843,16 +882,35 @@ refreshProviderStatus();
         <section class="status-detail-grid">
           <article class="system-card auth-session-card">
             <h3>会话访问令牌</h3>
-            <p v-if="systemStatus?.auth?.mode === 'off'">当前 AUTH_MODE=off，离线演示未启用 API 鉴权。</p>
-            <p v-else-if="systemStatus?.auth?.mode === 'token'">当前 AUTH_MODE=token，受保护操作需要 Bearer Token。</p>
+            <template v-if="systemStatus?.auth?.mode === 'off' && systemStatus.auth.valid !== false">
+              <p>当前为本地演示免认证模式，管理接口无需填写会话 Token。</p>
+              <small>切换到比赛模式时，请在后端启用 AUTH_MODE=token。</small>
+            </template>
+            <p v-else-if="systemStatus?.auth?.mode === 'off'" class="auth-config-error" style="color: var(--el-color-danger)">
+              认证配置无效：本地开发模式需要 ALLOW_INSECURE_AUTH_OFF=true。
+            </p>
+            <template v-else-if="systemStatus?.auth?.mode === 'token' && systemStatus.auth.valid !== false">
+              <p>请输入 operator、reviewer 或 admin token。</p>
+            </template>
+            <template v-else-if="systemStatus?.auth?.mode === 'token'">
+              <p class="auth-config-error" style="color: var(--el-color-danger)">{{ systemStatus.auth.errors?.join("；") || "认证配置无效，请检查后端角色令牌配置。" }}</p>
+            </template>
             <p v-else>鉴权状态暂不可用，请检查后端配置。</p>
-            <el-input v-model="authTokenInput" type="password" show-password placeholder="输入 operator / reviewer / admin token" />
+            <el-input
+              v-model="authTokenInput"
+              type="password"
+              show-password
+              placeholder="输入 operator / reviewer / admin token"
+              :disabled="authTokenInputDisabled"
+            />
             <div class="auth-actions">
-              <el-button type="primary" @click="saveSessionAuthToken">保存到本次会话</el-button>
+              <el-button type="primary" :disabled="authTokenInputDisabled" @click="saveSessionAuthToken">保存到本次会话</el-button>
               <el-button plain @click="clearSessionAuthToken">清除</el-button>
             </div>
-            <small>{{ authTokenConfigured ? "当前会话已配置 Token。" : "当前会话未配置 Token。" }}</small>
-            <small>仅存储于 sessionStorage，关闭会话后自动失效；前端不会回显或写入构建产物。</small>
+            <template v-if="systemStatus?.auth?.mode === 'token' && systemStatus.auth.valid !== false">
+              <small>{{ authTokenConfigured ? "当前会话已配置 Token。" : "当前会话未配置 Token。" }}</small>
+              <small>仅存储于 sessionStorage，关闭会话后自动失效；前端不会回显或写入构建产物。</small>
+            </template>
           </article>
 
           <article class="system-card">

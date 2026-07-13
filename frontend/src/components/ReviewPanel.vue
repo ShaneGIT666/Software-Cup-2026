@@ -48,7 +48,6 @@ async function loadCases() {
   } catch (error) {
     const message = getApiErrorMessage(error, "待审核内容加载失败，请确认后端服务已启动。");
     emit("serviceError", message);
-    ElMessage.error(message);
   } finally {
     loading.value = false;
   }

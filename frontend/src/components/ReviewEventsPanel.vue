@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
-import { ElMessage } from "element-plus";
 import { History, RefreshCw } from "@lucide/vue";
 import { fetchReviewEvents, getApiErrorMessage, type KnowledgeReviewEvent } from "../api";
 
@@ -73,7 +72,6 @@ async function loadEvents() {
   } catch (error) {
     const message = getApiErrorMessage(error, "审核记录加载失败，请稍后重试。");
     emit("serviceError", message);
-    ElMessage.error(message);
   } finally {
     loading.value = false;
   }

@@ -292,7 +292,6 @@ async function loadDocuments() {
   } catch (error) {
     const message = getApiErrorMessage(error, "资料列表加载失败，请确认后端服务已启动。");
     emit("serviceError", message);
-    ElMessage.error(message);
   } finally {
     loading.value = false;
   }

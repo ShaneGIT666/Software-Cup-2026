@@ -220,6 +220,8 @@ export interface SystemStatusPayload {
     mode: string;
     enabled: boolean;
     valid?: boolean;
+    appEnvironment?: string;
+    insecureAuthOffAllowed?: boolean;
     operatorConfigured: boolean;
     reviewerConfigured: boolean;
     adminConfigured: boolean;
@@ -252,11 +254,13 @@ const AUTH_TOKEN_KEY = "softwareCupAuthToken";
 
 export class ApiRequestError extends Error {
   status: number;
+  serverMessage: string;
 
   constructor(message: string, status: number) {
     super(message);
     this.name = "ApiRequestError";
     this.status = status;
+    this.serverMessage = message;
   }
 }
 
@@ -265,11 +269,17 @@ const API_STATUS_MESSAGES: Record<number, string> = {
   403: "当前账号没有执行此操作的权限，请联系管理员或切换授权角色。",
   404: "请求的资料或服务不存在，可能已被删除或地址已变更。",
   409: "当前内容已被其他操作更新，请刷新数据后重试。",
-  500: "服务端处理失败，请稍后重试并检查服务运行日志。"
+  500: "服务端处理失败，请稍后重试并检查服务运行日志。",
+  503: "服务配置暂不可用，请检查系统状态中的配置说明。"
 };
 
 export function getApiErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof ApiRequestError) {
+    if (error.status === 503) {
+      return error.serverMessage.startsWith("认证配置无效：")
+        ? error.serverMessage
+        : API_STATUS_MESSAGES[503];
+    }
     return API_STATUS_MESSAGES[error.status] ?? error.message ?? fallback;
   }
   if (error instanceof TypeError) {
