@@ -14,6 +14,7 @@ import {
   reviseKnowledgeChunk,
   updateKnowledgeChunkStatus,
   uploadKnowledgeDocumentAsync,
+  ApiRequestError,
   type KnowledgeChunkPreview,
   type KnowledgeDocument,
   type KnowledgeParseTask,
@@ -123,6 +124,40 @@ function assetStatusType(status?: string) {
     return "danger";
   }
   return "info";
+}
+
+function visualStatusText(visualStatus?: string, legacyAssetStatus?: string) {
+  const labels: Record<string, string> = {
+    not_requested: "未请求视觉分析",
+    completed: "视觉分析完成",
+    completed_with_warnings: "视觉分析完成但有降级"
+  };
+  return visualStatus ? labels[visualStatus] ?? visualStatus : assetStatusText(legacyAssetStatus);
+}
+
+function visualStatusType(visualStatus?: string, legacyAssetStatus?: string) {
+  if (visualStatus === "completed") {
+    return "success";
+  }
+  if (visualStatus === "completed_with_warnings") {
+    return "warning";
+  }
+  return assetStatusType(legacyAssetStatus);
+}
+
+function uploadErrorMessage(error: unknown, file: File) {
+  if (error instanceof ApiRequestError && error.status === 503 && parserMode.value === "full_visual") {
+    return "全量视觉解析需要可用的 PDF Renderer，请先在系统状态中完成环境检查。";
+  }
+  if (
+    error instanceof ApiRequestError
+    && error.status === 422
+    && parserMode.value === "text_fast"
+    && /\.(?:jpe?g|png|webp)$/i.test(file.name)
+  ) {
+    return "快速文本模式不处理图片，请选择智能多模态或全量视觉模式。";
+  }
+  return getApiErrorMessage(error, "资料上传失败，请检查文件格式或大小。");
 }
 
 function knowledgeTypeText(type?: string) {
@@ -276,7 +311,7 @@ async function handleFileChange(event: Event) {
     ElMessage.success(`解析任务已提交：${task.fileName}`);
     void pollParseTask(task);
   } catch (error) {
-    ElMessage.error(getApiErrorMessage(error, "资料上传失败，请检查文件格式或大小。"));
+    ElMessage.error(uploadErrorMessage(error, file));
   } finally {
     input.value = "";
     uploading.value = false;
@@ -493,6 +528,7 @@ defineExpose({ loadDocuments });
           <div><dt>渲染器</dt><dd>{{ task.renderer || "读取中" }}</dd></div>
           <div><dt>总页数</dt><dd>{{ task.pageCount ?? "读取中" }}</dd></div>
           <div><dt>视觉候选页</dt><dd>{{ task.visualCandidatePages ?? 0 }}</dd></div>
+          <div><dt>视觉片段数</dt><dd>{{ task.visualChunkCount ?? 0 }}</dd></div>
           <div><dt>已渲染页</dt><dd>{{ task.visualPagesRendered ?? 0 }}</dd></div>
           <div><dt>已 OCR 页</dt><dd>{{ task.visualPagesOcrProcessed ?? 0 }}</dd></div>
           <div><dt>真实多模态页</dt><dd>{{ task.realMultimodalPages ?? 0 }}</dd></div>
@@ -500,6 +536,16 @@ defineExpose({ loadDocuments });
           <div><dt>视觉覆盖率</dt><dd>{{ coverageText(task.visualCoverageRatio) }}</dd></div>
           <div><dt>真实多模态覆盖率</dt><dd>{{ coverageText(task.realMultimodalCoverageRatio) }}</dd></div>
         </dl>
+        <p
+          v-if="task.parserModeRequested === 'smart_multimodal' && task.visualAnalysisStatus === 'completed_with_warnings' && task.renderer === 'unavailable'"
+          class="fallback-note"
+        >
+          文本资料已保留，但当前环境未完成图片解析。
+        </p>
+        <p v-if="task.visualFailureReason" class="fallback-note">{{ task.visualFailureReason }}</p>
+        <p v-if="task.mineruAssetsTruncated" class="fallback-note">
+          独立图示超过处理上限，仍有 {{ task.unprocessedMineruAssetCount ?? 0 }} 个未分析。
+        </p>
         <p v-if="task.parserFallbackReason || task.error" class="fallback-note">
           {{ task.error || task.parserFallbackReason }}
         </p>
@@ -538,12 +584,16 @@ defineExpose({ loadDocuments });
           <span v-if="document.revisionCount"> / {{ document.revisionCount }} 次修正</span>
         </small>
         <div class="asset-status-row">
-          <el-tag :type="assetStatusType(document.assetAnalysisStatus)" size="small" effect="plain">
-            {{ assetStatusText(document.assetAnalysisStatus) }}
+          <el-tag :type="visualStatusType(document.visualAnalysisStatus, document.assetAnalysisStatus)" size="small" effect="plain">
+            {{ visualStatusText(document.visualAnalysisStatus, document.assetAnalysisStatus) }}
           </el-tag>
-          <span>{{ document.assetAnalysisCount ?? 0 }} 个图片片段</span>
+          <span>{{ document.visualChunkCount ?? document.assetAnalysisCount ?? 0 }} 个图片片段</span>
           <span>{{ document.assetAnalysisFallbackCount ?? 0 }} 次 LLM/OCR 降级</span>
         </div>
+        <small v-if="document.visualFailureReason" class="fallback-note">{{ document.visualFailureReason }}</small>
+        <small v-if="document.mineruAssetsTruncated" class="fallback-note">
+          独立图示超过处理上限，仍有 {{ document.unprocessedMineruAssetCount ?? 0 }} 个未分析。
+        </small>
         <small v-if="document.assetAnalysisError" class="fallback-note">{{ document.assetAnalysisError }}</small>
         <small v-if="document.parserFallbackReason" class="fallback-note">{{ document.parserFallbackReason }}</small>
         <p v-if="document.analysis?.summary" class="knowledge-analysis-summary">{{ document.analysis.summary }}</p>

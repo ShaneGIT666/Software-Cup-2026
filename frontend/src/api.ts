@@ -6,12 +6,13 @@ export interface ApiResponse<T> {
 
 export interface VisualEvidenceFields {
   assetId?: string;
-  assetType?: "page_visual" | "mineru_asset" | string;
+  assetType?: "page_visual" | "mineru_asset" | "uploaded_image" | string;
   previewUrl?: string;
   visualType?: string;
   semanticVerified?: boolean;
   analysisProvider?: string;
   analysisFallback?: boolean;
+  imageInputSent?: boolean;
 }
 
 export interface SearchResult extends VisualEvidenceFields {
@@ -155,6 +156,27 @@ export interface SystemStatusPayload {
       status: string;
       timeoutSeconds: number;
       fallbackEnabled: boolean;
+    };
+    pdfRenderer?: {
+      ready: boolean;
+      renderer: string;
+      status: string;
+      commandFound: boolean;
+      versionProbeOk: boolean;
+      smokeRenderOk: boolean;
+      failureCategory: string;
+    };
+    manualVisual?: {
+      realMultimodalConfigured: boolean;
+      multimodalReadiness?: {
+        provider: string;
+        model: string;
+        credentialConfigured: boolean;
+        endpointConfigured: boolean;
+        remoteAllowed: boolean;
+        ready: boolean;
+        status: string;
+      };
     };
     latestTask?: {
       documentId: string;
@@ -652,6 +674,10 @@ export interface KnowledgeDocument {
   visualCoverageRatio?: number;
   realMultimodalCoverageRatio?: number;
   visualFailedPages?: number[];
+  visualChunkCount?: number;
+  visualFailureReason?: string;
+  mineruAssetsTruncated?: boolean;
+  unprocessedMineruAssetCount?: number;
   renderer?: string;
   parseArtifacts?: {
     rawParseResult: string;
@@ -745,6 +771,11 @@ export interface KnowledgeParseTask {
   visualCoverageRatio?: number;
   realMultimodalCoverageRatio?: number;
   visualFailedPages?: number[];
+  visualChunkCount?: number;
+  visualFailureReason?: string;
+  mineruAssetsTruncated?: boolean;
+  unprocessedMineruAssetCount?: number;
+  imageInputSent?: boolean;
   renderer?: string;
 }
 
