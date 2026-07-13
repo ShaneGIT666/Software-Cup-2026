@@ -323,23 +323,25 @@ def parse_with_mineru(
     if not mineru_available():
         raise MinerUUnavailable("MinerU is not installed.")
 
-    output_root = Path(tempfile.mkdtemp(prefix="mineru-parse-"))
-    command = [
-        mineru_executable(),
-        "-p",
-        str(file_path),
-        "-o",
-        str(output_root),
-        "-b",
-        backend or os.getenv("MINERU_BACKEND", DEFAULT_MINERU_BACKEND),
-        "-l",
-        lang or os.getenv("MINERU_LANG", DEFAULT_MINERU_LANG),
-    ]
-    effective_api_url = api_url if api_url is not None else os.getenv("MINERU_API_URL", "").strip()
-    if effective_api_url:
-        command.extend(["--api-url", effective_api_url])
-
+    output_root: Path | None = None
+    success = False
     try:
+        executable = mineru_executable()
+        output_root = Path(tempfile.mkdtemp(prefix="mineru-parse-"))
+        command = [
+            executable,
+            "-p",
+            str(file_path),
+            "-o",
+            str(output_root),
+            "-b",
+            backend or os.getenv("MINERU_BACKEND", DEFAULT_MINERU_BACKEND),
+            "-l",
+            lang or os.getenv("MINERU_LANG", DEFAULT_MINERU_LANG),
+        ]
+        effective_api_url = api_url if api_url is not None else os.getenv("MINERU_API_URL", "").strip()
+        if effective_api_url:
+            command.extend(["--api-url", effective_api_url])
         try:
             completed = run_mineru_command(command, timeout_seconds)
         except OSError as exc:
@@ -353,7 +355,7 @@ def parse_with_mineru(
         if not markdown and not pages:
             raise MinerUUnavailable("MinerU produced no usable markdown or content list.")
 
-        return {
+        result = {
             "parser": "mineru",
             "status": "parsed" if pages else "empty",
             "pages": pages,
@@ -370,6 +372,8 @@ def parse_with_mineru(
                 **metadata,
             },
         }
-    except Exception:
-        shutil.rmtree(output_root, ignore_errors=True)
-        raise
+        success = True
+        return result
+    finally:
+        if output_root is not None and not success:
+            shutil.rmtree(output_root, ignore_errors=True)
