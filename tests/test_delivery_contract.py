@@ -183,6 +183,9 @@ def test_multimodal_manual_pipeline_delivery_contract() -> None:
         "backend/app/manual_visual_pipeline.py",
         "frontend/src/components/VisualEvidenceThumbnail.vue",
         "scripts/manual-multimodal-verify.py",
+        "scripts/manual-multimodal-smoke.py",
+        "tests/test_multimodal_runtime_fallback.py",
+        "tests/test_image_document_ingest.py",
     )
     assert all(Path(path).is_file() for path in required_files)
 
@@ -195,6 +198,8 @@ def test_multimodal_manual_pipeline_delivery_contract() -> None:
         "FULL_VISUAL_MAX_PAGES=300",
         "FULL_VISUAL_MAX_ASSETS=500",
         "MANUAL_VISUAL_TIMEOUT_SECONDS=45",
+        "MINERU_SMART_TIMEOUT_SECONDS=180",
+        "MINERU_FULL_TIMEOUT_SECONDS=600",
     ):
         assert key in env_example
 
@@ -205,3 +210,6 @@ def test_multimodal_manual_pipeline_delivery_contract() -> None:
     assert '"smart_multimodal"' in panel and '"full_visual"' in panel and '"text_fast"' in panel
     assert "fetchProtectedBlob" in thumbnail
     assert "URL.revokeObjectURL" in thumbnail
+    assert "visualFailureReason" in api
+    assert "mineruAssetsTruncated" in api
+    assert "文本资料已保留，但当前环境未完成图片解析。" in panel

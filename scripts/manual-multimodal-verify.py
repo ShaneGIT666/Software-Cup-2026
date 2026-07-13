@@ -59,16 +59,6 @@ def git_sha() -> str:
     return result.stdout.strip()
 
 
-def real_multimodal_configured() -> bool:
-    provider = os.getenv("MULTIMODAL_PROVIDER", "mock").strip().lower()
-    return bool(
-        provider in {"openai", "local"}
-        and os.getenv("MULTIMODAL_OPENAI_API_KEY", "").strip()
-        and os.getenv("MULTIMODAL_OPENAI_MODEL", "").strip()
-        and os.getenv("REMOTE_API_MODE", "off").strip().lower() != "off"
-    )
-
-
 def result_label(mode: str, document: dict[str, Any]) -> str:
     if mode == "text_fast":
         passed = (
@@ -167,12 +157,13 @@ def retrieval_checks(document: dict[str, Any]) -> dict[str, Any]:
 def verify_mode(mode: str, manual_path: Path, sha: str) -> dict[str, Any]:
     from backend.app.data_store import load_document_chunks
     from backend.app.knowledge import ingest_knowledge_document_bytes
-    from backend.app.pdf_renderer import renderer_readiness
+    from backend.app.multimodal_adapter import multimodal_readiness
+    from backend.app.pdf_renderer import renderer_operational_readiness
 
-    if mode != "text_fast" and not real_multimodal_configured():
+    if mode != "text_fast" and not multimodal_readiness()["ready"]:
         prefix = "SMART_MULTIMODAL_MANUAL" if mode == "smart_multimodal" else "FULL_VISUAL_MANUAL"
         return {"gitSha": sha, "mode": mode, "status": "not_run", "result": f"{prefix}_NO_GO"}
-    if mode != "text_fast" and not renderer_readiness()["ready"]:
+    if mode != "text_fast" and not renderer_operational_readiness()["ready"]:
         prefix = "SMART_MULTIMODAL_MANUAL" if mode == "smart_multimodal" else "FULL_VISUAL_MANUAL"
         return {"gitSha": sha, "mode": mode, "status": "not_run", "result": f"{prefix}_NO_GO"}
     started = time.monotonic()
