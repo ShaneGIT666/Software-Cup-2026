@@ -1,7 +1,17 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { ElMessage } from "element-plus";
-import { Bot, CheckCircle2, ClipboardList, FileText, Quote, ShieldAlert, TriangleAlert } from "@lucide/vue";
+import {
+  Bot,
+  CheckCircle2,
+  ClipboardList,
+  Cpu,
+  FileText,
+  Quote,
+  Route,
+  ShieldAlert,
+  TriangleAlert
+} from "@lucide/vue";
 import type { EvidenceItem, EvidenceTrace, RagAnswerPayload } from "../api";
 
 const props = defineProps<{
@@ -46,6 +56,27 @@ function sourceLabel(sourceType: string) {
 const structuredAnswer = computed(() => props.ragAnswer?.structuredAnswer ?? null);
 const correctiveRag = computed(() => props.ragAnswer?.correctiveRag ?? null);
 const safetyRules = computed(() => props.ragAnswer?.safetyRules ?? null);
+const answerSourceLabel = computed(() => {
+  const source = props.ragAnswer?.finalAnswerSource;
+  if (source === "validated_llm") {
+    return "规则校验后的模型回答";
+  }
+  if (source === "template") {
+    return "证据模板回答";
+  }
+  return source || "后端未声明";
+});
+
+const candidateStatusLabel = computed(() => {
+  const accepted = props.ragAnswer?.llmCandidateAccepted;
+  if (accepted === true) {
+    return "已通过证据与安全校验";
+  }
+  if (accepted === false) {
+    return "未采纳，已使用受控回答";
+  }
+  return "后端未声明";
+});
 
 function answerModeLabel(mode?: string) {
   const labels: Record<string, string> = {
@@ -213,7 +244,7 @@ async function submitFeedback() {
       >
         {{ answerModeLabel(ragAnswer.answerMode) }}
       </el-tag>
-      <el-tag v-if="ragAnswer" type="info">{{ ragAnswer.provider }} / requested {{ ragAnswer.requestedProvider }}</el-tag>
+      <el-tag v-if="ragAnswer" type="info">{{ ragAnswer.provider || "unknown" }} / requested {{ ragAnswer.requestedProvider || "default" }}</el-tag>
       <el-tag v-if="ragAnswer?.model" type="info">{{ ragAnswer.model }} / {{ ragAnswer.apiStyle }}</el-tag>
       <el-tag v-if="ragAnswer?.contextCount !== undefined" type="info">
         {{ ragAnswer.contextCount }} 条上下文 / {{ ragAnswer.contextChars ?? 0 }} 字符
@@ -225,6 +256,31 @@ async function submitFeedback() {
     </div>
 
     <article v-else-if="ragAnswer" class="rag-answer">
+      <section class="provenance-panel" aria-label="模型与答案溯源">
+        <div class="provenance-title"><Route :size="16" /><strong>模型与答案溯源</strong></div>
+        <dl>
+          <div>
+            <dt>请求 / 实际 Provider</dt>
+            <dd>{{ ragAnswer.requestedProvider || "default" }} / {{ ragAnswer.provider || "unknown" }}</dd>
+          </div>
+          <div>
+            <dt>模型 / API 风格</dt>
+            <dd>{{ ragAnswer.model || "未返回" }} / {{ ragAnswer.apiStyle || "未返回" }}</dd>
+          </div>
+          <div>
+            <dt>最终答案来源</dt>
+            <dd>{{ answerSourceLabel }}</dd>
+          </div>
+          <div>
+            <dt>LLM 候选状态</dt>
+            <dd>{{ candidateStatusLabel }}</dd>
+          </div>
+        </dl>
+        <p v-if="ragAnswer.fallbackReason" class="provenance-fallback">
+          <Cpu :size="14" />降级原因：{{ ragAnswer.fallbackReason }}
+        </p>
+      </section>
+
       <div v-if="ragAnswer.riskReviewRequired" class="risk-banner">
         <ShieldAlert :size="17" />
         <span>包含 high / critical 风险依据，执行前必须人工复核。</span>

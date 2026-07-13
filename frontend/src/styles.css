@@ -2411,6 +2411,124 @@ h2 {
   font-size: 12px;
 }
 
+.provenance-panel {
+  border: 1px solid #cfd9df;
+  border-radius: 6px;
+  background: #f6f8f9;
+}
+
+.provenance-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border-bottom: 1px solid #dce3e7;
+  padding: 10px 12px;
+  color: #314a57;
+  font-size: 12px;
+}
+
+.provenance-title svg {
+  color: #3d7d64;
+}
+
+.provenance-panel dl {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0;
+}
+
+.provenance-panel dl > div {
+  min-width: 0;
+  border-right: 1px solid #e0e6e9;
+  padding: 10px 12px;
+}
+
+.provenance-panel dl > div:last-child {
+  border-right: 0;
+}
+
+.provenance-panel dt {
+  margin-bottom: 4px;
+  color: #7a8991;
+  font-size: 10px;
+}
+
+.provenance-panel dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: #2d424e;
+  font-size: 11px;
+  font-weight: 680;
+  line-height: 1.45;
+}
+
+.provenance-fallback {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  border-top: 1px solid #ead9bb;
+  margin: 0 !important;
+  padding: 9px 12px;
+  background: #fff9ee;
+  color: #825f26 !important;
+  font-size: 11px;
+}
+
+.result-trace {
+  display: grid !important;
+  gap: 4px !important;
+  border-top: 1px solid #e6eaed;
+  margin-top: 9px;
+  padding-top: 8px;
+}
+
+.result-trace span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #6b7c86;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.result-trace svg {
+  flex: 0 0 auto;
+  color: #4c7967;
+}
+
+.confidence-row {
+  display: grid !important;
+  grid-template-columns: auto minmax(64px, 1fr) auto;
+  gap: 8px !important;
+  align-items: center !important;
+  margin-top: 8px;
+  color: #586b76;
+  font-size: 10px;
+}
+
+.confidence-row progress {
+  width: 100%;
+  height: 5px;
+  border: 0;
+  border-radius: 3px;
+  overflow: hidden;
+  background: #dce4e8;
+}
+
+.confidence-row progress::-webkit-progress-bar {
+  background: #dce4e8;
+}
+
+.confidence-row progress::-webkit-progress-value {
+  background: #3d7d64;
+}
+
+.confidence-row progress::-moz-progress-bar {
+  background: #3d7d64;
+}
+
 .processing-card,
 .graph-visual {
   background: var(--surface-soft);
@@ -2494,6 +2612,14 @@ h2 {
   .workflow-strip li:last-child {
     border-bottom: 0;
   }
+
+  .provenance-panel dl {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .provenance-panel dl > div:nth-child(2) {
+    border-right: 0;
+  }
 }
 
 @media (max-width: 700px) {
@@ -2573,5 +2699,14 @@ h2 {
 
   .acceptance-heading {
     align-items: flex-start;
+  }
+
+  .provenance-panel dl {
+    grid-template-columns: 1fr;
+  }
+
+  .provenance-panel dl > div {
+    border-right: 0;
+    border-bottom: 1px solid #e0e6e9;
   }
 }

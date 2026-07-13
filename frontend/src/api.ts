@@ -322,12 +322,18 @@ export interface MultimodalDiagnosisPayload {
   structuredAnswer?: StructuredRagOutput;
   citations: RagCitation[];
   provider: string;
+  requestedProvider?: string;
+  model?: string;
+  apiStyle?: string;
   fallback: boolean;
   fallbackReason?: string;
+  rawAnswer?: string;
   answerMode?: "grounded" | "grounded_with_caution" | "insufficient_evidence";
   llmAnswerUsed?: boolean;
   llmCandidateAccepted?: boolean;
   finalAnswerSource?: "template" | "validated_llm" | string;
+  llmAnswerMode?: string;
+  graphContext?: GraphContextPayload;
   correctiveRag?: CorrectiveRagDecision;
   safetyRules?: SafetyRuleReport;
   riskReviewRequired?: boolean;
@@ -933,8 +939,8 @@ export interface RagAnswerPayload {
   riskReviewRequired?: boolean;
   recommendedActions: string[];
   citations: RagCitation[];
-  provider: string;
-  requestedProvider: string;
+  provider?: string;
+  requestedProvider?: string;
   fallback: boolean;
   fallbackReason?: string;
   llmCandidateAccepted?: boolean;
@@ -948,6 +954,7 @@ export interface RagAnswerPayload {
   model?: string;
   apiStyle?: string;
   graphContext?: GraphContextPayload;
+  multimodalSignals?: MultimodalSignals;
 }
 
 export function requestRagAnswer(deviceModel: string, faultText: string, provider?: string, maintenanceLevel?: string) {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { FileText } from "@lucide/vue";
+import { FileText, MapPin, ShieldCheck } from "@lucide/vue";
 import type { SearchPayload, SearchResult } from "../api";
 
 defineProps<{
@@ -47,11 +47,18 @@ function sourceLabel(sourceType: SearchResult["sourceType"]) {
           <span class="source-line">{{ item.sourceName }}{{ item.chapter ? ` / ${item.chapter}` : "" }}</span>
           <p>{{ item.snippet }}</p>
           <small v-if="item.reason" class="reason-line">{{ item.reason }}</small>
-          <small>
-            可信度 {{ Math.round(item.confidence * 100) }}%
-            {{ item.scoreBreakdown ? ` / 排序分 ${item.scoreBreakdown.score}` : "" }}
-            {{ item.page ? ` / p.${item.page}` : "" }}
-          </small>
+          <div class="result-trace">
+            <span>
+              <MapPin :size="12" />
+              {{ item.documentId || item.sourceId || item.id }}{{ item.chunkId ? ` / ${item.chunkId}` : "" }}{{ item.page ? ` / p.${item.page}` : "" }}
+            </span>
+            <span><ShieldCheck :size="12" />{{ item.reviewStatus === "approved" ? "已审核" : item.reviewStatus || "状态未知" }}</span>
+          </div>
+          <div class="confidence-row">
+            <span>可信度 {{ Math.round(item.confidence * 100) }}%</span>
+            <progress :value="Math.round(item.confidence * 100)" max="100" :aria-label="`${item.title} 可信度`"></progress>
+            <small v-if="item.scoreBreakdown">排序分 {{ item.scoreBreakdown.score }}</small>
+          </div>
         </button>
       </div>
     </template>
