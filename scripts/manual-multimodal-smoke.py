@@ -17,7 +17,7 @@ from pypdf import PdfReader, PdfWriter
 
 
 ROOT = Path(__file__).resolve().parents[1]
-TMP_ROOT = ROOT / "tmp"
+TMP_ROOT = Path(os.getenv("MANUAL_SMOKE_TMP_ROOT", str(ROOT / "tmp"))).resolve()
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
@@ -92,10 +92,17 @@ def base_record(
         "visualPagesOcrProcessed": 0,
         "visualPagesAnalyzed": 0,
         "realMultimodalPages": 0,
+        "unverifiedVisualPages": 0,
         "fallbackVisualPages": 0,
+        "visualFailedPages": [],
         "visualCoverageRatio": 0.0,
         "realMultimodalCoverageRatio": 0.0,
         "visualChunkCount": 0,
+        "pendingReviewAll": False,
+        "semanticVerifiedAll": False,
+        "unapprovedNotRetrievable": False,
+        "approvedRetrievable": False,
+        "controlledPreviewPassed": False,
         "durationSeconds": 0.0,
         "status": "not_run",
         "result": "THREE_PAGE_REAL_MULTIMODAL_NO_GO",
@@ -183,6 +190,8 @@ def run_smoke(
     chosen = next((item for item in chunks if str(item.get("content") or "").strip()), None)
     retrieval_ok = False
     preview_ok = False
+    before_hidden = False
+    approved_retrievable = False
     if chosen:
         query = {
             "deviceModel": "motorcycle",
@@ -209,6 +218,7 @@ def run_smoke(
             and match.get("analysisProvider")
             and match.get("analysisFallback") is False
         )
+        approved_retrievable = bool(reviewed.status_code == 200 and match)
         preview_url = str(chosen.get("previewUrl") or "")
         unauthorized = client.get(preview_url)
         authorized = client.get(preview_url, headers=operator)
@@ -226,7 +236,9 @@ def run_smoke(
         "visualPagesOcrProcessed",
         "visualPagesAnalyzed",
         "realMultimodalPages",
+        "unverifiedVisualPages",
         "fallbackVisualPages",
+        "visualFailedPages",
         "visualCoverageRatio",
         "realMultimodalCoverageRatio",
         "visualChunkCount",
@@ -237,6 +249,11 @@ def run_smoke(
         durationSeconds=round(time.monotonic() - started, 3),
         status=task.get("status", "failed"),
         queueFileCleaned=not any((three_page_pdf.parent / "knowledge" / "parse-queue").glob("*")),
+        pendingReviewAll=pending_all,
+        semanticVerifiedAll=semantic_all,
+        unapprovedNotRetrievable=before_hidden,
+        approvedRetrievable=approved_retrievable,
+        controlledPreviewPassed=preview_ok,
     )
     expected = int(document.get("visualPagesRendered") or 0)
     metrics_ok = bool(
@@ -263,8 +280,14 @@ def run_smoke(
 
 def write_result(record: dict[str, Any]) -> Path:
     TMP_ROOT.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    output = TMP_ROOT / f"manual-multimodal-smoke-{timestamp}.json"
+    configured = os.getenv("MANUAL_SMOKE_OUTPUT", "").strip()
+    if configured:
+        output = Path(configured).resolve()
+        if output.parent != TMP_ROOT:
+            raise ValueError("MANUAL_SMOKE_OUTPUT must be directly inside MANUAL_SMOKE_TMP_ROOT")
+    else:
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        output = TMP_ROOT / f"manual-multimodal-smoke-{timestamp}.json"
     output.write_text(json.dumps(record, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return output
 

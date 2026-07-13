@@ -54,7 +54,8 @@ short_sha() { git rev-parse --short HEAD 2>/dev/null || echo unknown; }
 safe_slug() { date -u +%Y%m%dT%H%M%SZ; }
 
 new_evidence_dir() {
-  RUN_DIR="$ROOT_DIR/docs/final-audit/evidence/$(safe_slug)-$(short_sha)"
+  local evidence_root="${TARGET_VERIFY_EVIDENCE_ROOT:-$ROOT_DIR/docs/final-audit/evidence}"
+  RUN_DIR="$evidence_root/$(safe_slug)-$(short_sha)"
   mkdir -p "$RUN_DIR"
 }
 
