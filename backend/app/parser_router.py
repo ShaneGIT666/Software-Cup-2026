@@ -144,6 +144,7 @@ def parse_document(
                 "markdown": result.get("markdown", ""),
                 "assets": result.get("assets", []),
                 "mineruAssets": result.get("mineruAssets", []),
+                "_temporaryOutputRoot": result.get("_temporaryOutputRoot", ""),
                 "mineruAttempted": True,
                 "mineruSucceeded": True,
                 "fallback": False,
@@ -196,21 +197,25 @@ def save_parse_artifacts(document_dir: Path, parse_result: dict[str, Any]) -> di
     raw_path = document_dir / "raw_parse_result.json"
     markdown_path = document_dir / "parsed.md"
     copied_assets: list[str] = []
+    copied_relative_assets: list[str] = []
     copied_by_name: dict[str, str] = {}
-    for asset in parse_result.get("assets", []):
-        source = Path(str(asset))
-        if not source.exists() or not source.is_file():
-            continue
-        target = assets_dir / source.name
-        suffix_index = 1
-        while target.exists():
-            target = assets_dir / f"{source.stem}-{suffix_index}{source.suffix}"
-            suffix_index += 1
-        shutil.copy2(source, target)
-        copied_assets.append(str(target))
-        copied_by_name[source.name] = f"assets/{target.name}"
+    temporary_output = str(parse_result.get("_temporaryOutputRoot") or "")
+    try:
+        for asset in parse_result.get("assets", []):
+            source = Path(str(asset))
+            if not source.exists() or not source.is_file():
+                continue
+            target = assets_dir / source.name
+            suffix_index = 1
+            while target.exists():
+                target = assets_dir / f"{source.stem}-{suffix_index}{source.suffix}"
+                suffix_index += 1
+            shutil.copy2(source, target)
+            copied_assets.append(str(target))
+            copied_relative = f"assets/{target.name}"
+            copied_relative_assets.append(copied_relative)
+            copied_by_name[source.name] = copied_relative
 
-    if copied_assets:
         mineru_assets: list[dict[str, Any]] = []
         for record in parse_result.get("mineruAssets", []):
             if not isinstance(record, dict):
@@ -218,16 +223,28 @@ def save_parse_artifacts(document_dir: Path, parse_result: dict[str, Any]) -> di
             copied_relative = copied_by_name.get(Path(str(record.get("relativePath") or "")).name)
             if copied_relative:
                 mineru_assets.append({**record, "relativePath": copied_relative})
-        parse_result = {
+        persisted_result = {
             **parse_result,
-            "assets": copied_assets,
+            "assets": copied_relative_assets,
             "mineruAssets": mineru_assets,
         }
+        persisted_result.pop("_temporaryOutputRoot", None)
+        persisted_result.pop("_temporaryLogRoot", None)
+        mineru_metadata = persisted_result.get("mineru")
+        if isinstance(mineru_metadata, dict):
+            persisted_result["mineru"] = {
+                key: mineru_metadata[key]
+                for key in ("version", "backend", "lang", "markdownFiles", "assetFiles")
+                if key in mineru_metadata
+            }
 
-    raw_path.write_text(json.dumps(parse_result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    markdown_path.write_text(str(parse_result.get("markdown", "")), encoding="utf-8")
-    return {
-        "rawParseResult": str(raw_path),
-        "parsedMarkdown": str(markdown_path),
-        "assetsDir": str(assets_dir),
-    }
+        raw_path.write_text(json.dumps(persisted_result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        markdown_path.write_text(str(parse_result.get("markdown", "")), encoding="utf-8")
+        return {
+            "rawParseResult": str(raw_path),
+            "parsedMarkdown": str(markdown_path),
+            "assetsDir": str(assets_dir),
+        }
+    finally:
+        if temporary_output:
+            shutil.rmtree(temporary_output, ignore_errors=True)

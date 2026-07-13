@@ -255,55 +255,58 @@ def run_mineru_command(command: list[str], timeout_seconds: int) -> subprocess.C
     log_dir = Path(tempfile.mkdtemp(prefix="mineru-log-"))
     stdout_path = log_dir / "stdout.log"
     stderr_path = log_dir / "stderr.log"
-    with stdout_path.open("w", encoding="utf-8", errors="replace") as stdout_file, stderr_path.open(
-        "w", encoding="utf-8", errors="replace"
-    ) as stderr_file:
-        process = subprocess.Popen(
-            command,
-            stdout=stdout_file,
-            stderr=stderr_file,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            creationflags=creationflags,
-            start_new_session=os.name != "nt",
-        )
-        try:
-            process.wait(timeout=timeout_seconds)
-        except subprocess.TimeoutExpired as exc:
-            if os.name == "nt":
-                subprocess.run(
-                    ["taskkill", "/F", "/T", "/PID", str(process.pid)],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    check=False,
-                )
-            else:  # pragma: no cover - Windows is the active dev target here
-                try:
-                    os.killpg(process.pid, signal.SIGTERM)
-                except ProcessLookupError:
-                    pass
+    try:
+        with stdout_path.open("w", encoding="utf-8", errors="replace") as stdout_file, stderr_path.open(
+            "w", encoding="utf-8", errors="replace"
+        ) as stderr_file:
+            process = subprocess.Popen(
+                command,
+                stdout=stdout_file,
+                stderr=stderr_file,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                creationflags=creationflags,
+                start_new_session=os.name != "nt",
+            )
             try:
-                process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                if os.name != "nt":
+                process.wait(timeout=timeout_seconds)
+            except subprocess.TimeoutExpired as exc:
+                if os.name == "nt":
+                    subprocess.run(
+                        ["taskkill", "/F", "/T", "/PID", str(process.pid)],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        check=False,
+                    )
+                else:  # pragma: no cover - Windows is the active dev target here
                     try:
-                        os.killpg(process.pid, signal.SIGKILL)
+                        os.killpg(process.pid, signal.SIGTERM)
                     except ProcessLookupError:
                         pass
-                process.kill()
-                process.wait(timeout=5)
-            raise MinerUUnavailable(f"MinerU timed out after {timeout_seconds} seconds.") from exc
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    if os.name != "nt":
+                        try:
+                            os.killpg(process.pid, signal.SIGKILL)
+                        except ProcessLookupError:
+                            pass
+                    process.kill()
+                    process.wait(timeout=5)
+                raise MinerUUnavailable(f"MinerU timed out after {timeout_seconds} seconds.") from exc
 
-    try:
-        stdout = stdout_path.read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        stdout = ""
-    try:
-        stderr = stderr_path.read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        stderr = ""
-    return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+        try:
+            stdout = stdout_path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            stdout = ""
+        try:
+            stderr = stderr_path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            stderr = ""
+        return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+    finally:
+        shutil.rmtree(log_dir, ignore_errors=True)
 
 
 def parse_with_mineru(
@@ -337,35 +340,36 @@ def parse_with_mineru(
         command.extend(["--api-url", effective_api_url])
 
     try:
-        completed = run_mineru_command(command, timeout_seconds)
-    except OSError as exc:
-        raise MinerUUnavailable(f"MinerU failed to start: {exc}") from exc
+        try:
+            completed = run_mineru_command(command, timeout_seconds)
+        except OSError as exc:
+            raise MinerUUnavailable(f"MinerU failed to start: {exc}") from exc
 
-    if completed.returncode != 0:
-        stderr = (completed.stderr or completed.stdout or "").strip()
-        raise MinerUUnavailable(f"MinerU exited with code {completed.returncode}: {stderr[:1000]}")
+        if completed.returncode != 0:
+            stderr = (completed.stderr or completed.stdout or "").strip()
+            raise MinerUUnavailable(f"MinerU exited with code {completed.returncode}: {stderr[:1000]}")
 
-    markdown, pages, assets, metadata = collect_mineru_outputs(output_root)
-    if not markdown and not pages:
-        raise MinerUUnavailable("MinerU produced no usable markdown or content list.")
+        markdown, pages, assets, metadata = collect_mineru_outputs(output_root)
+        if not markdown and not pages:
+            raise MinerUUnavailable("MinerU produced no usable markdown or content list.")
 
-    return {
-        "parser": "mineru",
-        "status": "parsed" if pages else "empty",
-        "pages": pages,
-        "markdown": markdown,
-        "assets": assets,
-        "mineruAssets": metadata.get("mineruAssets", []),
-        "fallback": False,
-        "fallbackReason": "",
-        "mineru": {
-            "version": "3.2.3",
-            "backend": os.getenv("MINERU_BACKEND", DEFAULT_MINERU_BACKEND),
-            "lang": os.getenv("MINERU_LANG", DEFAULT_MINERU_LANG),
-            "outputDir": str(output_root),
-            "command": command,
-            "stdout": completed.stdout[-4000:],
-            "stderr": completed.stderr[-4000:],
-            **metadata,
-        },
-    }
+        return {
+            "parser": "mineru",
+            "status": "parsed" if pages else "empty",
+            "pages": pages,
+            "markdown": markdown,
+            "assets": assets,
+            "mineruAssets": metadata.get("mineruAssets", []),
+            "fallback": False,
+            "fallbackReason": "",
+            "_temporaryOutputRoot": str(output_root),
+            "mineru": {
+                "version": "3.2.3",
+                "backend": os.getenv("MINERU_BACKEND", DEFAULT_MINERU_BACKEND),
+                "lang": os.getenv("MINERU_LANG", DEFAULT_MINERU_LANG),
+                **metadata,
+            },
+        }
+    except Exception:
+        shutil.rmtree(output_root, ignore_errors=True)
+        raise

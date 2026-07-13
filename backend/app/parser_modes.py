@@ -18,6 +18,11 @@ def _env_int(name: str, default: int, minimum: int = 1) -> int:
         return default
 
 
+def _mineru_timeout(name: str, default: int) -> int:
+    legacy = _env_int("MINERU_TIMEOUT_SECONDS", default, 30)
+    return _env_int(name, legacy, 30)
+
+
 @dataclass(frozen=True)
 class ParserPolicy:
     mode: str
@@ -49,7 +54,7 @@ def resolve_parser_policy(mode: str | None) -> ParserPolicy:
         return ParserPolicy(
             mode=normalized,
             use_mineru=True,
-            mineru_timeout_seconds=600,
+            mineru_timeout_seconds=_mineru_timeout("MINERU_FULL_TIMEOUT_SECONDS", 600),
             render_scope="all",
             render_dpi=_env_int("FULL_VISUAL_DPI", 180, 72),
             visual_page_limit=_env_int("FULL_VISUAL_MAX_PAGES", 300),
@@ -59,7 +64,7 @@ def resolve_parser_policy(mode: str | None) -> ParserPolicy:
     return ParserPolicy(
         mode=normalized,
         use_mineru=True,
-        mineru_timeout_seconds=180,
+        mineru_timeout_seconds=_mineru_timeout("MINERU_SMART_TIMEOUT_SECONDS", 180),
         render_scope="candidates",
         render_dpi=_env_int("SMART_VISUAL_DPI", 120, 72),
         visual_page_limit=_env_int("SMART_VISUAL_MAX_PAGES", 80),
