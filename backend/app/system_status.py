@@ -185,6 +185,9 @@ def manual_visual_status() -> dict[str, Any]:
         "smartDpi": smart.render_dpi,
         "fullDpi": full.render_dpi,
         "realMultimodalConfigured": multimodal["ready"],
+        "configurationReady": multimodal["ready"],
+        "operationalProbeRequired": True,
+        "lastOperationalProbe": None,
         "multimodalReadiness": multimodal,
     }
 

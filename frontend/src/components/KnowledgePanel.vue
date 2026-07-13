@@ -536,11 +536,21 @@ defineExpose({ loadDocuments });
           <div><dt>视觉覆盖率</dt><dd>{{ coverageText(task.visualCoverageRatio) }}</dd></div>
           <div><dt>真实多模态覆盖率</dt><dd>{{ coverageText(task.realMultimodalCoverageRatio) }}</dd></div>
         </dl>
+        <div class="parse-task-metric-group">
+          <strong>独立图示</strong>
+          <dl class="parse-task-metrics parse-task-metrics--assets">
+            <div><dt>总数</dt><dd>{{ task.mineruAssetCount ?? 0 }}</dd></div>
+            <div><dt>真实理解</dt><dd>{{ task.realMultimodalMineruAssetCount ?? 0 }}</dd></div>
+            <div><dt>降级</dt><dd>{{ task.fallbackMineruAssetCount ?? 0 }}</dd></div>
+            <div><dt>失败</dt><dd>{{ task.failedMineruAssetCount ?? 0 }}</dd></div>
+            <div><dt>未处理</dt><dd>{{ task.unprocessedMineruAssetCount ?? 0 }}</dd></div>
+          </dl>
+        </div>
         <p
           v-if="task.parserModeRequested === 'smart_multimodal' && task.visualAnalysisStatus === 'completed_with_warnings' && task.renderer === 'unavailable'"
           class="fallback-note"
         >
-          文本资料已保留，但当前环境未完成图片解析。
+          已保留文本知识，但有 {{ task.visualCandidatePages ?? 0 }} 个视觉候选页未处理。请修复 Renderer 后重新提交。
         </p>
         <p v-if="task.visualFailureReason" class="fallback-note">{{ task.visualFailureReason }}</p>
         <p v-if="task.mineruAssetsTruncated" class="fallback-note">

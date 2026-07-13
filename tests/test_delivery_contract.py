@@ -212,4 +212,6 @@ def test_multimodal_manual_pipeline_delivery_contract() -> None:
     assert "URL.revokeObjectURL" in thumbnail
     assert "visualFailureReason" in api
     assert "mineruAssetsTruncated" in api
-    assert "文本资料已保留，但当前环境未完成图片解析。" in panel
+    assert "已保留文本知识，但有" in panel
+    assert "realMultimodalMineruAssetCount" in api
+    assert "operationalProbeRequired" in api

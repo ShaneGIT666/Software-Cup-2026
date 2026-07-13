@@ -3004,6 +3004,22 @@ h2 {
   overflow-wrap: anywhere;
 }
 
+.parse-task-metric-group {
+  display: grid;
+  gap: 6px;
+  padding-top: 2px;
+  border-top: 1px solid var(--line);
+}
+
+.parse-task-metric-group > strong {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.parse-task-metrics--assets {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
 .visual-evidence-thumbnail {
   position: relative;
   display: grid;

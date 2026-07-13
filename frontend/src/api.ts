@@ -168,6 +168,9 @@ export interface SystemStatusPayload {
     };
     manualVisual?: {
       realMultimodalConfigured: boolean;
+      configurationReady: boolean;
+      operationalProbeRequired: boolean;
+      lastOperationalProbe?: null;
       multimodalReadiness?: {
         provider: string;
         model: string;
@@ -671,6 +674,11 @@ export interface KnowledgeDocument {
   visualPagesAnalyzed?: number;
   realMultimodalPages?: number;
   fallbackVisualPages?: number;
+  mineruAssetCount?: number;
+  analyzedMineruAssetCount?: number;
+  realMultimodalMineruAssetCount?: number;
+  fallbackMineruAssetCount?: number;
+  failedMineruAssetCount?: number;
   visualCoverageRatio?: number;
   realMultimodalCoverageRatio?: number;
   visualFailedPages?: number[];
@@ -768,6 +776,9 @@ export interface KnowledgeParseTask {
   fallbackVisualPages?: number;
   mineruAssetCount?: number;
   analyzedMineruAssetCount?: number;
+  realMultimodalMineruAssetCount?: number;
+  fallbackMineruAssetCount?: number;
+  failedMineruAssetCount?: number;
   visualCoverageRatio?: number;
   realMultimodalCoverageRatio?: number;
   visualFailedPages?: number[];

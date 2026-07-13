@@ -23,6 +23,10 @@ from .provider_policy import (
 
 
 logger = logging.getLogger(__name__)
+PROBE_PNG_BASE64 = (
+    "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAVElEQVR42u3ZMQ0AQAjAQETg3yX7m/gQCFcHNzdqeQE"
+    "AAAAAAAAAAHACkI0BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEwAuJQAAAAAAAAAAACfe54cmLFgRv96AAAAAElFTkSuQmCC"
+)
 
 
 def configured_multimodal_provider(requested_provider: str | None) -> str:
@@ -87,6 +91,98 @@ def multimodal_readiness(requested_provider: str | None = None) -> dict[str, Any
         "ready": status == "ready",
         "status": status,
     }
+
+
+def _probe_failure_category(exc: Exception) -> str:
+    response = getattr(exc, "response", None)
+    status_code = getattr(response, "status_code", None) or getattr(exc, "status_code", None)
+    response_text = str(getattr(response, "text", "") or "")
+    message = f"{exc} {response_text}".lower()
+    if status_code == 401:
+        return "authentication_failed"
+    if status_code == 403:
+        return "permission_denied"
+    if status_code == 429:
+        return "rate_limited"
+    if status_code == 400 and any(marker in message for marker in ("image", "vision", "model")):
+        return "unsupported_model"
+    if isinstance(exc, TimeoutError) or "timed out" in message or "timeout" in message:
+        return "timeout"
+    if isinstance(exc, ConnectionError) or any(
+        marker in message for marker in ("connection error", "connection refused", "name resolution", "network")
+    ):
+        return "network_error"
+    return "provider_error"
+
+
+def multimodal_operational_probe(
+    requested_provider: str | None = None,
+    *,
+    timeout_seconds: float = 30,
+) -> dict[str, Any]:
+    readiness = multimodal_readiness(requested_provider)
+    started = time.perf_counter()
+    base = {
+        "provider": readiness["provider"],
+        "model": readiness["model"],
+        "configReady": bool(readiness["ready"]),
+        "probeAttempted": False,
+        "probeOk": False,
+        "status": "config_not_ready",
+        "durationMs": 0,
+        "semanticVerified": False,
+        "imageInputSent": False,
+        "fallback": True,
+        "failureCategory": "config_not_ready",
+    }
+    if not readiness["ready"]:
+        return base
+
+    base["probeAttempted"] = True
+    try:
+        with tempfile.TemporaryDirectory(prefix="multimodal-operational-probe-") as temp_dir:
+            image_path = Path(temp_dir) / "multimodal-operational-probe.png"
+            image_path.write_bytes(base64.b64decode(PROBE_PNG_BASE64))
+            analysis = analyze_multimodal_document(
+                image_path,
+                "multimodal-operational-probe.png",
+                "png",
+                requested_provider,
+                analysis_task="manual_page",
+                timeout_seconds=timeout_seconds,
+                raise_on_failure=True,
+            )
+        has_content = any(
+            (
+                str(analysis.get("summary") or "").strip(),
+                analysis.get("components") or [],
+                analysis.get("operations") or [],
+                analysis.get("figureLabels") or [],
+            )
+        )
+        probe_ok = bool(
+            analysis.get("provider") != "mock"
+            and analysis.get("imageInputSent") is True
+            and analysis.get("semanticVerified") is True
+            and analysis.get("fallback") is False
+            and str(analysis.get("model") or "").strip()
+            and has_content
+        )
+        base.update(
+            provider=str(analysis.get("provider") or readiness["provider"]),
+            model=str(analysis.get("model") or readiness["model"]),
+            probeOk=probe_ok,
+            status="ready" if probe_ok else "invalid_response",
+            semanticVerified=bool(analysis.get("semanticVerified")),
+            imageInputSent=bool(analysis.get("imageInputSent")),
+            fallback=bool(analysis.get("fallback", True)),
+            failureCategory="none" if probe_ok else "invalid_response",
+        )
+    except Exception as exc:
+        category = _probe_failure_category(exc)
+        base.update(status=category, failureCategory=category)
+    base["durationMs"] = round((time.perf_counter() - started) * 1000)
+    return base
 
 
 def mime_type_for_suffix(suffix: str) -> str:
@@ -260,7 +356,18 @@ def manual_page_from_model_text(
 ) -> dict[str, Any]:
     clean_text = text.strip()
     try:
-        payload = json.loads(clean_text)
+        payload: Any = None
+        decoder = json.JSONDecoder()
+        for index, character in enumerate(clean_text):
+            if character != "{":
+                continue
+            try:
+                payload, _ = decoder.raw_decode(clean_text[index:])
+                break
+            except json.JSONDecodeError:
+                continue
+        if payload is None:
+            raise json.JSONDecodeError("no JSON object found", clean_text, 0)
         if not isinstance(payload, dict):
             raise ValueError("manual page response must be a JSON object")
     except (json.JSONDecodeError, ValueError) as exc:
@@ -529,6 +636,7 @@ def analyze_multimodal_document(
     context_text: str = "",
     analysis_task: str = "generic",
     timeout_seconds: float | None = None,
+    raise_on_failure: bool = False,
 ) -> dict[str, Any]:
     provider = configured_multimodal_provider(requested_provider)
     ocr_result = analyze_ocr_document(file_path, source_name, suffix)
@@ -564,6 +672,9 @@ def analyze_multimodal_document(
             if attempt >= attempts - 1 or not _retryable_multimodal_error(exc):
                 break
             time.sleep(max(0.0, float(os.getenv("MANUAL_VISUAL_RETRY_DELAY_SECONDS", "2"))))
+
+    if raise_on_failure and last_error is not None:
+        raise last_error
 
     reason = (
         f"{provider} multimodal request failed; OCR/context fallback used."
