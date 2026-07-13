@@ -48,6 +48,20 @@ http://127.0.0.1:5173/
 
 生产演示时可由 FastAPI 静态托管 `frontend/dist`。
 
+## 管理中心鉴权故障排查
+
+如果后端在线且系统状态可见，但管理中心接口失败，请先检查本地 `.env`。本地开发演示应使用：
+
+```dotenv
+APP_ENV=development
+AUTH_MODE=off
+ALLOW_INSECURE_AUTH_OFF=true
+```
+
+修改 `.env` 后必须重启后端。`AUTH_MODE=off` 仅允许本地开发；`competition`、`submission` 和 `production` 环境必须使用 `AUTH_MODE=token`。角色 Token 应在部署环境中本地生成和注入，不得提交到 Git。
+
+系统状态中的 `auth.valid` 会指出认证配置是否有效。无效配置下，系统状态接口仍可公开读取以便诊断，受保护管理接口则返回可操作的 503 配置提示。
+
 ## 初始化配置脚本
 
 Windows：
