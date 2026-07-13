@@ -38,6 +38,9 @@ def empty_visual_result(
         "visualPagesOcrProcessed": 0,
         "visualPagesAnalyzed": 0,
         "realMultimodalPages": 0,
+        "unverifiedVisualPages": 0,
+        "ocrTextAvailablePages": 0,
+        "ocrEmptyPages": 0,
         "fallbackVisualPages": 0,
         "visualCoverageRatio": 0.0,
         "realMultimodalCoverageRatio": 0.0,
@@ -156,6 +159,11 @@ def _visual_result(
         "safetyWarnings": list(analysis.get("safetyWarnings") or analysis.get("safetyNotes") or []),
         "uncertainties": list(analysis.get("uncertainties") or []),
         "ocrText": str(ocr_result.get("text") or "")[:2000],
+        "ocrTextSegments": [
+            str(item)[:2000]
+            for item in ocr_result.get("textSegments", [])
+            if str(item).strip()
+        ],
         "nearbyText": nearby_text[:2000],
         "provider": str(analysis.get("provider") or "mock"),
         "model": str(analysis.get("model") or "mock"),
@@ -364,8 +372,12 @@ def process_image_document(
     }
     chunk = build_visual_chunk(document, result, f"visual-assets/{output_path.name}")
     fallback = bool(normalized.get("fallback"))
-    semantic_verified = bool(normalized.get("semanticVerified"))
-    status = "completed_with_warnings" if fallback else "completed"
+    semantic_verified = normalized.get("semanticVerified") is True
+    ocr_available = bool(
+        str(normalized.get("ocrText") or "").strip()
+        or normalized.get("ocrTextSegments")
+    )
+    status = "completed_with_warnings" if fallback or not semantic_verified else "completed"
     if progress_callback:
         progress_callback("multimodal", 1, 1)
     return {
@@ -374,12 +386,22 @@ def process_image_document(
         "visualPagesOcrProcessed": 1,
         "visualPagesAnalyzed": 1,
         "realMultimodalPages": int(semantic_verified),
+        "unverifiedVisualPages": int(not semantic_verified),
+        "ocrTextAvailablePages": int(ocr_available),
+        "ocrEmptyPages": int(not ocr_available),
         "fallbackVisualPages": int(fallback),
         "visualCoverageRatio": 1.0,
         "realMultimodalCoverageRatio": 1.0 if semantic_verified else 0.0,
         "visualChunks": [chunk],
         "visualChunkCount": 1,
-        "visualFailureReason": str(normalized.get("fallbackReason") or "") if fallback else "",
+        "visualFailureReason": "; ".join(
+            message
+            for message in (
+                str(normalized.get("fallbackReason") or "") if fallback else "",
+                "1 visual page(s) were not semantically verified." if not semantic_verified else "",
+            )
+            if message
+        ),
     }
 
 
@@ -529,8 +551,21 @@ def run_manual_visual_pipeline(
     ocr_processed = sum(1 for result in page_results if result.get("ocrProcessed"))
     analyzed = sum(1 for result in page_results if result.get("analysisProcessed"))
     real_pages = sum(
-        1 for result in page_results if result["analysis"].get("semanticVerified")
+        1 for result in page_results if result["analysis"].get("semanticVerified") is True
     )
+    unverified_pages = sum(
+        1 for result in page_results if result["analysis"].get("semanticVerified") is not True
+    )
+    ocr_text_available = sum(
+        1
+        for result in page_results
+        if result.get("ocrProcessed")
+        and (
+            str(result["analysis"].get("ocrText") or "").strip()
+            or any(str(item).strip() for item in result["analysis"].get("ocrTextSegments", []))
+        )
+    )
+    ocr_empty = max(0, ocr_processed - ocr_text_available)
     fallback_pages = sum(
         1 for result in page_results if result["analysis"].get("fallback")
     )
@@ -547,6 +582,8 @@ def run_manual_visual_pipeline(
         or unprocessed_assets
         or fallback_assets
         or failed_assets
+        or unverified_pages
+        or real_pages < analyzed
     )
     return {
         "pageCount": page_count,
@@ -555,6 +592,9 @@ def run_manual_visual_pipeline(
         "visualPagesOcrProcessed": ocr_processed,
         "visualPagesAnalyzed": analyzed,
         "realMultimodalPages": real_pages,
+        "unverifiedVisualPages": unverified_pages,
+        "ocrTextAvailablePages": ocr_text_available,
+        "ocrEmptyPages": ocr_empty,
         "fallbackVisualPages": fallback_pages,
         "visualCoverageRatio": round(coverage, 6),
         "realMultimodalCoverageRatio": round(real_coverage, 6),
@@ -569,6 +609,7 @@ def run_manual_visual_pipeline(
                 f"{fallback_assets} MinerU assets used fallback" if fallback_assets else "",
                 f"{failed_assets} MinerU assets failed" if failed_assets else "",
                 f"{unprocessed_assets} MinerU assets were not processed" if unprocessed_assets else "",
+                f"{unverified_pages} visual page(s) were not semantically verified." if unverified_pages else "",
             )
             if message
         ),

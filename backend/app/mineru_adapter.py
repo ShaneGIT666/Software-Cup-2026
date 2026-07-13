@@ -16,6 +16,7 @@ MINERU_MODULE_CANDIDATES = ("magic_pdf", "mineru")
 DEFAULT_MINERU_BACKEND = "pipeline"
 DEFAULT_MINERU_LANG = "ch"
 DEFAULT_MINERU_TIMEOUT_SECONDS = 180
+_MINERU_VERSION_CACHE: str | None = None
 
 
 class MinerUUnavailable(RuntimeError):
@@ -38,6 +39,36 @@ def mineru_cli_available() -> bool:
         return False
 
 
+def _reset_mineru_version_cache_for_tests() -> None:
+    global _MINERU_VERSION_CACHE
+    _MINERU_VERSION_CACHE = None
+
+
+def mineru_cli_version() -> str:
+    global _MINERU_VERSION_CACHE
+    if _MINERU_VERSION_CACHE is not None:
+        return _MINERU_VERSION_CACHE
+    if not mineru_cli_available():
+        _MINERU_VERSION_CACHE = "unavailable"
+        return _MINERU_VERSION_CACHE
+    try:
+        completed = subprocess.run(
+            [mineru_executable(), "--version"],
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=5,
+        )
+        combined = f"{completed.stdout or ''}\n{completed.stderr or ''}"
+        first_line = next((line.strip() for line in combined.splitlines() if line.strip()), "")
+        _MINERU_VERSION_CACHE = first_line[:120] if completed.returncode == 0 and first_line else "unknown"
+    except (OSError, subprocess.SubprocessError):
+        _MINERU_VERSION_CACHE = "unknown"
+    return _MINERU_VERSION_CACHE
+
+
 def mineru_readiness() -> dict[str, Any]:
     enabled = mineru_enabled()
     module_available = mineru_module_available()
@@ -56,6 +87,7 @@ def mineru_readiness() -> dict[str, Any]:
         "cliAvailable": cli_available,
         "ready": status == "ready",
         "status": status,
+        "version": mineru_cli_version(),
     }
 
 
@@ -366,7 +398,7 @@ def parse_with_mineru(
             "fallbackReason": "",
             "_temporaryOutputRoot": str(output_root),
             "mineru": {
-                "version": "3.2.3",
+                "version": mineru_cli_version(),
                 "backend": os.getenv("MINERU_BACKEND", DEFAULT_MINERU_BACKEND),
                 "lang": os.getenv("MINERU_LANG", DEFAULT_MINERU_LANG),
                 **metadata,

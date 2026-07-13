@@ -530,8 +530,11 @@ defineExpose({ loadDocuments });
           <div><dt>视觉候选页</dt><dd>{{ task.visualCandidatePages ?? 0 }}</dd></div>
           <div><dt>视觉片段数</dt><dd>{{ task.visualChunkCount ?? 0 }}</dd></div>
           <div><dt>已渲染页</dt><dd>{{ task.visualPagesRendered ?? 0 }}</dd></div>
-          <div><dt>已 OCR 页</dt><dd>{{ task.visualPagesOcrProcessed ?? 0 }}</dd></div>
+          <div><dt>OCR 已执行</dt><dd>{{ task.visualPagesOcrProcessed ?? 0 }}</dd></div>
+          <div><dt>OCR 提取到文字</dt><dd>{{ task.ocrTextAvailablePages ?? 0 }}</dd></div>
+          <div><dt>OCR 空结果</dt><dd>{{ task.ocrEmptyPages ?? 0 }}</dd></div>
           <div><dt>真实多模态页</dt><dd>{{ task.realMultimodalPages ?? 0 }}</dd></div>
+          <div><dt>视觉未验证页</dt><dd>{{ task.unverifiedVisualPages ?? 0 }}</dd></div>
           <div><dt>Fallback 页</dt><dd>{{ task.fallbackVisualPages ?? 0 }}</dd></div>
           <div><dt>视觉覆盖率</dt><dd>{{ coverageText(task.visualCoverageRatio) }}</dd></div>
           <div><dt>真实多模态覆盖率</dt><dd>{{ coverageText(task.realMultimodalCoverageRatio) }}</dd></div>

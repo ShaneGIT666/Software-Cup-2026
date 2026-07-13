@@ -673,6 +673,9 @@ export interface KnowledgeDocument {
   visualPagesOcrProcessed?: number;
   visualPagesAnalyzed?: number;
   realMultimodalPages?: number;
+  unverifiedVisualPages?: number;
+  ocrTextAvailablePages?: number;
+  ocrEmptyPages?: number;
   fallbackVisualPages?: number;
   mineruAssetCount?: number;
   analyzedMineruAssetCount?: number;
@@ -773,6 +776,9 @@ export interface KnowledgeParseTask {
   visualPagesOcrProcessed?: number;
   visualPagesAnalyzed?: number;
   realMultimodalPages?: number;
+  unverifiedVisualPages?: number;
+  ocrTextAvailablePages?: number;
+  ocrEmptyPages?: number;
   fallbackVisualPages?: number;
   mineruAssetCount?: number;
   analyzedMineruAssetCount?: number;
