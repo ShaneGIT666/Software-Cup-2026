@@ -6,7 +6,18 @@ from pathlib import Path
 import shutil
 import signal
 import subprocess
+import tempfile
 from typing import Any
+
+
+class RendererUnavailable(RuntimeError):
+    pass
+
+
+class RenderExecutionError(RuntimeError):
+    def __init__(self, message: str, failure_category: str = "smoke_render_failed") -> None:
+        super().__init__(message)
+        self.failure_category = failure_category
 
 
 def _configured_renderer() -> str:
@@ -50,6 +61,93 @@ def renderer_readiness() -> dict[str, Any]:
     }
 
 
+def _smoke_pdf(path: Path) -> None:
+    from pypdf import PdfWriter  # type: ignore[import-not-found]
+
+    writer = PdfWriter()
+    writer.add_blank_page(width=72, height=72)
+    with path.open("wb") as output:
+        writer.write(output)
+
+
+def _failure_category(exc: Exception) -> str:
+    if isinstance(exc, RenderExecutionError):
+        return exc.failure_category
+    if isinstance(exc, TimeoutError):
+        return "timeout"
+    if isinstance(exc, PermissionError):
+        return "permission_denied"
+    if isinstance(exc, (ImportError, ModuleNotFoundError)):
+        return "missing_runtime_dependency"
+    return "smoke_render_failed"
+
+
+def renderer_operational_readiness() -> dict[str, Any]:
+    configured = _configured_renderer()
+    executable = shutil.which("pdftoppm")
+    command_found = executable is not None
+    version_probe_ok = _pdftoppm_available() if command_found else False
+    pymupdf_available = importlib.util.find_spec("fitz") is not None
+    last_failure = "not_found" if not command_found and not pymupdf_available else "unavailable"
+
+    try:
+        with tempfile.TemporaryDirectory(prefix="pdf-renderer-smoke-") as temp_dir:
+            root = Path(temp_dir)
+            pdf_path = root / "smoke.pdf"
+            output_path = root / "smoke.jpg"
+            _smoke_pdf(pdf_path)
+
+            if configured in {"auto", "pdftoppm"} and command_found:
+                try:
+                    _render_with_pdftoppm(pdf_path, 1, output_path, 72, 10)
+                    smoke_ok = output_path.is_file() and output_path.stat().st_size > 0
+                    if smoke_ok:
+                        return {
+                            "ready": True,
+                            "renderer": "pdftoppm",
+                            "status": "ready",
+                            "commandFound": True,
+                            "versionProbeOk": version_probe_ok,
+                            "smokeRenderOk": True,
+                            "failureCategory": "none",
+                        }
+                    last_failure = "smoke_render_failed"
+                except Exception as exc:
+                    last_failure = _failure_category(exc)
+                finally:
+                    output_path.unlink(missing_ok=True)
+
+            if configured in {"auto", "pymupdf"} and pymupdf_available:
+                try:
+                    _render_with_pymupdf(pdf_path, 1, output_path, 72)
+                    smoke_ok = output_path.is_file() and output_path.stat().st_size > 0
+                    if smoke_ok:
+                        return {
+                            "ready": True,
+                            "renderer": "pymupdf",
+                            "status": "ready",
+                            "commandFound": command_found,
+                            "versionProbeOk": version_probe_ok,
+                            "smokeRenderOk": True,
+                            "failureCategory": "none",
+                        }
+                    last_failure = "smoke_render_failed"
+                except Exception as exc:
+                    last_failure = _failure_category(exc)
+    except Exception as exc:
+        last_failure = _failure_category(exc)
+
+    return {
+        "ready": False,
+        "renderer": "unavailable",
+        "status": "unavailable",
+        "commandFound": command_found,
+        "versionProbeOk": version_probe_ok,
+        "smokeRenderOk": False,
+        "failureCategory": last_failure,
+    }
+
+
 def _terminate_process_tree(process: subprocess.Popen[bytes]) -> None:
     if process.poll() is not None:
         return
@@ -86,7 +184,7 @@ def _render_with_pdftoppm(
 ) -> None:
     executable = shutil.which("pdftoppm")
     if not executable:
-        raise RuntimeError("pdftoppm is unavailable")
+        raise RendererUnavailable("PDF renderer is unavailable")
     prefix = output_path.with_suffix("")
     command = [
         executable,
@@ -112,10 +210,12 @@ def _render_with_pdftoppm(
         _, stderr = process.communicate(timeout=timeout_seconds)
     except subprocess.TimeoutExpired as exc:
         _terminate_process_tree(process)
-        raise TimeoutError(f"PDF page {page_number} rendering timed out") from exc
+        raise RenderExecutionError(
+            f"PDF page {page_number} rendering timed out",
+            failure_category="timeout",
+        ) from exc
     if process.returncode != 0:
-        message = (stderr or b"").decode("utf-8", errors="replace").strip()
-        raise RuntimeError(f"pdftoppm failed: {message[:300]}")
+        raise RenderExecutionError("pdftoppm page rendering failed")
     generated = prefix.with_suffix(".jpg")
     if generated != output_path and generated.exists():
         generated.replace(output_path)
@@ -148,7 +248,7 @@ def render_pdf_page(
     readiness = renderer_readiness()
     renderer = str(readiness["renderer"])
     if renderer == "unavailable":
-        raise RuntimeError("PDF renderer is unavailable")
+        raise RendererUnavailable("PDF renderer is unavailable")
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.unlink(missing_ok=True)
     if renderer == "pdftoppm":
@@ -157,5 +257,5 @@ def render_pdf_page(
         _render_with_pymupdf(pdf_path, page_number, output_path, dpi)
     if not output_path.exists() or output_path.stat().st_size == 0:
         output_path.unlink(missing_ok=True)
-        raise RuntimeError("PDF renderer produced no JPEG output")
+        raise RenderExecutionError("PDF renderer produced no JPEG output")
     return {"renderer": renderer, "page": page_number, "dpi": dpi, "format": "jpeg"}

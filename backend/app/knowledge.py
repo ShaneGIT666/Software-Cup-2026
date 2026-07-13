@@ -40,7 +40,8 @@ from .multimodal_adapter import analyze_multimodal_document
 from .ocr_adapter import analyze_ocr_document
 from .parser_router import parse_document, save_parse_artifacts
 from .parser_modes import ParserPolicy, resolve_parser_policy
-from .manual_visual_pipeline import run_manual_visual_pipeline
+from .manual_visual_pipeline import empty_visual_result, process_image_document, run_manual_visual_pipeline
+from .pdf_renderer import RenderExecutionError, RendererUnavailable, renderer_operational_readiness
 from .provider_policy import configured_llm_provider, key_configured, record_fallback, remote_api_disabled
 from .schemas import KnowledgeChunkReviewRequest, KnowledgeChunkRevisionRequest, KnowledgeChunkStatusRequest
 from .review_policy import is_current_approved_chunk, normalize_review_status
@@ -66,7 +67,9 @@ IMAGE_SUFFIXES = {"jpg", "jpeg", "png", "webp"}
 ASSET_ANALYSIS_ORIGIN = "mineru_asset_analysis"
 ASSET_IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 PDF_PAGE_VISUAL_ASSET_TYPE = "pdf_page_visual_asset"
-VISUAL_ASSET_ID_PATTERN = re.compile(r"^(?:page-[0-9]{4}|mineru-[a-z0-9][a-z0-9_-]{0,63})$")
+VISUAL_ASSET_ID_PATTERN = re.compile(
+    r"^(?:page-[0-9]{4}|image-[0-9]{4}|mineru-[a-z0-9][a-z0-9_-]{0,63})$"
+)
 DOCUMENT_ID_PATTERN = re.compile(r"^kdoc-[A-Za-z0-9_-]{1,64}$")
 VISUAL_PUBLIC_FIELDS = (
     "assetId",
@@ -76,6 +79,7 @@ VISUAL_PUBLIC_FIELDS = (
     "semanticVerified",
     "analysisProvider",
     "analysisFallback",
+    "imageInputSent",
     "page",
 )
 PDF_VISUAL_KEYWORDS = (
@@ -1037,34 +1041,41 @@ def ingest_knowledge_document_bytes(
         "suffix": suffix,
         "sourceName": display_source,
     }
-    visual_result = {
-        "pageCount": page_count,
-        "visualCandidatePages": 0,
-        "visualPagesRendered": 0,
-        "visualPagesOcrProcessed": 0,
-        "visualPagesAnalyzed": 0,
-        "realMultimodalPages": 0,
-        "fallbackVisualPages": 0,
-        "mineruAssetCount": len(stored_parse_result.get("mineruAssets", [])),
-        "analyzedMineruAssetCount": 0,
-        "visualCoverageRatio": 0.0,
-        "realMultimodalCoverageRatio": 0.0,
-        "visualFailedPages": [],
-        "renderer": "unavailable",
-        "status": "completed",
-        "visualChunks": [],
-    }
-    visual_requested = parser_mode is not None and suffix == "pdf" and policy.render_scope != "none"
+    visual_result = empty_visual_result(
+        page_count=page_count,
+        status="completed",
+        renderer="unavailable",
+    )
+    visual_result["mineruAssetCount"] = len(stored_parse_result.get("mineruAssets", []))
+    visual_requested = parser_mode is not None and suffix in MULTIMODAL_SUFFIXES and policy.render_scope != "none"
     if visual_requested:
         if progress_callback:
             progress_callback("page_inventory", 0, page_count)
-        visual_result = run_manual_visual_pipeline(
-            document=document,
-            pdf_path=target,
-            policy=policy,
-            mineru_assets=stored_parse_result.get("mineruAssets", []),
-            progress_callback=progress_callback,
-        )
+        if suffix in IMAGE_SUFFIXES:
+            visual_result = process_image_document(
+                document=document,
+                image_path=target,
+                progress_callback=progress_callback,
+            )
+        else:
+            try:
+                visual_result = run_manual_visual_pipeline(
+                    document=document,
+                    pdf_path=target,
+                    policy=policy,
+                    mineru_assets=stored_parse_result.get("mineruAssets", []),
+                    progress_callback=progress_callback,
+                )
+            except (RendererUnavailable, RenderExecutionError):
+                if policy.mode != "smart_multimodal":
+                    raise
+                visual_result = empty_visual_result(
+                    page_count=page_count,
+                    status="completed_with_warnings",
+                    renderer="unavailable",
+                    failure_reason="PDF renderer is unavailable; text knowledge was preserved.",
+                )
+                visual_result["mineruAssetCount"] = len(stored_parse_result.get("mineruAssets", []))
         chunks.extend(visual_result["visualChunks"])
     if progress_callback:
         progress_callback("chunking", len(chunks), len(chunks))
@@ -1099,6 +1110,10 @@ def ingest_knowledge_document_bytes(
         "visualCoverageRatio": float(visual_result["visualCoverageRatio"]),
         "realMultimodalCoverageRatio": float(visual_result["realMultimodalCoverageRatio"]),
         "visualFailedPages": visual_result["visualFailedPages"],
+        "visualChunkCount": int(visual_result["visualChunkCount"]),
+        "visualFailureReason": str(visual_result["visualFailureReason"]),
+        "mineruAssetsTruncated": bool(visual_result["mineruAssetsTruncated"]),
+        "unprocessedMineruAssetCount": int(visual_result["unprocessedMineruAssetCount"]),
         "renderer": visual_result["renderer"],
         "currentPhase": terminal_phase,
         "progressCurrent": len(chunks),
@@ -1107,7 +1122,25 @@ def ingest_knowledge_document_bytes(
         "uploadedAt": utc_now(),
         "url": f"/api/knowledge/documents/{document_id}/file",
     })
-    document = mark_initial_asset_analysis_state(document)
+    if parser_mode is None:
+        document = mark_initial_asset_analysis_state(document)
+    elif policy.mode == "text_fast":
+        document.update(
+            assetAnalysisStatus="skipped",
+            assetAnalysisCount=0,
+            assetAnalysisFallbackCount=0,
+            assetAnalysisError="not_requested",
+            assetAnalysisUpdatedAt=utc_now(),
+        )
+    else:
+        fallback_completed = visual_status == "completed_with_warnings"
+        document.update(
+            assetAnalysisStatus="fallback_completed" if fallback_completed else "completed",
+            assetAnalysisCount=int(visual_result["visualChunkCount"]),
+            assetAnalysisFallbackCount=int(visual_result["fallbackVisualPages"]),
+            assetAnalysisError=str(visual_result["visualFailureReason"]) if fallback_completed else "",
+            assetAnalysisUpdatedAt=utc_now(),
+        )
 
     documents = load_documents()
     documents.append(document)
@@ -1155,7 +1188,17 @@ async def create_knowledge_parse_task(
     content = await file.read()
     suffix = validate_knowledge_file(file, content)
     policy = resolve_parser_policy(parser_mode)
+    if suffix in IMAGE_SUFFIXES and policy.mode == "text_fast":
+        raise HTTPException(
+            status_code=422,
+            detail="text_fast does not process image files; use smart_multimodal or full_visual",
+        )
     if suffix == "pdf" and policy.mode == "full_visual":
+        if not renderer_operational_readiness()["ready"]:
+            raise HTTPException(
+                status_code=503,
+                detail="full_visual requires an operational PDF renderer",
+            )
         try:
             from pypdf import PdfReader  # type: ignore[import-not-found]
 
@@ -1253,6 +1296,10 @@ def process_knowledge_parse_task(task_id: str) -> None:
                 "visualCoverageRatio",
                 "realMultimodalCoverageRatio",
                 "visualFailedPages",
+                "visualChunkCount",
+                "visualFailureReason",
+                "mineruAssetsTruncated",
+                "unprocessedMineruAssetCount",
                 "renderer",
                 "progressCurrent",
                 "progressTotal",
@@ -1267,6 +1314,9 @@ def process_knowledge_parse_task(task_id: str) -> None:
             documentStatus=document.get("status"),
             chunkCount=document.get("chunkCount", 0),
             assetAnalysisStatus=document.get("assetAnalysisStatus", "skipped"),
+            assetAnalysisCount=document.get("assetAnalysisCount", 0),
+            assetAnalysisFallbackCount=document.get("assetAnalysisFallbackCount", 0),
+            assetAnalysisError=document.get("assetAnalysisError", ""),
             **metric_fields,
         )
     except Exception as exc:  # pragma: no cover - exact parser failures vary by dependency
