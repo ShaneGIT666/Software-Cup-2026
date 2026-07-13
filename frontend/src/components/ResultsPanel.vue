@@ -5,6 +5,7 @@ import type { SearchPayload, SearchResult } from "../api";
 defineProps<{
   searchPayload: SearchPayload | null;
   selectedResult: SearchResult | null;
+  loading?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -30,7 +31,8 @@ function sourceLabel(sourceType: SearchResult["sourceType"]) {
     </div>
     <p class="panel-note">系统仅使用已审核资料生成正式建议，未审核内容不会进入检修依据。</p>
 
-    <template v-if="searchPayload && searchPayload.results.length">
+    <el-skeleton v-if="loading" :rows="5" animated class="result-skeleton" />
+    <template v-else-if="searchPayload && searchPayload.results.length">
       <p class="summary">{{ searchPayload.summary }}</p>
       <div class="result-list">
         <button

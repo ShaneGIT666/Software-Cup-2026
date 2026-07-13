@@ -2,7 +2,7 @@
 import { onMounted, ref } from "vue";
 import { ElMessage } from "element-plus";
 import { History, RefreshCw } from "@lucide/vue";
-import { fetchReviewEvents, type KnowledgeReviewEvent } from "../api";
+import { fetchReviewEvents, getApiErrorMessage, type KnowledgeReviewEvent } from "../api";
 
 const events = ref<KnowledgeReviewEvent[]>([]);
 const objectType = ref("all");
@@ -64,8 +64,8 @@ async function loadEvents() {
       })
     ).items;
     loaded.value = true;
-  } catch {
-    ElMessage.error("审核记录加载失败，请稍后重试。");
+  } catch (error) {
+    ElMessage.error(getApiErrorMessage(error, "审核记录加载失败，请稍后重试。"));
   } finally {
     loading.value = false;
   }

@@ -83,7 +83,12 @@ function handleDiagnosisFileChange(event: Event) {
         </el-select>
       </el-form-item>
       <div class="action-row">
-        <el-button type="primary" :loading="loading" @click="emit('search')">
+        <el-button
+          type="primary"
+          :loading="loading"
+          :disabled="!deviceModel.trim() || !faultText.trim()"
+          @click="emit('search')"
+        >
           <Search :size="16" />
           开始诊断
         </el-button>
@@ -93,10 +98,14 @@ function handleDiagnosisFileChange(event: Event) {
           <span>{{ uploading ? "上传中" : "上传资料" }}</span>
           <input type="file" accept="image/*,.pdf" :disabled="uploading" @change="handleFileChange" />
         </label>
-        <label class="upload-button diagnosis" :class="{ disabled: diagnosisLoading }">
+        <label
+          class="upload-button diagnosis"
+          :class="{ disabled: diagnosisLoading || !deviceModel.trim() }"
+          :title="!deviceModel.trim() ? '请先填写设备型号' : '上传故障图片并诊断'"
+        >
           <ImagePlus :size="16" />
           <span>{{ diagnosisLoading ? "诊断中" : "图片诊断" }}</span>
-          <input type="file" accept="image/*" :disabled="diagnosisLoading" @change="handleDiagnosisFileChange" />
+          <input type="file" accept="image/*" :disabled="diagnosisLoading || !deviceModel.trim()" @change="handleDiagnosisFileChange" />
         </label>
       </div>
     </el-form>

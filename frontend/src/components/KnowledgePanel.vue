@@ -8,6 +8,7 @@ import {
   fetchKnowledgeDocumentChunks,
   fetchKnowledgeDocumentRevisions,
   fetchKnowledgeDocuments,
+  getApiErrorMessage,
   reviseKnowledgeChunk,
   updateKnowledgeChunkStatus,
   uploadKnowledgeDocument,
@@ -135,8 +136,8 @@ async function loadDocuments() {
   try {
     const payload = await fetchKnowledgeDocuments();
     documents.value = payload.items;
-  } catch {
-    ElMessage.error("资料列表加载失败，请确认后端服务已启动。");
+  } catch (error) {
+    ElMessage.error(getApiErrorMessage(error, "资料列表加载失败，请确认后端服务已启动。"));
   } finally {
     loading.value = false;
   }
@@ -153,8 +154,8 @@ async function handleFileChange(event: Event) {
     lastUploaded.value = await uploadKnowledgeDocument(file, sourceName.value);
     ElMessage.success(`资料已进入审核队列：${lastUploaded.value.fileName}`);
     await loadDocuments();
-  } catch {
-    ElMessage.error("资料上传失败，请检查文件格式或大小。");
+  } catch (error) {
+    ElMessage.error(getApiErrorMessage(error, "资料上传失败，请检查文件格式或大小。"));
   } finally {
     input.value = "";
     uploading.value = false;
@@ -167,8 +168,8 @@ async function handleAnalyze(document: KnowledgeDocument) {
     lastUploaded.value = await analyzeKnowledgeDocument(document.id);
     ElMessage.success(`资料分析已完成：${lastUploaded.value.fileName}`);
     await loadDocuments();
-  } catch {
-    ElMessage.error("资料分析失败，请稍后重试。");
+  } catch (error) {
+    ElMessage.error(getApiErrorMessage(error, "资料分析失败，请稍后重试。"));
   } finally {
     analyzingId.value = "";
   }
@@ -180,8 +181,8 @@ async function openDocumentFile(document: KnowledgeDocument) {
     const url = URL.createObjectURL(blob);
     window.open(url, "_blank", "noopener,noreferrer");
     window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
-  } catch {
-    ElMessage.error("Document file could not be opened. Check the current access token.");
+  } catch (error) {
+    ElMessage.error(getApiErrorMessage(error, "资料文件无法打开，请检查当前会话 Token。"));
   }
 }
 
@@ -216,8 +217,8 @@ async function openRevisionDialog(document: KnowledgeDocument) {
     documentChunks.value = chunksPayload.items;
     documentRevisions.value = revisionsPayload.items;
     fillRevisionForm(documentChunks.value[0], document);
-  } catch {
-    ElMessage.error("知识片段读取失败，请稍后重试。");
+  } catch (error) {
+    ElMessage.error(getApiErrorMessage(error, "知识片段读取失败，请稍后重试。"));
   } finally {
     revisionLoading.value = false;
   }
@@ -253,8 +254,8 @@ async function saveRevision() {
     ElMessage.success("知识片段修正已保存，并重新同步索引。");
     await openRevisionDialog(selectedDocument.value);
     await loadDocuments();
-  } catch {
-    ElMessage.error("知识片段修正失败，请稍后重试。");
+  } catch (error) {
+    ElMessage.error(getApiErrorMessage(error, "知识片段修正失败，请稍后重试。"));
   } finally {
     revisionSaving.value = false;
   }
@@ -284,8 +285,8 @@ async function saveChunkStatus() {
     ElMessage.success("知识片段状态已更新，并同步检索索引。");
     await openRevisionDialog(selectedDocument.value);
     await loadDocuments();
-  } catch {
-    ElMessage.error("知识片段状态更新失败，请稍后重试。");
+  } catch (error) {
+    ElMessage.error(getApiErrorMessage(error, "知识片段状态更新失败，请稍后重试。"));
   } finally {
     statusSaving.value = false;
   }

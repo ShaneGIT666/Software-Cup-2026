@@ -25,6 +25,7 @@ import {
   fetchKnowledgeGraphOverview,
   fetchProviderStatus,
   fetchWorkflow,
+  getApiErrorMessage,
   hasAuthToken,
   rebuildKnowledgeGraph,
   requestMultimodalDiagnosis,
@@ -271,24 +272,28 @@ function useDemoSample() {
 async function refreshProviderStatus() {
   try {
     providerStatus.value = await fetchProviderStatus();
-  } catch {
+  } catch (error) {
     providerStatus.value = null;
-    ElMessage.warning("后端服务暂不可用，请确认服务已启动。");
+    ElMessage.warning(getApiErrorMessage(error, "后端服务暂不可用，请确认服务已启动。"));
   }
 }
 
 function saveSessionAuthToken() {
+  if (!authTokenInput.value.trim()) {
+    ElMessage.warning("请输入有效的会话 Token。");
+    return;
+  }
   setAuthToken(authTokenInput.value);
   authTokenConfigured.value = hasAuthToken();
   authTokenInput.value = "";
-  ElMessage.success("Access token saved for this browser session.");
+  ElMessage.success("会话 Token 已保存，输入框已清空。");
 }
 
 function clearSessionAuthToken() {
   clearAuthToken();
   authTokenConfigured.value = false;
   authTokenInput.value = "";
-  ElMessage.success("Access token cleared.");
+  ElMessage.success("会话 Token 已清除。");
 }
 
 async function runSearch() {
@@ -308,8 +313,8 @@ async function runSearch() {
     } else {
       ElMessage.info("暂无参考依据，请补充故障描述或在管理中心上传资料。");
     }
-  } catch {
-    ElMessage.error("检索失败，请检查输入内容或后端服务状态。");
+  } catch (error) {
+    ElMessage.error(getApiErrorMessage(error, "检索失败，请检查输入内容或后端服务状态。"));
   } finally {
     loading.value = false;
   }
@@ -321,8 +326,8 @@ async function generateRagAnswer() {
     ragAnswer.value = await requestRagAnswer(deviceModel.value, faultText.value, undefined, maintenanceLevel.value);
     await refreshProviderStatus();
     ElMessage.success("已生成智能检修建议，请结合引用来源和安全提醒进行复核。");
-  } catch {
-    ElMessage.error("模型服务暂不可用，系统将使用离线兜底模式。");
+  } catch (error) {
+    ElMessage.error(getApiErrorMessage(error, "模型服务暂不可用，系统将使用离线兜底模式。"));
   } finally {
     ragLoading.value = false;
   }
@@ -351,8 +356,8 @@ async function submitRagAnswerFeedback(payload: {
     });
     await refreshKnowledgeGraph();
     ElMessage.success("修正已提交审核，审核通过后会进入知识关系图。");
-  } catch {
-    ElMessage.error("回答修正提交失败，请稍后重试。");
+  } catch (error) {
+    ElMessage.error(getApiErrorMessage(error, "回答修正提交失败，请稍后重试。"));
   }
 }
 
@@ -374,8 +379,8 @@ async function runMultimodalDiagnosis(file: File | null) {
     await refreshProviderStatus();
     await refreshKnowledgeGraph();
     ElMessage.success("已提取图片识别线索，下一步可查看参考依据或生成智能检修建议。");
-  } catch {
-    ElMessage.error("图片诊断失败，请检查图片格式或稍后重试。");
+  } catch (error) {
+    ElMessage.error(getApiErrorMessage(error, "图片诊断失败，请检查图片格式或稍后重试。"));
   } finally {
     diagnosisLoading.value = false;
   }
@@ -385,8 +390,8 @@ async function refreshKnowledgeGraph() {
   graphLoading.value = true;
   try {
     knowledgeGraph.value = await fetchKnowledgeGraph(deviceModel.value, faultText.value);
-  } catch {
-    ElMessage.error("知识关系图生成失败，请稍后重试。");
+  } catch (error) {
+    ElMessage.error(getApiErrorMessage(error, "知识关系图生成失败，请稍后重试。"));
   } finally {
     graphLoading.value = false;
   }
@@ -396,8 +401,8 @@ async function loadKnowledgeGraphOverview() {
   graphLoading.value = true;
   try {
     knowledgeGraph.value = await fetchKnowledgeGraphOverview();
-  } catch {
-    ElMessage.error("知识关系图总览读取失败，请稍后重试。");
+  } catch (error) {
+    ElMessage.error(getApiErrorMessage(error, "知识关系图总览读取失败，请稍后重试。"));
   } finally {
     graphLoading.value = false;
   }
@@ -408,8 +413,8 @@ async function rebuildKnowledgeGraphOverview() {
   try {
     knowledgeGraph.value = await rebuildKnowledgeGraph();
     ElMessage.success("知识关系图已根据资料、案例、流程和回答修正重建。");
-  } catch {
-    ElMessage.error("知识关系图重建失败，请稍后重试。");
+  } catch (error) {
+    ElMessage.error(getApiErrorMessage(error, "知识关系图重建失败，请稍后重试。"));
   } finally {
     graphLoading.value = false;
   }
@@ -420,8 +425,13 @@ async function openWorkflow(result: SearchResult) {
     ElMessage.warning("该参考依据暂未关联标准作业步骤。");
     return;
   }
-  selectedResult.value = result;
-  selectedWorkflow.value = await fetchWorkflow(result.workflowId);
+  try {
+    selectedResult.value = result;
+    selectedWorkflow.value = await fetchWorkflow(result.workflowId);
+  } catch (error) {
+    selectedWorkflow.value = null;
+    ElMessage.error(getApiErrorMessage(error, "标准作业步骤加载失败，请稍后重试。"));
+  }
 }
 
 async function createCase() {
@@ -445,8 +455,8 @@ async function createCase() {
     });
     ElMessage.success("处理经验已提交审核，审核通过后将沉淀到知识库。");
     reviewPanel.value?.loadCases();
-  } catch {
-    ElMessage.error("处理经验提交失败，请检查填写内容后重试。");
+  } catch (error) {
+    ElMessage.error(getApiErrorMessage(error, "处理经验提交失败，请检查填写内容后重试。"));
   } finally {
     submitting.value = false;
   }
@@ -457,8 +467,8 @@ async function uploadFile(file: File) {
   try {
     uploadResult.value = await uploadFaultFile(file);
     ElMessage.success(`现场资料已上传：${uploadResult.value.fileName}`);
-  } catch {
-    ElMessage.error("资料上传失败，请检查文件格式或大小。");
+  } catch (error) {
+    ElMessage.error(getApiErrorMessage(error, "资料上传失败，请检查文件格式或大小。"));
   } finally {
     uploading.value = false;
   }
@@ -573,7 +583,12 @@ refreshProviderStatus();
             @demo="useDemoSample"
           />
           <div class="assistant-output-column">
-            <ResultsPanel :search-payload="searchPayload" :selected-result="selectedResult" @open-workflow="openWorkflow" />
+            <ResultsPanel
+              :search-payload="searchPayload"
+              :selected-result="selectedResult"
+              :loading="loading"
+              @open-workflow="openWorkflow"
+            />
             <WorkflowPanel :selected-workflow="selectedWorkflow" />
           </div>
         </section>

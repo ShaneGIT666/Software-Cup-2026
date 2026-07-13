@@ -212,6 +212,24 @@ export class ApiRequestError extends Error {
   }
 }
 
+const API_STATUS_MESSAGES: Record<number, string> = {
+  401: "登录凭证无效或已过期，请在系统状态中重新配置会话 Token。",
+  403: "当前账号没有执行此操作的权限，请联系管理员或切换授权角色。",
+  404: "请求的资料或服务不存在，可能已被删除或地址已变更。",
+  409: "当前内容已被其他操作更新，请刷新数据后重试。",
+  500: "服务端处理失败，请稍后重试并检查服务运行日志。"
+};
+
+export function getApiErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof ApiRequestError) {
+    return API_STATUS_MESSAGES[error.status] ?? error.message ?? fallback;
+  }
+  if (error instanceof TypeError) {
+    return "无法连接后端服务，请确认服务已启动且网络可用。";
+  }
+  return fallback;
+}
+
 export function getAuthToken(): string {
   return typeof window !== "undefined" ? window.sessionStorage.getItem(AUTH_TOKEN_KEY)?.trim() ?? "" : "";
 }
@@ -258,9 +276,14 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     ...options,
     headers
   });
-  const payload = (await response.json()) as ApiResponse<T>;
-  if (!response.ok || !payload.success) {
-    throw new ApiRequestError(payload.message || "Request failed", response.status);
+  let payload: ApiResponse<T> | null = null;
+  try {
+    payload = (await response.json()) as ApiResponse<T>;
+  } catch {
+    payload = null;
+  }
+  if (!response.ok || !payload?.success) {
+    throw new ApiRequestError(payload?.message || API_STATUS_MESSAGES[response.status] || "请求失败", response.status);
   }
   return payload.data;
 }
@@ -274,7 +297,7 @@ async function requestBlob(path: string, options?: RequestInit): Promise<Blob> {
     }
   });
   if (!response.ok) {
-    throw new ApiRequestError("Request failed", response.status);
+    throw new ApiRequestError(API_STATUS_MESSAGES[response.status] || "文件请求失败", response.status);
   }
   return response.blob();
 }

@@ -2,7 +2,14 @@
 import { ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { Check, Eye, X } from "@lucide/vue";
-import { fetchReviewItems, reviewCase, reviewKnowledgeChunk, reviewRagFeedback, type ReviewItem } from "../api";
+import {
+  fetchReviewItems,
+  getApiErrorMessage,
+  reviewCase,
+  reviewKnowledgeChunk,
+  reviewRagFeedback,
+  type ReviewItem
+} from "../api";
 
 const items = ref<ReviewItem[]>([]);
 const loading = ref(false);
@@ -32,8 +39,8 @@ async function loadCases() {
   try {
     items.value = (await fetchReviewItems("pending_review")).items;
     loaded.value = true;
-  } catch {
-    ElMessage.error("待审核内容加载失败，请确认后端服务已启动。");
+  } catch (error) {
+    ElMessage.error(getApiErrorMessage(error, "待审核内容加载失败，请确认后端服务已启动。"));
   } finally {
     loading.value = false;
   }
@@ -91,8 +98,8 @@ async function handleReview(item: ReviewItem, action: "approve" | "reject") {
     }
     ElMessage.success(`${typeLabel(item)}已${action === "approve" ? "通过" : "拒绝"}`);
     items.value = items.value.filter((candidate) => candidate.id !== item.id);
-  } catch {
-    ElMessage.error("审核操作失败，请稍后重试。");
+  } catch (error) {
+    ElMessage.error(getApiErrorMessage(error, "审核操作失败，请稍后重试。"));
   } finally {
     reviewing.value[item.id] = false;
   }
