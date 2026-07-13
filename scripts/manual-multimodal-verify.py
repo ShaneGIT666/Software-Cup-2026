@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timezone
 import json
+import logging
 import os
 from pathlib import Path
 import subprocess
@@ -76,9 +77,20 @@ def result_label(mode: str, document: dict[str, Any]) -> str:
         and int(document.get("visualPagesOcrProcessed") or 0) == expected
         and int(document.get("visualPagesAnalyzed") or 0) == expected
         and int(document.get("realMultimodalPages") or 0) == expected
+        and int(document.get("fallbackVisualPages") or 0) == 0
+        and not document.get("visualFailedPages")
         and float(document.get("visualCoverageRatio") or 0) == 1.0
         and float(document.get("realMultimodalCoverageRatio") or 0) == 1.0
+        and int(document.get("visualChunkCount") or 0) >= expected
+        and document.get("visualAnalysisStatus") == "completed"
     )
+    if mode == "full_visual":
+        passed = bool(
+            passed
+            and int(document.get("fallbackMineruAssetCount") or 0) == 0
+            and int(document.get("failedMineruAssetCount") or 0) == 0
+            and int(document.get("unprocessedMineruAssetCount") or 0) == 0
+        )
     prefix = "SMART_MULTIMODAL_MANUAL" if mode == "smart_multimodal" else "FULL_VISUAL_MANUAL"
     return f"{prefix}_{'GO' if passed else 'NO_GO'}"
 
@@ -157,13 +169,16 @@ def retrieval_checks(document: dict[str, Any]) -> dict[str, Any]:
 def verify_mode(mode: str, manual_path: Path, sha: str) -> dict[str, Any]:
     from backend.app.data_store import load_document_chunks
     from backend.app.knowledge import ingest_knowledge_document_bytes
-    from backend.app.multimodal_adapter import multimodal_readiness
+    from backend.app.multimodal_adapter import multimodal_operational_probe, multimodal_readiness
     from backend.app.pdf_renderer import renderer_operational_readiness
 
     if mode != "text_fast" and not multimodal_readiness()["ready"]:
         prefix = "SMART_MULTIMODAL_MANUAL" if mode == "smart_multimodal" else "FULL_VISUAL_MANUAL"
         return {"gitSha": sha, "mode": mode, "status": "not_run", "result": f"{prefix}_NO_GO"}
     if mode != "text_fast" and not renderer_operational_readiness()["ready"]:
+        prefix = "SMART_MULTIMODAL_MANUAL" if mode == "smart_multimodal" else "FULL_VISUAL_MANUAL"
+        return {"gitSha": sha, "mode": mode, "status": "not_run", "result": f"{prefix}_NO_GO"}
+    if mode != "text_fast" and not multimodal_operational_probe()["probeOk"]:
         prefix = "SMART_MULTIMODAL_MANUAL" if mode == "smart_multimodal" else "FULL_VISUAL_MANUAL"
         return {"gitSha": sha, "mode": mode, "status": "not_run", "result": f"{prefix}_NO_GO"}
     started = time.monotonic()
@@ -201,9 +216,14 @@ def verify_mode(mode: str, manual_path: Path, sha: str) -> dict[str, Any]:
             "visualPagesAnalyzed": int(document.get("visualPagesAnalyzed") or 0),
             "realMultimodalPages": int(document.get("realMultimodalPages") or 0),
             "fallbackVisualPages": int(document.get("fallbackVisualPages") or 0),
+            "visualFailedPages": list(document.get("visualFailedPages") or []),
             "visualCoverageRatio": float(document.get("visualCoverageRatio") or 0),
             "realMultimodalCoverageRatio": float(document.get("realMultimodalCoverageRatio") or 0),
             "visualChunkCount": len(chunks),
+            "realMultimodalMineruAssetCount": int(document.get("realMultimodalMineruAssetCount") or 0),
+            "fallbackMineruAssetCount": int(document.get("fallbackMineruAssetCount") or 0),
+            "failedMineruAssetCount": int(document.get("failedMineruAssetCount") or 0),
+            "unprocessedMineruAssetCount": int(document.get("unprocessedMineruAssetCount") or 0),
             "status": document.get("visualAnalysisStatus", "not_requested"),
             "result": result_label(mode, document),
         }
@@ -226,6 +246,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     try:
+        logging.disable(logging.CRITICAL)
         load_local_env()
         args = parse_args()
         manual_path = resolve_manual_path()

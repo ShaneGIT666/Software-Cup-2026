@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from io import BytesIO
 import json
+import logging
 import os
 from pathlib import Path
 import subprocess
@@ -72,11 +73,16 @@ def extract_three_pages(source: Path, target: Path) -> None:
         writer.write(output)
 
 
-def base_record(renderer: dict[str, Any], multimodal: dict[str, Any]) -> dict[str, Any]:
+def base_record(
+    renderer: dict[str, Any],
+    multimodal: dict[str, Any],
+    provider_probe: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     return {
         "gitSha": git_sha(),
         "rendererReadiness": renderer,
         "multimodalReadiness": multimodal,
+        "providerProbe": provider_probe,
         "mode": "smart_multimodal",
         "pageCount": 3,
         "parser": "",
@@ -96,16 +102,24 @@ def base_record(renderer: dict[str, Any], multimodal: dict[str, Any]) -> dict[st
     }
 
 
-def run_smoke(three_page_pdf: Path, renderer: dict[str, Any], multimodal: dict[str, Any]) -> dict[str, Any]:
+def run_smoke(
+    three_page_pdf: Path,
+    renderer: dict[str, Any],
+    multimodal: dict[str, Any],
+    provider_probe: dict[str, Any],
+) -> dict[str, Any]:
     from backend.app import data_store
     from backend.app.main import app
 
-    record = base_record(renderer, multimodal)
+    record = base_record(renderer, multimodal, provider_probe)
     if not renderer["ready"] or not renderer["smokeRenderOk"]:
         record["result"] = "RENDERER_SMOKE_NO_GO"
         return record
     if not multimodal["ready"] or multimodal["provider"] == "mock":
         record["result"] = "MULTIMODAL_CONFIG_NO_GO"
+        return record
+    if not provider_probe["probeOk"]:
+        record["result"] = "MULTIMODAL_PROVIDER_PROBE_NO_GO"
         return record
 
     started = time.monotonic()
@@ -159,7 +173,10 @@ def run_smoke(three_page_pdf: Path, renderer: dict[str, Any], multimodal: dict[s
     )
     semantic_all = bool(chunks) and all(
         item.get("semanticVerified") is True
+        and item.get("imageInputSent") is True
         and item.get("analysisFallback") is False
+        and item.get("analysisProvider") not in {None, "", "mock"}
+        and item.get("analysisModel")
         and item.get("previewUrl")
         for item in chunks
     )
@@ -219,6 +236,7 @@ def run_smoke(three_page_pdf: Path, renderer: dict[str, Any], multimodal: dict[s
         parser=document.get("parser", ""),
         durationSeconds=round(time.monotonic() - started, 3),
         status=task.get("status", "failed"),
+        queueFileCleaned=not any((three_page_pdf.parent / "knowledge" / "parse-queue").glob("*")),
     )
     expected = int(document.get("visualPagesRendered") or 0)
     metrics_ok = bool(
@@ -231,6 +249,8 @@ def run_smoke(three_page_pdf: Path, renderer: dict[str, Any], multimodal: dict[s
         and float(document.get("visualCoverageRatio") or 0) == 1.0
         and float(document.get("realMultimodalCoverageRatio") or 0) == 1.0
         and int(document.get("visualChunkCount") or 0) == expected
+        and document.get("renderer") == renderer.get("renderer")
+        and record["queueFileCleaned"]
         and task.get("status") == "completed"
     )
     record["result"] = (
@@ -251,18 +271,20 @@ def write_result(record: dict[str, Any]) -> Path:
 
 def main() -> int:
     try:
+        logging.disable(logging.CRITICAL)
         load_local_env()
         manual = resolve_manual_path()
         TMP_ROOT.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(prefix="manual-smoke-", dir=TMP_ROOT) as temp_dir:
             three_page_pdf = Path(temp_dir) / "manual-three-pages.pdf"
             extract_three_pages(manual, three_page_pdf)
-            from backend.app.multimodal_adapter import multimodal_readiness
+            from backend.app.multimodal_adapter import multimodal_operational_probe, multimodal_readiness
             from backend.app.pdf_renderer import renderer_operational_readiness
 
             renderer = renderer_operational_readiness()
             multimodal = multimodal_readiness()
-            record = run_smoke(three_page_pdf, renderer, multimodal)
+            provider_probe = multimodal_operational_probe()
+            record = run_smoke(three_page_pdf, renderer, multimodal, provider_probe)
         output = write_result(record)
         print(f"three-page smoke completed: {output.name}")
         print(f"result: {record['result']}")
@@ -287,6 +309,7 @@ def main() -> int:
                 "ready": False,
                 "status": "unavailable",
             },
+            None,
         )
         safe_record["status"] = f"failed:{type(exc).__name__}"
         output = write_result(safe_record)
