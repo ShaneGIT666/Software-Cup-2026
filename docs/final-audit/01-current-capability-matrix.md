@@ -8,8 +8,9 @@
 | Secure role-token delivery configuration | VERIFIED_LOCAL | Init-config and auth contract tests |
 | Mock and fallback route | VERIFIED_LOCAL | Local API tests; not a real model claim |
 | Strict acceptance harness | VERIFIED_LOCAL | Fail-closed contract tests, Bash syntax, and pending-only local preflight |
-| Official manual API acceptance | OPTIONAL_UNVERIFIED | 41-page PDF is present on target; strict run stopped before API smoke |
-| LoongArch/Kylin acceptance for current SHA | OPTIONAL_UNVERIFIED | LoongArch64/Kylin V11 detected; first strict summary is `NO-GO` |
-| Real LLM | OPTIONAL_UNVERIFIED | Actual RAG response and non-fallback provider status required |
-| Real multimodal | OPTIONAL_UNVERIFIED | Actual image diagnosis and non-fallback analysis required |
-| Docker target route | OPTIONAL_UNVERIFIED | Docker 24.0.9 is present; strict container route has not passed |
+| Official manual workflow | VERIFIED_TARGET | 42 chunks approved, 10 search hits, 10 RAG citations, controlled download passed |
+| LoongArch/Kylin core | VERIFIED_TARGET | LoongArch64/Kylin V11 strict venv summary reported `TARGET_CORE_GO` |
+| Real text LLM qwen3.6-flash | VERIFIED_TARGET | OpenAI-compatible chat-completions, no fallback, raw answer and 10 citations |
+| Bailian multimodal adapter | VERIFIED_LOCAL | chat-completions image payload, fallback, responses path, and PDF-limit tests |
+| Real fault-image multimodal | OPTIONAL_UNVERIFIED | Intentionally skipped; no field fault image was supplied |
+| Docker target route | OPTIONAL_UNVERIFIED | Docker CLI exists but daemon socket was unavailable |
