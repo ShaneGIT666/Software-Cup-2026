@@ -2,6 +2,24 @@
 import { computed, ref } from "vue";
 import { ElMessage } from "element-plus";
 import {
+  Activity,
+  BookOpenCheck,
+  Bot,
+  Boxes,
+  ChevronRight,
+  ClipboardCheck,
+  Database,
+  LayoutDashboard,
+  Menu,
+  Network,
+  PanelLeftClose,
+  PanelLeftOpen,
+  RefreshCw,
+  Settings2,
+  ShieldCheck,
+  Wrench
+} from "@lucide/vue";
+import {
   clearAuthToken,
   fetchKnowledgeGraph,
   fetchKnowledgeGraphOverview,
@@ -36,8 +54,11 @@ import ReviewPanel from "./components/ReviewPanel.vue";
 import WorkflowPanel from "./components/WorkflowPanel.vue";
 
 type ActiveArea = "assistant" | "management" | "status";
+type ManagementTab = "knowledge" | "review" | "cases" | "graph" | "history";
 
 const activeArea = ref<ActiveArea>("assistant");
+const activeManagementTab = ref<ManagementTab>("knowledge");
+const sidebarCollapsed = ref(false);
 const deviceModel = ref("发动机-示例型号 A");
 const faultText = ref("启动困难，怠速不稳，排气异常");
 const maintenanceLevel = ref("normal_repair");
@@ -72,12 +93,6 @@ const caseForm = ref({
   tags: "启动困难, 点火系统, 火花塞"
 });
 
-const navItems: Array<{ key: ActiveArea; label: string; desc: string }> = [
-  { key: "assistant", label: "检修助手", desc: "一线作业链路" },
-  { key: "management", label: "管理中心", desc: "资料与审核" },
-  { key: "status", label: "系统状态", desc: "模型与部署" }
-];
-
 const workflowSteps = [
   { index: "1", title: "描述故障", detail: "录入设备、现象和图片线索" },
   { index: "2", title: "查看依据", detail: "仅使用已审核资料" },
@@ -86,10 +101,31 @@ const workflowSteps = [
   { index: "5", title: "提交经验", detail: "沉淀现场处理经验" }
 ];
 
+const managementTabs: Array<{ key: ManagementTab; label: string }> = [
+  { key: "knowledge", label: "资料管理" },
+  { key: "review", label: "审核工作台" },
+  { key: "cases", label: "案例与反馈" },
+  { key: "graph", label: "知识图谱" },
+  { key: "history", label: "审核记录" }
+];
+
 const resultCount = computed(() => searchPayload.value?.results.length ?? 0);
 const documentNodeCount = computed(() => knowledgeGraph.value?.nodes.filter((node) => node.type === "document").length ?? 0);
 const graphEdgeCount = computed(() => knowledgeGraph.value?.edges.length ?? 0);
 const systemStatus = computed(() => providerStatus.value?.system ?? null);
+const activeAreaLabel = computed(() => {
+  if (activeArea.value === "management") {
+    return "管理中心";
+  }
+  if (activeArea.value === "status") {
+    return "系统状态";
+  }
+  return "检修助手";
+});
+const statusGeneratedAt = computed(() => {
+  const generatedAt = systemStatus.value?.generatedAt;
+  return generatedAt ? generatedAt.slice(0, 19).replace("T", " ") : "等待服务响应";
+});
 
 const diagnosisSummary = computed(() => {
   const diagnosis = multimodalDiagnosis.value;
@@ -215,6 +251,13 @@ function switchArea(area: ActiveArea) {
   activeArea.value = area;
   if (area === "status") {
     refreshProviderStatus();
+  }
+}
+
+function openManagementTab(tab: ManagementTab) {
+  activeManagementTab.value = tab;
+  if (tab === "graph") {
+    loadKnowledgeGraphOverview();
   }
 }
 
@@ -425,72 +468,116 @@ refreshProviderStatus();
 </script>
 
 <template>
-  <main class="shell">
-    <header class="app-header">
-      <div class="brand-block">
-        <span class="product-kicker">中国软件杯 A1 · 设备检修知识检索与作业辅助系统</span>
-        <h1>面向现场检修的知识检索与作业助手</h1>
-        <p>
-          按 5 步完成一次检修辅助：描述故障 → 查看依据 → 生成指引 → 复核修正 → 提交经验。
-        </p>
+  <main class="shell" :class="{ 'sidebar-is-collapsed': sidebarCollapsed }">
+    <aside class="app-sidebar">
+      <div class="sidebar-brand">
+        <span class="brand-mark"><Wrench :size="19" /></span>
+        <div class="brand-copy">
+          <strong>设备检修</strong>
+          <small>知识与作业辅助</small>
+        </div>
       </div>
-      <nav class="main-nav" aria-label="主功能区域">
-        <button
-          v-for="item in navItems"
-          :key="item.key"
-          type="button"
-          :class="{ active: activeArea === item.key }"
-          @click="switchArea(item.key)"
-        >
-          <strong>{{ item.label }}</strong>
-          <span>{{ item.desc }}</span>
+
+      <nav class="sidebar-nav" aria-label="主功能区域">
+        <button :class="{ active: activeArea === 'assistant' }" type="button" @click="switchArea('assistant')">
+          <Bot :size="18" />
+          <span><strong>检修助手</strong><small>现场作业链路</small></span>
+        </button>
+        <button :class="{ active: activeArea === 'management' }" type="button" @click="switchArea('management')">
+          <LayoutDashboard :size="18" />
+          <span><strong>管理中心</strong><small>资料与审核</small></span>
+        </button>
+        <button :class="{ active: activeArea === 'status' }" type="button" @click="switchArea('status')">
+          <Activity :size="18" />
+          <span><strong>系统状态</strong><small>模型与部署</small></span>
         </button>
       </nav>
-    </header>
 
-    <section v-if="activeArea === 'assistant'" class="area-section assistant-area">
-      <div class="area-intro">
-        <div>
-          <h2>检修助手</h2>
-          <p>输入设备型号、故障现象和检修等级；可上传现场故障图片，系统会提取图片识别线索辅助诊断。</p>
-        </div>
-        <el-button plain @click="useDemoSample">使用演示样例</el-button>
+      <div class="sidebar-context">
+        <ShieldCheck :size="17" />
+        <span>仅使用已审核知识</span>
       </div>
+      <button
+        class="sidebar-collapse"
+        type="button"
+        :aria-label="sidebarCollapsed ? '展开侧边栏' : '收起侧边栏'"
+        :title="sidebarCollapsed ? '展开侧边栏' : '收起侧边栏'"
+        @click="sidebarCollapsed = !sidebarCollapsed"
+      >
+        <PanelLeftOpen v-if="sidebarCollapsed" :size="18" />
+        <PanelLeftClose v-else :size="18" />
+      </button>
+    </aside>
 
-      <ol class="workflow-strip" aria-label="五步检修辅助流程">
-        <li v-for="step in workflowSteps" :key="step.index">
-          <span>{{ step.index }}</span>
+    <div class="app-frame">
+      <header class="top-status-bar">
+        <div class="topbar-location">
+          <button class="compact-sidebar-toggle" type="button" aria-label="切换导航栏" @click="sidebarCollapsed = !sidebarCollapsed">
+            <Menu :size="18" />
+          </button>
+          <span>设备检修知识检索与作业辅助系统</span>
+          <ChevronRight :size="14" />
+          <strong>{{ activeAreaLabel }}</strong>
+        </div>
+        <div class="topbar-signals">
+          <span class="live-signal" :class="{ offline: providerStatus?.offlineFallback }">
+            <i></i>{{ providerModeLabel }}
+          </span>
+          <span>{{ statusGeneratedAt }}</span>
+        </div>
+      </header>
+
+      <section v-if="activeArea === 'assistant'" class="area-section assistant-area">
+        <div class="area-intro">
           <div>
-            <strong>{{ step.title }}</strong>
-            <small>{{ step.detail }}</small>
+            <span class="section-eyebrow">现场作业台</span>
+            <h1>检修助手</h1>
+            <p>从故障描述到依据核验、作业指引与经验沉淀，全程保留证据和模型来源。</p>
           </div>
-        </li>
-      </ol>
+          <div class="area-actions">
+            <el-button plain @click="useDemoSample">载入演示工况</el-button>
+            <el-button type="primary" :loading="loading" @click="runSearch">
+              <RefreshCw :size="15" />重新检索
+            </el-button>
+          </div>
+        </div>
 
-      <section class="workspace assistant-workspace">
-        <QueryPanel
-          v-model:device-model="deviceModel"
-          v-model:fault-text="faultText"
-          v-model:maintenance-level="maintenanceLevel"
-          :loading="loading"
-          :diagnosis-loading="diagnosisLoading"
-          :result-count="resultCount"
-          :step-count="selectedWorkflow?.steps.length ?? 0"
-          :upload-result="uploadResult"
-          :uploading="uploading"
-          :diagnosis-summary="diagnosisSummary"
-          :diagnosis-fallback="multimodalDiagnosis?.fallback ?? false"
-          :multimodal-signals="multimodalDiagnosis?.multimodalSignals ?? null"
-          @search="runSearch"
-          @upload="uploadFile"
-          @diagnose="runMultimodalDiagnosis"
-          @demo="useDemoSample"
-        />
-        <ResultsPanel :search-payload="searchPayload" :selected-result="selectedResult" @open-workflow="openWorkflow" />
-        <WorkflowPanel :selected-workflow="selectedWorkflow" />
-      </section>
+        <ol class="workflow-strip" aria-label="五步检修辅助流程">
+          <li
+            v-for="step in workflowSteps"
+            :key="step.index"
+            :class="{ complete: Number(step.index) === 1 || (Number(step.index) === 2 && resultCount > 0) }"
+          >
+            <span>{{ step.index }}</span>
+            <div><strong>{{ step.title }}</strong><small>{{ step.detail }}</small></div>
+          </li>
+        </ol>
 
-      <section class="assistant-followup" aria-label="智能建议与经验沉淀">
+        <section class="workspace assistant-workspace">
+          <QueryPanel
+            v-model:device-model="deviceModel"
+            v-model:fault-text="faultText"
+            v-model:maintenance-level="maintenanceLevel"
+            :loading="loading"
+            :diagnosis-loading="diagnosisLoading"
+            :result-count="resultCount"
+            :step-count="selectedWorkflow?.steps.length ?? 0"
+            :upload-result="uploadResult"
+            :uploading="uploading"
+            :diagnosis-summary="diagnosisSummary"
+            :diagnosis-fallback="multimodalDiagnosis?.fallback ?? false"
+            :multimodal-signals="multimodalDiagnosis?.multimodalSignals ?? null"
+            @search="runSearch"
+            @upload="uploadFile"
+            @diagnose="runMultimodalDiagnosis"
+            @demo="useDemoSample"
+          />
+          <div class="assistant-output-column">
+            <ResultsPanel :search-payload="searchPayload" :selected-result="selectedResult" @open-workflow="openWorkflow" />
+            <WorkflowPanel :selected-workflow="selectedWorkflow" />
+          </div>
+        </section>
+
         <RagPanel
           :rag-answer="ragAnswer"
           :loading="ragLoading"
@@ -500,141 +587,146 @@ refreshProviderStatus();
           @answer="generateRagAnswer"
           @feedback="submitRagAnswerFeedback"
         />
-        <CasePanel
-          v-model:device-type="caseForm.deviceType"
-          v-model:component="caseForm.component"
-          v-model:fault-code="caseForm.faultCode"
-          v-model:risk-level="caseForm.riskLevel"
-          v-model:maintenance-level="caseForm.maintenanceLevel"
-          v-model:workflow-id="caseForm.workflowId"
-          v-model:cause="caseForm.cause"
-          v-model:solution="caseForm.solution"
-          v-model:result="caseForm.result"
-          v-model:tags="caseForm.tags"
-          :submitting="submitting"
-          @submit="createCase"
-        />
-      </section>
-    </section>
 
-    <section v-else-if="activeArea === 'management'" class="area-section management-area">
-      <div class="area-intro">
-        <div>
-          <h2>管理中心</h2>
-          <p>用于上传维修手册和现场资料，审核资料片段、案例经验和回答修正，并查看知识沉淀结果。</p>
-        </div>
-        <el-button plain :loading="graphLoading" @click="loadKnowledgeGraphOverview">查看知识关系图总览</el-button>
-      </div>
-
-      <section class="management-grid">
-        <div class="area-group-title">资料入库</div>
-        <KnowledgePanel />
-        <div class="area-group-title">待审核内容</div>
-        <ReviewPanel ref="reviewPanel" />
-        <div class="area-group-title">审核记录</div>
-        <ReviewEventsPanel />
-        <div class="area-group-title">知识关系图</div>
-        <KnowledgeGraphPanel
-          :graph="knowledgeGraph"
-          :loading="graphLoading"
-          @refresh="refreshKnowledgeGraph"
-          @overview="loadKnowledgeGraphOverview"
-          @rebuild="rebuildKnowledgeGraphOverview"
-        />
-      </section>
-    </section>
-
-    <section v-else class="area-section status-area">
-      <div class="area-intro">
-        <div>
-          <h2>系统状态</h2>
-          <p>集中查看模型服务、OCR、多模态、向量检索、离线兜底和 LoongArch / Kylin 适配状态。</p>
-        </div>
-        <el-button plain @click="refreshProviderStatus">刷新状态</el-button>
-      </div>
-
-      <section class="status-overview">
-        <article class="status-panel" :class="providerToneClass">
-          <span>当前运行模式</span>
-          <strong>{{ providerModeLabel }}</strong>
-          <small>{{ providerDetailLabel }}</small>
-        </article>
-        <article v-for="item in statusCards" :key="item.label" class="status-card">
-          <span>{{ item.label }}</span>
-          <strong>{{ item.value }}</strong>
-          <small>{{ item.detail }}</small>
-        </article>
-      </section>
-
-      <section class="status-detail-grid">
-        <article class="system-card auth-session-card">
-          <h3>Session access token</h3>
-          <p v-if="systemStatus?.auth?.mode === 'off'">AUTH_MODE=off. Offline demo mode has API protection disabled.</p>
-          <p v-else-if="systemStatus?.auth?.mode === 'token'">AUTH_MODE=token. Protected actions require a bearer token.</p>
-          <p v-else>Auth mode status is unavailable or misconfigured.</p>
-          <el-input
-            v-model="authTokenInput"
-            type="password"
-            show-password
-            placeholder="Paste operator, reviewer, or admin token"
+        <details class="case-disclosure">
+          <summary><ClipboardCheck :size="17" />步骤 5：沉淀现场案例与反馈</summary>
+          <CasePanel
+            v-model:device-type="caseForm.deviceType"
+            v-model:component="caseForm.component"
+            v-model:fault-code="caseForm.faultCode"
+            v-model:risk-level="caseForm.riskLevel"
+            v-model:maintenance-level="caseForm.maintenanceLevel"
+            v-model:workflow-id="caseForm.workflowId"
+            v-model:cause="caseForm.cause"
+            v-model:solution="caseForm.solution"
+            v-model:result="caseForm.result"
+            v-model:tags="caseForm.tags"
+            :submitting="submitting"
+            @submit="createCase"
           />
-          <div class="auth-actions">
-            <el-button type="primary" @click="saveSessionAuthToken">Save for session</el-button>
-            <el-button plain @click="clearSessionAuthToken">Clear</el-button>
-          </div>
-          <small>{{ authTokenConfigured ? "Token configured for current session." : "No session token configured." }}</small>
-          <small>Stored only in sessionStorage; it disappears when this browser session ends and is not bundled into source or build output.</small>
-        </article>
-
-        <article class="system-card">
-          <h3>系统指标</h3>
-          <div v-if="systemMetricItems.length" class="status-metrics">
-            <div v-for="item in systemMetricItems" :key="item.label">
-              <b>{{ item.value }}</b>
-              <span>{{ item.label }}</span>
-              <small>{{ item.detail }}</small>
-            </div>
-          </div>
-          <div v-else class="empty-hint">
-            <span>暂未读取到系统指标，请确认后端服务已启动。</span>
-          </div>
-          <div v-if="systemSignalItems.length" class="status-signals">
-            <span v-for="item in systemSignalItems" :key="item">{{ item }}</span>
-          </div>
-        </article>
-
-        <article class="system-card">
-          <h3>初始化配置</h3>
-          <p>系统支持离线演示模式和真实 LLM 模式。配置完成后请重启服务，并刷新系统状态页查看模型服务状态。</p>
-          <div class="command-list">
-            <code>powershell -ExecutionPolicy Bypass -File .\scripts\init-config.ps1</code>
-            <code>bash scripts/init-config.sh</code>
-          </div>
-          <small>前端不会保存 API Key；真实 Key 只写入本地未提交的 .env，并在脚本输出中脱敏显示。</small>
-        </article>
-
-        <article class="system-card">
-          <h3>LoongArch / Kylin 说明</h3>
-          <p>
-            主链路按比赛环境优先：真实模型通过 OpenAI-compatible 配置接入，向量增强和文档解析保留 fallback；
-            Chroma、Qdrant、sqlite-vec 为可选增强，不作为现场演示硬依赖。
-          </p>
-        </article>
-
-        <article class="system-card">
-          <h3>常见说明</h3>
-          <details open>
-            <summary>术语解释</summary>
-            <ul>
-              <li>参考依据：系统从已审核资料、案例和手册中匹配出的依据。</li>
-              <li>仅使用已审核资料：待审核或被拒绝的内容不会进入正式建议。</li>
-              <li>离线兜底：真实模型不可用时，系统仍可使用本地演示能力完成流程。</li>
-              <li>人工复核：当证据不足或风险较高时，需要现场人员确认后再执行。</li>
-              <li>知识关系图：展示设备、故障、资料、案例、流程和回答修正之间的关系。</li>
-            </ul>
-          </details>
-        </article>
+        </details>
       </section>
-    </section>
+
+      <section v-else-if="activeArea === 'management'" class="area-section management-area">
+        <div class="area-intro">
+          <div>
+            <span class="section-eyebrow">知识治理</span>
+            <h1>管理中心</h1>
+            <p>资料入库、内容审核、案例反馈和知识关系统一在一个可追溯工作区内完成。</p>
+          </div>
+        </div>
+        <nav class="management-tabs" aria-label="管理中心功能">
+          <button
+            v-for="tab in managementTabs"
+            :key="tab.key"
+            type="button"
+            :class="{ active: activeManagementTab === tab.key }"
+            @click="openManagementTab(tab.key)"
+          >
+            {{ tab.label }}
+          </button>
+        </nav>
+        <section class="management-workspace">
+          <KnowledgePanel v-if="activeManagementTab === 'knowledge'" />
+          <ReviewPanel v-else-if="activeManagementTab === 'review'" ref="reviewPanel" />
+          <CasePanel
+            v-else-if="activeManagementTab === 'cases'"
+            v-model:device-type="caseForm.deviceType"
+            v-model:component="caseForm.component"
+            v-model:fault-code="caseForm.faultCode"
+            v-model:risk-level="caseForm.riskLevel"
+            v-model:maintenance-level="caseForm.maintenanceLevel"
+            v-model:workflow-id="caseForm.workflowId"
+            v-model:cause="caseForm.cause"
+            v-model:solution="caseForm.solution"
+            v-model:result="caseForm.result"
+            v-model:tags="caseForm.tags"
+            :submitting="submitting"
+            @submit="createCase"
+          />
+          <KnowledgeGraphPanel
+            v-else-if="activeManagementTab === 'graph'"
+            :graph="knowledgeGraph"
+            :loading="graphLoading"
+            @refresh="refreshKnowledgeGraph"
+            @overview="loadKnowledgeGraphOverview"
+            @rebuild="rebuildKnowledgeGraphOverview"
+          />
+          <ReviewEventsPanel v-else />
+        </section>
+      </section>
+
+      <section v-else class="area-section status-area">
+        <div class="area-intro">
+          <div>
+            <span class="section-eyebrow">运行与验收</span>
+            <h1>系统状态</h1>
+            <p>查看模型通道、知识服务、鉴权和 LoongArch / 银河麒麟实机验收结论。</p>
+          </div>
+          <el-button plain @click="refreshProviderStatus"><RefreshCw :size="15" />刷新状态</el-button>
+        </div>
+
+        <section class="status-overview">
+          <article class="status-panel" :class="providerToneClass">
+            <span>当前运行模式</span><strong>{{ providerModeLabel }}</strong><small>{{ providerDetailLabel }}</small>
+          </article>
+          <article v-for="item in statusCards" :key="item.label" class="status-card">
+            <span>{{ item.label }}</span><strong>{{ item.value }}</strong><small>{{ item.detail }}</small>
+          </article>
+        </section>
+
+        <section class="acceptance-board">
+          <div class="acceptance-heading">
+            <div><h2>阶段 2 部署验收</h2><p>结论与当前验收文档保持一致，不把未验证项标记为通过。</p></div>
+            <el-tag type="warning" effect="plain">暂不形成最终 GO</el-tag>
+          </div>
+          <div class="acceptance-list">
+            <div><ShieldCheck :size="17" /><span><strong>LoongArch 核心链路</strong><small>已完成实机核心链路验证</small></span><b class="is-pass">已验证</b></div>
+            <div><BookOpenCheck :size="17" /><span><strong>人工检索与作业流程</strong><small>已完成现场手工验收</small></span><b class="is-pass">已验证</b></div>
+            <div><Bot :size="17" /><span><strong>真实文本模型</strong><small>qwen3.6-flash OpenAI-compatible 链路</small></span><b class="is-pass">已验证</b></div>
+            <div><Boxes :size="17" /><span><strong>真实故障图片 / Docker</strong><small>图片样本与 Docker 环境仍待补齐</small></span><b class="is-pending">未验证</b></div>
+          </div>
+        </section>
+
+        <section class="status-detail-grid">
+          <article class="system-card auth-session-card">
+            <h3>会话访问令牌</h3>
+            <p v-if="systemStatus?.auth?.mode === 'off'">当前 AUTH_MODE=off，离线演示未启用 API 鉴权。</p>
+            <p v-else-if="systemStatus?.auth?.mode === 'token'">当前 AUTH_MODE=token，受保护操作需要 Bearer Token。</p>
+            <p v-else>鉴权状态暂不可用，请检查后端配置。</p>
+            <el-input v-model="authTokenInput" type="password" show-password placeholder="输入 operator / reviewer / admin token" />
+            <div class="auth-actions">
+              <el-button type="primary" @click="saveSessionAuthToken">保存到本次会话</el-button>
+              <el-button plain @click="clearSessionAuthToken">清除</el-button>
+            </div>
+            <small>{{ authTokenConfigured ? "当前会话已配置 Token。" : "当前会话未配置 Token。" }}</small>
+            <small>仅存储于 sessionStorage，关闭会话后自动失效；前端不会回显或写入构建产物。</small>
+          </article>
+
+          <article class="system-card">
+            <h3>知识服务指标</h3>
+            <div v-if="systemMetricItems.length" class="status-metrics">
+              <div v-for="item in systemMetricItems" :key="item.label">
+                <b>{{ item.value }}</b><span>{{ item.label }}</span><small>{{ item.detail }}</small>
+              </div>
+            </div>
+            <div v-else class="empty-hint"><span>暂未读取到系统指标，请确认后端服务已启动。</span></div>
+            <div v-if="systemSignalItems.length" class="status-signals">
+              <span v-for="item in systemSignalItems" :key="item">{{ item }}</span>
+            </div>
+          </article>
+
+          <article class="system-card">
+            <h3>部署策略</h3>
+            <p>真实模型使用 OpenAI-compatible 配置；文档解析、向量增强与 OCR 均保留明确降级路径。</p>
+            <div class="deployment-facts">
+              <span><Database :size="15" />Chroma / Qdrant / sqlite-vec 为可选增强</span>
+              <span><Network :size="15" />远程模型失败时记录 fallback 原因</span>
+              <span><Settings2 :size="15" />API Key 仅保存在本地未提交的 .env</span>
+            </div>
+          </article>
+        </section>
+      </section>
+    </div>
   </main>
 </template>
