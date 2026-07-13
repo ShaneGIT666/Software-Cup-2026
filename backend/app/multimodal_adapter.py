@@ -29,6 +29,66 @@ def configured_multimodal_provider(requested_provider: str | None) -> str:
     return configured_multimodal_provider_from_policy(requested_provider)
 
 
+def multimodal_readiness(requested_provider: str | None = None) -> dict[str, Any]:
+    provider = configured_multimodal_provider(requested_provider)
+    remote_allowed = provider == "local" or not remote_api_disabled()
+    credential_configured = False
+    endpoint_configured = False
+    model = ""
+
+    if provider == "mock":
+        status = "mock"
+    elif provider == "openai":
+        credential_configured = bool(multimodal_openai_api_key())
+        model = os.getenv("MULTIMODAL_OPENAI_MODEL", "").strip() or os.getenv("OPENAI_MODEL", "").strip()
+        endpoint_configured = True
+        if not credential_configured:
+            status = "missing_key"
+        elif not model:
+            status = "missing_model"
+        elif not remote_allowed:
+            status = "remote_disabled"
+        else:
+            status = "ready"
+    elif provider == "local":
+        credential_configured = True
+        model = os.getenv("LOCAL_MULTIMODAL_MODEL", "").strip() or os.getenv("LOCAL_LLM_MODEL", "").strip()
+        endpoint_configured = bool(
+            os.getenv("LOCAL_MULTIMODAL_BASE_URL", "").strip()
+            or os.getenv("LOCAL_LLM_BASE_URL", "").strip()
+        )
+        if not model:
+            status = "missing_model"
+        elif not endpoint_configured:
+            status = "missing_endpoint"
+        else:
+            status = "ready"
+    elif provider == "anthropic":
+        credential_configured = bool(os.getenv("ANTHROPIC_API_KEY", "").strip())
+        model = os.getenv("ANTHROPIC_MODEL", "").strip()
+        endpoint_configured = True
+        if not credential_configured:
+            status = "missing_key"
+        elif not model:
+            status = "missing_model"
+        elif not remote_allowed:
+            status = "remote_disabled"
+        else:
+            status = "ready"
+    else:
+        status = "unsupported_provider"
+
+    return {
+        "provider": provider,
+        "model": model,
+        "credentialConfigured": credential_configured,
+        "endpointConfigured": endpoint_configured,
+        "remoteAllowed": remote_allowed,
+        "ready": status == "ready",
+        "status": status,
+    }
+
+
 def mime_type_for_suffix(suffix: str) -> str:
     return {
         "pdf": "application/pdf",
@@ -88,6 +148,7 @@ def mock_multimodal_analysis(
         "fallback": True,
         "fallbackReason": fallback_reason or "未配置真实多模态模型或真实模型不可用，已使用 mock provider 保证演示连续性。",
         "semanticVerified": False,
+        "imageInputSent": False,
         "model": "mock",
         "fileName": file_name,
         "ocr": ocr_result or {},
@@ -195,6 +256,7 @@ def manual_page_from_model_text(
     file_name: str,
     provider: str,
     model: str,
+    image_input_sent: bool = False,
 ) -> dict[str, Any]:
     clean_text = text.strip()
     try:
@@ -217,6 +279,7 @@ def manual_page_from_model_text(
             "fallback": True,
             "fallbackReason": f"manual page JSON parse failed: {exc}",
             "semanticVerified": False,
+            "imageInputSent": image_input_sent,
             "fileName": file_name,
         }
     allowed_types = {
@@ -226,6 +289,20 @@ def manual_page_from_model_text(
     visual_type = str(payload.get("visualType") or "unknown")
     if visual_type not in allowed_types:
         visual_type = "unknown"
+    has_semantic_content = any(
+        (
+            str(payload.get("summary") or "").strip(),
+            payload.get("components") or [],
+            payload.get("operations") or [],
+            payload.get("figureLabels") or [],
+        )
+    )
+    semantic_verified = bool(
+        provider in {"openai", "local", "anthropic"}
+        and image_input_sent
+        and model.strip()
+        and has_semantic_content
+    )
     result = {
         "visualType": visual_type,
         "summary": str(payload.get("summary") or "").strip(),
@@ -239,7 +316,8 @@ def manual_page_from_model_text(
         "model": model,
         "fallback": False,
         "fallbackReason": "",
-        "semanticVerified": provider in {"openai", "local"},
+        "semanticVerified": semantic_verified,
+        "imageInputSent": image_input_sent,
         "fileName": file_name,
     }
     result["textSegments"] = [result["summary"]] if result["summary"] else []
@@ -273,6 +351,8 @@ def real_multimodal_analysis(
     content = file_path.read_bytes()
     file_name = file_path.name
     timeout = timeout_seconds or float(os.getenv("MULTIMODAL_TIMEOUT_SECONDS", os.getenv("LLM_TIMEOUT_SECONDS", "30")))
+    if analysis_task == "manual_page" and suffix == "pdf":
+        raise RuntimeError("manual_page analysis requires a rendered image input")
     if analysis_task == "manual_page":
         prompt = (
             "你是设备维修手册页面视觉分析器。只能根据当前图片、OCR 和附近正文判断；不得编造页码，"
@@ -419,7 +499,13 @@ def real_multimodal_analysis(
     if not text:
         raise RuntimeError("多模态模型返回内容为空")
     if analysis_task == "manual_page":
-        return manual_page_from_model_text(text, file_name, provider, model)
+        return manual_page_from_model_text(
+            text,
+            file_name,
+            provider,
+            model,
+            image_input_sent=suffix in {"jpg", "jpeg", "png", "webp"},
+        )
     result = structured_from_model_text(text, file_name, source_name, provider, provider)
     result["model"] = model
     result["semanticVerified"] = False

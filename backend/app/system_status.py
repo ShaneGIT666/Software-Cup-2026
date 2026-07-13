@@ -20,7 +20,8 @@ from .data_store import (
 )
 from .mineru_adapter import mineru_readiness
 from .parser_modes import DEFAULT_PARSER_MODE, resolve_parser_policy
-from .pdf_renderer import renderer_readiness
+from .multimodal_adapter import multimodal_readiness
+from .pdf_renderer import renderer_operational_readiness
 from .review_policy import is_current_approved_chunk
 from .vector_store import (
     json_vector_index_path,
@@ -175,13 +176,7 @@ def mineru_status() -> dict[str, Any]:
 def manual_visual_status() -> dict[str, Any]:
     smart = resolve_parser_policy("smart_multimodal")
     full = resolve_parser_policy("full_visual")
-    provider = os.getenv("MULTIMODAL_PROVIDER", "mock").strip().lower()
-    real_configured = bool(
-        provider in {"openai", "local"}
-        and os.getenv("MULTIMODAL_OPENAI_API_KEY", "").strip()
-        and os.getenv("MULTIMODAL_OPENAI_MODEL", "").strip()
-        and os.getenv("REMOTE_API_MODE", "off").strip().lower() != "off"
-    )
+    multimodal = multimodal_readiness()
     return {
         "defaultMode": DEFAULT_PARSER_MODE,
         "smartMaxPages": smart.visual_page_limit,
@@ -189,7 +184,8 @@ def manual_visual_status() -> dict[str, Any]:
         "fullMaxAssets": max(0, int(os.getenv("FULL_VISUAL_MAX_ASSETS", "500"))),
         "smartDpi": smart.render_dpi,
         "fullDpi": full.render_dpi,
-        "realMultimodalConfigured": real_configured,
+        "realMultimodalConfigured": multimodal["ready"],
+        "multimodalReadiness": multimodal,
     }
 
 
@@ -400,7 +396,7 @@ def build_system_status() -> dict[str, Any]:
         },
         "parsing": {
             "mineru": mineru_status(),
-            "pdfRenderer": renderer_readiness(),
+            "pdfRenderer": renderer_operational_readiness(),
             "manualVisual": manual_visual_status(),
             "lastParse": latest_parse_task(documents),
             "latestTask": latest_parse_task(documents),

@@ -5,13 +5,14 @@ from datetime import datetime, timezone
 import os
 from pathlib import Path
 import re
+import shutil
 from typing import Any, Callable
 
 from fastapi import HTTPException
 
 from .multimodal_adapter import analyze_multimodal_document
 from .parser_modes import ParserPolicy
-from .pdf_renderer import render_pdf_page, renderer_readiness
+from .pdf_renderer import RendererUnavailable, render_pdf_page, renderer_operational_readiness
 
 
 VISUAL_KEYWORDS = (
@@ -21,6 +22,36 @@ VISUAL_KEYWORDS = (
 )
 SAFE_MINERU_ASSET_ID = re.compile(r"^mineru-[a-z0-9][a-z0-9_-]{0,63}$")
 ProgressCallback = Callable[[str, int, int], None]
+
+
+def empty_visual_result(
+    *,
+    page_count: int,
+    status: str,
+    renderer: str,
+    failure_reason: str = "",
+) -> dict[str, Any]:
+    return {
+        "pageCount": page_count,
+        "visualCandidatePages": 0,
+        "visualPagesRendered": 0,
+        "visualPagesOcrProcessed": 0,
+        "visualPagesAnalyzed": 0,
+        "realMultimodalPages": 0,
+        "fallbackVisualPages": 0,
+        "visualCoverageRatio": 0.0,
+        "realMultimodalCoverageRatio": 0.0,
+        "visualFailedPages": [],
+        "renderer": renderer,
+        "visualChunks": [],
+        "visualChunkCount": 0,
+        "visualFailureReason": failure_reason,
+        "mineruAssetCount": 0,
+        "analyzedMineruAssetCount": 0,
+        "mineruAssetsTruncated": False,
+        "unprocessedMineruAssetCount": 0,
+        "status": status,
+    }
 
 
 def _image_object_count(page: Any) -> int:
@@ -128,6 +159,7 @@ def _visual_result(
         "fallback": bool(analysis.get("fallback", True)),
         "fallbackReason": str(analysis.get("fallbackReason") or ""),
         "semanticVerified": bool(analysis.get("semanticVerified", False)),
+        "imageInputSent": bool(analysis.get("imageInputSent", False)),
     }
 
 
@@ -226,7 +258,11 @@ def build_visual_chunk(
         if asset_type == "page_visual"
         else f"{document['id']}-{asset_id}"
     )
-    section = f"pdf-page-{page}" if page else "mineru-asset"
+    section = (
+        f"pdf-page-{page}"
+        if page
+        else "uploaded-image" if asset_type == "uploaded_image" else "mineru-asset"
+    )
     chunk = {
         "id": chunk_id,
         "chunk_id": chunk_id,
@@ -262,6 +298,7 @@ def build_visual_chunk(
         "analysisFallback": bool(analysis.get("fallback", True)),
         "analysisFallbackReason": analysis.get("fallbackReason", ""),
         "semanticVerified": bool(analysis.get("semanticVerified", False)),
+        "imageInputSent": bool(analysis.get("imageInputSent", False)),
         "keywords": list(
             dict.fromkeys(
                 [
@@ -287,6 +324,59 @@ def build_visual_chunk(
     return chunk
 
 
+def process_image_document(
+    document: dict[str, Any],
+    image_path: Path,
+    requested_provider: str | None = None,
+    progress_callback: ProgressCallback | None = None,
+) -> dict[str, Any]:
+    visual_dir = image_path.parent.parent / "parsed" / str(document["id"]) / "visual-assets"
+    visual_dir.mkdir(parents=True, exist_ok=True)
+    suffix = image_path.suffix.lower() or ".jpg"
+    output_path = visual_dir / f"image-0001{suffix}"
+    shutil.copy2(image_path, output_path)
+    if progress_callback:
+        progress_callback("multimodal", 0, 1)
+    analysis = analyze_multimodal_document(
+        output_path,
+        output_path.name,
+        suffix.lstrip("."),
+        requested_provider,
+        analysis_task="manual_page",
+        timeout_seconds=float(os.getenv("MANUAL_VISUAL_TIMEOUT_SECONDS", "45")),
+    )
+    normalized = _visual_result(analysis, analysis.get("ocr", {}), "")
+    result = {
+        "assetId": "image-0001",
+        "assetType": "uploaded_image",
+        "page": None,
+        "assetFile": output_path,
+        "renderer": "not_required",
+        "ocrProcessed": True,
+        "analysisProcessed": True,
+        "analysis": normalized,
+    }
+    chunk = build_visual_chunk(document, result, f"visual-assets/{output_path.name}")
+    fallback = bool(normalized.get("fallback"))
+    semantic_verified = bool(normalized.get("semanticVerified"))
+    status = "completed_with_warnings" if fallback else "completed"
+    if progress_callback:
+        progress_callback("multimodal", 1, 1)
+    return {
+        **empty_visual_result(page_count=1, status=status, renderer="not_required"),
+        "visualCandidatePages": 1,
+        "visualPagesOcrProcessed": 1,
+        "visualPagesAnalyzed": 1,
+        "realMultimodalPages": int(semantic_verified),
+        "fallbackVisualPages": int(fallback),
+        "visualCoverageRatio": 1.0,
+        "realMultimodalCoverageRatio": 1.0 if semantic_verified else 0.0,
+        "visualChunks": [chunk],
+        "visualChunkCount": 1,
+        "visualFailureReason": str(normalized.get("fallbackReason") or "") if fallback else "",
+    }
+
+
 def run_manual_visual_pipeline(
     document: dict[str, Any],
     pdf_path: Path,
@@ -296,26 +386,12 @@ def run_manual_visual_pipeline(
     progress_callback: ProgressCallback | None = None,
 ) -> dict[str, Any]:
     if policy.render_scope == "none":
-        return {
-            "pageCount": 0,
-            "visualCandidatePages": 0,
-            "visualPagesRendered": 0,
-            "visualPagesOcrProcessed": 0,
-            "visualPagesAnalyzed": 0,
-            "realMultimodalPages": 0,
-            "fallbackVisualPages": 0,
-            "visualCoverageRatio": 0.0,
-            "realMultimodalCoverageRatio": 0.0,
-            "visualFailedPages": [],
-            "renderer": "unavailable",
-            "visualChunks": [],
-            "mineruAssetCount": len(mineru_assets or []),
-            "analyzedMineruAssetCount": 0,
-            "status": "completed",
-        }
-    readiness = renderer_readiness()
+        result = empty_visual_result(page_count=0, status="completed", renderer="unavailable")
+        result["mineruAssetCount"] = len(mineru_assets or [])
+        return result
+    readiness = renderer_operational_readiness()
     if policy.require_renderer and not readiness["ready"]:
-        raise RuntimeError("PDF renderer is unavailable")
+        raise RendererUnavailable("PDF renderer is unavailable")
 
     inventory = inventory_pdf_pages(pdf_path, mineru_assets)
     page_count = len(inventory)
@@ -338,6 +414,7 @@ def run_manual_visual_pipeline(
     visual_dir.mkdir(parents=True, exist_ok=True)
     max_assets = max(0, int(os.getenv("FULL_VISUAL_MAX_ASSETS", "500")))
     selected_assets = list(mineru_assets or [])[:max_assets] if policy.analyze_mineru_assets else []
+    unprocessed_assets = max(0, len(mineru_assets or []) - len(selected_assets)) if policy.analyze_mineru_assets else 0
     total_work = len(selected) + len(selected_assets)
     processed = 0
     results: list[tuple[dict[str, Any], str]] = []
@@ -440,6 +517,7 @@ def run_manual_visual_pipeline(
         or rendered < len(selected)
         or ocr_processed < len(selected)
         or analyzed < len(selected)
+        or unprocessed_assets
     )
     return {
         "pageCount": page_count,
@@ -454,7 +532,15 @@ def run_manual_visual_pipeline(
         "visualFailedPages": failed_pages,
         "renderer": readiness["renderer"],
         "visualChunks": chunks,
+        "visualChunkCount": len(chunks),
+        "visualFailureReason": (
+            f"visual processing failed for {len(failed_pages)} page(s)"
+            if failed_pages
+            else "MinerU asset processing limit exceeded." if unprocessed_assets else ""
+        ),
         "mineruAssetCount": len(mineru_assets or []),
         "analyzedMineruAssetCount": analyzed_assets,
+        "mineruAssetsTruncated": unprocessed_assets > 0,
+        "unprocessedMineruAssetCount": unprocessed_assets,
         "status": "completed_with_warnings" if has_warnings else "completed",
     }

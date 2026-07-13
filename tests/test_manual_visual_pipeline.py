@@ -30,7 +30,7 @@ def install_pipeline_mocks(monkeypatch, profiles: list[dict[str, object]], calls
     monkeypatch.setattr(pipeline, "inventory_pdf_pages", lambda *_: profiles)
     monkeypatch.setattr(
         pipeline,
-        "renderer_readiness",
+        "renderer_operational_readiness",
         lambda: {"ready": True, "renderer": "pdftoppm", "status": "ready"},
     )
 
@@ -123,12 +123,75 @@ def test_full_visual_rejects_more_than_300_pages_before_model_calls(tmp_path, mo
     assert calls == []
 
 
+def test_full_visual_reports_mineru_asset_truncation(tmp_path, monkeypatch) -> None:
+    calls: list[int] = []
+    install_pipeline_mocks(monkeypatch, inventory(1, 1), calls)
+    monkeypatch.setenv("FULL_VISUAL_MAX_ASSETS", "500")
+    pdf_path = tmp_path / "knowledge" / "files" / "manual.pdf"
+    pdf_path.parent.mkdir(parents=True)
+    pdf_path.write_bytes(b"pdf")
+    parsed_root = tmp_path / "knowledge" / "parsed" / "kdoc-test"
+    shared_asset = parsed_root / "assets" / "shared.jpg"
+    shared_asset.parent.mkdir(parents=True)
+    shared_asset.write_bytes(b"jpeg")
+    assets = [
+        {
+            "assetId": f"mineru-{index:04d}",
+            "relativePath": "assets/shared.jpg",
+            "page": 1,
+            "caption": "component",
+        }
+        for index in range(1, 601)
+    ]
+
+    def process_asset(asset, asset_path, requested_provider):
+        return {
+            "assetId": asset["assetId"],
+            "assetType": "mineru_asset",
+            "page": 1,
+            "assetFile": asset_path,
+            "renderer": "mineru",
+            "ocrProcessed": True,
+            "analysisProcessed": True,
+            "analysis": {
+                "visualType": "photo",
+                "summary": "component",
+                "components": ["component"],
+                "operations": [],
+                "figureLabels": [],
+                "safetyWarnings": [],
+                "uncertainties": [],
+                "ocrText": "",
+                "nearbyText": "",
+                "provider": "openai",
+                "model": "model",
+                "fallback": False,
+                "fallbackReason": "",
+                "semanticVerified": True,
+                "imageInputSent": True,
+            },
+        }
+
+    monkeypatch.setattr(pipeline, "process_mineru_asset", process_asset)
+    result = pipeline.run_manual_visual_pipeline(
+        {"id": "kdoc-test", "fileName": "manual.pdf", "sourceName": "manual"},
+        pdf_path,
+        resolve_parser_policy("full_visual"),
+        mineru_assets=assets,
+    )
+    assert result["analyzedMineruAssetCount"] == 500
+    assert result["mineruAssetsTruncated"] is True
+    assert result["unprocessedMineruAssetCount"] == 100
+    assert result["status"] == "completed_with_warnings"
+
+
 def test_manual_page_json_controls_semantic_verification() -> None:
     valid = multimodal_adapter.manual_page_from_model_text(
         '{"visualType":"wiring_diagram","summary":"点火线路","components":["点火线圈"],"operations":[],"figureLabels":[],"safetyWarnings":[],"uncertainties":[]}',
         "page.jpg",
         "openai",
         "test-model",
+        image_input_sent=True,
     )
     invalid = multimodal_adapter.manual_page_from_model_text(
         "not-json model output",
@@ -140,6 +203,68 @@ def test_manual_page_json_controls_semantic_verification() -> None:
     assert valid["fallback"] is False
     assert invalid["semanticVerified"] is False
     assert invalid["fallback"] is True
+
+
+def test_manual_page_semantic_verification_requires_image_model_and_content() -> None:
+    payload = '{"visualType":"wiring_diagram","summary":"wiring","components":[],"operations":[],"figureLabels":[],"safetyWarnings":[],"uncertainties":[]}'
+    assert multimodal_adapter.manual_page_from_model_text(
+        payload, "page.jpg", "openai", "model", image_input_sent=False
+    )["semanticVerified"] is False
+    assert multimodal_adapter.manual_page_from_model_text(
+        '{"visualType":"unknown","summary":"","components":[],"operations":[],"figureLabels":[],"safetyWarnings":[],"uncertainties":[]}',
+        "page.jpg",
+        "openai",
+        "model",
+        image_input_sent=True,
+    )["semanticVerified"] is False
+    anthropic = multimodal_adapter.manual_page_from_model_text(
+        payload, "page.jpg", "anthropic", "claude", image_input_sent=True
+    )
+    assert anthropic["semanticVerified"] is True
+    assert anthropic["imageInputSent"] is True
+    assert multimodal_adapter.manual_page_from_model_text(
+        payload, "page.jpg", "mock", "mock", image_input_sent=True
+    )["semanticVerified"] is False
+
+
+def clear_multimodal_environment(monkeypatch) -> None:
+    for name in (
+        "MULTIMODAL_OPENAI_API_KEY",
+        "OPENAI_API_KEY",
+        "MULTIMODAL_OPENAI_MODEL",
+        "OPENAI_MODEL",
+        "LOCAL_MULTIMODAL_MODEL",
+        "LOCAL_LLM_MODEL",
+        "LOCAL_MULTIMODAL_BASE_URL",
+        "LOCAL_LLM_BASE_URL",
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_MODEL",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+
+def test_multimodal_readiness_for_openai_local_anthropic_and_mock(monkeypatch) -> None:
+    clear_multimodal_environment(monkeypatch)
+    monkeypatch.setenv("REMOTE_API_MODE", "auto")
+    assert multimodal_adapter.multimodal_readiness("openai")["status"] == "missing_key"
+    monkeypatch.setenv("MULTIMODAL_OPENAI_API_KEY", "key")
+    monkeypatch.setenv("MULTIMODAL_OPENAI_MODEL", "model")
+    assert multimodal_adapter.multimodal_readiness("openai")["ready"] is True
+    monkeypatch.setenv("REMOTE_API_MODE", "off")
+    assert multimodal_adapter.multimodal_readiness("openai")["status"] == "remote_disabled"
+
+    monkeypatch.setenv("LOCAL_MULTIMODAL_MODEL", "local-model")
+    monkeypatch.setenv("LOCAL_MULTIMODAL_BASE_URL", "http://127.0.0.1:11434/v1")
+    local = multimodal_adapter.multimodal_readiness("local")
+    assert local["ready"] is True
+    assert local["credentialConfigured"] is True
+    assert local["remoteAllowed"] is True
+
+    monkeypatch.setenv("REMOTE_API_MODE", "auto")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "key")
+    monkeypatch.setenv("ANTHROPIC_MODEL", "claude")
+    assert multimodal_adapter.multimodal_readiness("anthropic")["ready"] is True
+    assert multimodal_adapter.multimodal_readiness("mock")["status"] == "mock"
 
 
 def test_manual_page_timeout_retries_only_once(monkeypatch, tmp_path) -> None:
