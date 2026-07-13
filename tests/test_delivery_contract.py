@@ -174,3 +174,34 @@ def test_api_smoke_keeps_state_in_current_shell_and_isolates_examples() -> None:
     assert 'api_smoke http://127.0.0.1:18000 > >(tee ' in venv
     assert 'api_smoke http://127.0.0.1:18000 | tee ' not in venv
     assert 'api_smoke "http://127.0.0.1:${DOCKER_PORT}" > >(tee ' in docker
+
+
+def test_multimodal_manual_pipeline_delivery_contract() -> None:
+    required_files = (
+        "backend/app/parser_modes.py",
+        "backend/app/pdf_renderer.py",
+        "backend/app/manual_visual_pipeline.py",
+        "frontend/src/components/VisualEvidenceThumbnail.vue",
+        "scripts/manual-multimodal-verify.py",
+    )
+    assert all(Path(path).is_file() for path in required_files)
+
+    env_example = Path(".env.example").read_text(encoding="utf-8")
+    for key in (
+        "PDF_RENDERER=auto",
+        "SMART_VISUAL_DPI=120",
+        "FULL_VISUAL_DPI=180",
+        "SMART_VISUAL_MAX_PAGES=80",
+        "FULL_VISUAL_MAX_PAGES=300",
+        "FULL_VISUAL_MAX_ASSETS=500",
+        "MANUAL_VISUAL_TIMEOUT_SECONDS=45",
+    ):
+        assert key in env_example
+
+    api = Path("frontend/src/api.ts").read_text(encoding="utf-8")
+    panel = Path("frontend/src/components/KnowledgePanel.vue").read_text(encoding="utf-8")
+    thumbnail = Path("frontend/src/components/VisualEvidenceThumbnail.vue").read_text(encoding="utf-8")
+    assert 'formData.append("parser_mode", parserMode)' in api
+    assert '"smart_multimodal"' in panel and '"full_visual"' in panel and '"text_fast"' in panel
+    assert "fetchProtectedBlob" in thumbnail
+    assert "URL.revokeObjectURL" in thumbnail
