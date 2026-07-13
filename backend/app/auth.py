@@ -77,10 +77,20 @@ def auth_config_errors() -> list[str]:
     return list(dict.fromkeys(errors))
 
 
+def auth_config_error_message(errors: list[str]) -> str:
+    if "AUTH_MODE=off requires ALLOW_INSECURE_AUTH_OFF=true" in errors:
+        return "认证配置无效：本地开发使用 AUTH_MODE=off 时必须设置 ALLOW_INSECURE_AUTH_OFF=true。"
+    if "AUTH_MODE=off is forbidden in protected application environments" in errors:
+        return "认证配置无效：competition、submission 和 production 环境必须使用 AUTH_MODE=token。"
+    if "AUTH_MODE=token requires an admin token" in errors:
+        return "认证配置无效：AUTH_MODE=token 必须配置管理员令牌。"
+    return "认证配置无效，请检查 AUTH_MODE 和角色令牌配置。"
+
+
 def validate_auth_config() -> None:
     errors = auth_config_errors()
     if errors:
-        raise HTTPException(status_code=500, detail="; ".join(errors))
+        raise HTTPException(status_code=503, detail=auth_config_error_message(errors))
 
 
 def configured_tokens() -> dict[str, str]:
@@ -113,7 +123,7 @@ def auth_status() -> dict[str, Any]:
         "operatorConfigured": "operator" in roles,
         "reviewerConfigured": "reviewer" in roles,
         "adminConfigured": "admin" in roles,
-        "errors": errors,
+        "errors": [auth_config_error_message(errors)] if errors else [],
     }
 
 

@@ -1445,8 +1445,10 @@ def test_auth_off_requires_explicit_unsafe_local_flag(tmp_path, monkeypatch) -> 
 
     response = client.post("/api/uploads", files={"file": ("fault.png", b"test", "image/png")})
 
-    assert response.status_code == 500
-    assert "AUTH_MODE=off requires ALLOW_INSECURE_AUTH_OFF=true" in response.json()["message"]
+    assert response.status_code == 503
+    assert response.json()["message"] == (
+        "认证配置无效：本地开发使用 AUTH_MODE=off 时必须设置 ALLOW_INSECURE_AUTH_OFF=true。"
+    )
 
 
 def test_auth_off_is_forbidden_in_competition_environment(tmp_path, monkeypatch) -> None:
@@ -1457,8 +1459,10 @@ def test_auth_off_is_forbidden_in_competition_environment(tmp_path, monkeypatch)
 
     response = client.post("/api/uploads", files={"file": ("fault.png", b"test", "image/png")})
 
-    assert response.status_code == 500
-    assert "AUTH_MODE=off is forbidden in protected application environments" in response.json()["message"]
+    assert response.status_code == 503
+    assert response.json()["message"] == (
+        "认证配置无效：competition、submission 和 production 环境必须使用 AUTH_MODE=token。"
+    )
 
 
 def test_explicit_local_unsafe_auth_off_still_supports_loopback_demo(tmp_path, monkeypatch) -> None:
@@ -1477,15 +1481,16 @@ def test_token_auth_rejects_invalid_configuration(tmp_path, monkeypatch) -> None
 
     monkeypatch.setenv("AUTH_MODE", "dev")
     response = client.get("/api/review/items")
-    assert response.status_code == 500
-    assert "Unsupported AUTH_MODE" in response.json()["message"]
+    assert response.status_code == 503
+    assert response.json()["message"] == "认证配置无效，请检查 AUTH_MODE 和角色令牌配置。"
 
     monkeypatch.setenv("AUTH_MODE", "token")
     monkeypatch.setenv("AUTH_TOKEN", "generic-token")
     monkeypatch.setenv("AUTH_TOKEN_ROLE", "superuser")
     response = client.get("/api/review/items", headers={"Authorization": "Bearer generic-token"})
-    assert response.status_code == 500
-    assert "AUTH_TOKEN_ROLE" in response.json()["message"]
+    assert response.status_code == 503
+    assert response.json()["message"] == "认证配置无效：AUTH_MODE=token 必须配置管理员令牌。"
+    assert "generic-token" not in response.json()["message"]
 
 
 def test_token_auth_rejects_duplicate_tokens_and_missing_admin(tmp_path, monkeypatch) -> None:
@@ -1498,15 +1503,16 @@ def test_token_auth_rejects_duplicate_tokens_and_missing_admin(tmp_path, monkeyp
     monkeypatch.setenv("AUTH_REVIEWER_TOKEN", "same-token")
     monkeypatch.setenv("AUTH_ADMIN_TOKEN", "admin-token")
     duplicate = client.get("/api/review/items", headers={"Authorization": "Bearer same-token"})
-    assert duplicate.status_code == 500
-    assert "unique across roles" in duplicate.json()["message"]
+    assert duplicate.status_code == 503
+    assert duplicate.json()["message"] == "认证配置无效，请检查 AUTH_MODE 和角色令牌配置。"
+    assert "same-token" not in duplicate.json()["message"]
 
     monkeypatch.setenv("AUTH_OPERATOR_TOKEN", "operator-token")
     monkeypatch.setenv("AUTH_REVIEWER_TOKEN", "review-token")
     monkeypatch.delenv("AUTH_ADMIN_TOKEN", raising=False)
     missing_admin = client.get("/api/review/items", headers={"Authorization": "Bearer review-token"})
-    assert missing_admin.status_code == 500
-    assert "requires an admin token" in missing_admin.json()["message"]
+    assert missing_admin.status_code == 503
+    assert missing_admin.json()["message"] == "认证配置无效：AUTH_MODE=token 必须配置管理员令牌。"
 
 
 def test_knowledge_directory_is_not_public_static_mount(tmp_path, monkeypatch) -> None:
