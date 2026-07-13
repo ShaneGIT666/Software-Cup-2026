@@ -61,8 +61,10 @@ const activeArea = ref<ActiveArea>("assistant");
 const activeManagementTab = ref<ManagementTab>("knowledge");
 const sidebarCollapsed = ref(false);
 const deviceModel = ref("发动机-示例型号 A");
+const deviceType = ref("动力设备");
 const faultText = ref("启动困难，怠速不稳，排气异常");
 const maintenanceLevel = ref("normal_repair");
+const riskLevel = ref("medium");
 const loading = ref(false);
 const graphLoading = ref(false);
 const ragLoading = ref(false);
@@ -77,6 +79,7 @@ const uploadResult = ref<UploadPayload | null>(null);
 const ragAnswer = ref<RagAnswerPayload | null>(null);
 const multimodalDiagnosis = ref<MultimodalDiagnosisPayload | null>(null);
 const providerStatus = ref<ProviderStatusPayload | null>(null);
+const providerStatusChecked = ref(false);
 const reviewPanel = ref<InstanceType<typeof ReviewPanel> | null>(null);
 const authTokenInput = ref("");
 const authTokenConfigured = ref(hasAuthToken());
@@ -96,10 +99,10 @@ const caseForm = ref({
 
 const workflowSteps = [
   { index: "1", title: "描述故障", detail: "录入设备、现象和图片线索" },
-  { index: "2", title: "查看依据", detail: "仅使用已审核资料" },
-  { index: "3", title: "生成指引", detail: "输出检查、维修和安全提醒" },
-  { index: "4", title: "复核修正", detail: "提交回答标注进入审核" },
-  { index: "5", title: "提交经验", detail: "沉淀现场处理经验" }
+  { index: "2", title: "补充图片", detail: "提取 OCR 与视觉故障线索" },
+  { index: "3", title: "检索依据", detail: "仅使用已审核资料" },
+  { index: "4", title: "生成指引", detail: "输出检查、维修和安全提醒" },
+  { index: "5", title: "反馈沉淀", detail: "修正回答并沉淀现场经验" }
 ];
 
 const managementTabs: Array<{ key: ManagementTab; label: string }> = [
@@ -123,10 +126,8 @@ const activeAreaLabel = computed(() => {
   }
   return "检修助手";
 });
-const statusGeneratedAt = computed(() => {
-  const generatedAt = systemStatus.value?.generatedAt;
-  return generatedAt ? generatedAt.slice(0, 19).replace("T", " ") : "等待服务响应";
-});
+const topbarProviderLabel = computed(() => providerStatus.value?.llm.effectiveProvider ?? "读取中");
+const topbarModelLabel = computed(() => providerStatus.value?.llm.model ?? "未上报");
 
 const diagnosisSummary = computed(() => {
   const diagnosis = multimodalDiagnosis.value;
@@ -264,9 +265,25 @@ function openManagementTab(tab: ManagementTab) {
 
 function useDemoSample() {
   deviceModel.value = "发动机-示例型号 A";
+  deviceType.value = "动力设备";
   faultText.value = "启动困难，怠速不稳，排气异常";
   maintenanceLevel.value = "normal_repair";
+  riskLevel.value = "medium";
   ElMessage.success("已填入演示样例，下一步点击“开始诊断”。");
+}
+
+function clearFaultInput() {
+  deviceModel.value = "";
+  deviceType.value = "";
+  faultText.value = "";
+  maintenanceLevel.value = "normal_repair";
+  riskLevel.value = "medium";
+  uploadResult.value = null;
+  multimodalDiagnosis.value = null;
+  searchPayload.value = null;
+  selectedResult.value = null;
+  selectedWorkflow.value = null;
+  ragAnswer.value = null;
 }
 
 async function refreshProviderStatus() {
@@ -275,6 +292,8 @@ async function refreshProviderStatus() {
   } catch (error) {
     providerStatus.value = null;
     ElMessage.warning(getApiErrorMessage(error, "后端服务暂不可用，请确认服务已启动。"));
+  } finally {
+    providerStatusChecked.value = true;
   }
 }
 
@@ -302,7 +321,13 @@ async function runSearch() {
   selectedResult.value = null;
   ragAnswer.value = null;
   try {
-    searchPayload.value = await searchKnowledge(deviceModel.value, faultText.value, maintenanceLevel.value);
+    searchPayload.value = await searchKnowledge(
+      deviceModel.value,
+      faultText.value,
+      maintenanceLevel.value,
+      deviceType.value,
+      riskLevel.value
+    );
     const firstResultWithWorkflow = searchPayload.value.results.find((item) => item.workflowId);
     if (firstResultWithWorkflow) {
       await openWorkflow(firstResultWithWorkflow);
@@ -369,7 +394,8 @@ async function runMultimodalDiagnosis(file: File | null) {
       deviceModel: deviceModel.value,
       faultText: faultText.value,
       maintenanceLevel: maintenanceLevel.value,
-      riskLevel: maintenanceLevel.value === "emergency" ? "critical" : "medium",
+      deviceType: deviceType.value,
+      riskLevel: riskLevel.value,
       image: file,
       topK: 5
     });
@@ -531,9 +557,11 @@ refreshProviderStatus();
         </div>
         <div class="topbar-signals">
           <span class="live-signal" :class="{ offline: providerStatus?.offlineFallback }">
-            <i></i>{{ providerModeLabel }}
+            <i></i>后端：{{ providerStatus ? "在线" : providerStatusChecked ? "不可用" : "读取中" }}
           </span>
-          <span>{{ statusGeneratedAt }}</span>
+          <span>模型：{{ topbarProviderLabel }} / {{ topbarModelLabel }}</span>
+          <span>Fallback：{{ providerStatus ? (providerStatus.offlineFallback ? "已启用" : "未启用") : "状态未知" }}</span>
+          <span>认证：{{ authTokenConfigured ? "已配置" : "未配置" }}</span>
         </div>
       </header>
 
@@ -566,8 +594,10 @@ refreshProviderStatus();
         <section class="workspace assistant-workspace">
           <QueryPanel
             v-model:device-model="deviceModel"
+            v-model:device-type="deviceType"
             v-model:fault-text="faultText"
             v-model:maintenance-level="maintenanceLevel"
+            v-model:risk-level="riskLevel"
             :loading="loading"
             :diagnosis-loading="diagnosisLoading"
             :result-count="resultCount"
@@ -581,6 +611,7 @@ refreshProviderStatus();
             @upload="uploadFile"
             @diagnose="runMultimodalDiagnosis"
             @demo="useDemoSample"
+            @clear="clearFaultInput"
           />
           <div class="assistant-output-column">
             <ResultsPanel
@@ -696,10 +727,11 @@ refreshProviderStatus();
             <el-tag type="warning" effect="plain">暂不形成最终 GO</el-tag>
           </div>
           <div class="acceptance-list">
-            <div><ShieldCheck :size="17" /><span><strong>LoongArch 核心链路</strong><small>已完成实机核心链路验证</small></span><b class="is-pass">已验证</b></div>
-            <div><BookOpenCheck :size="17" /><span><strong>人工检索与作业流程</strong><small>已完成现场手工验收</small></span><b class="is-pass">已验证</b></div>
+            <div><ShieldCheck :size="17" /><span><strong>LoongArch / Kylin 核心</strong><small>已完成实机核心链路验证</small></span><b class="is-pass">已验证</b></div>
+            <div><BookOpenCheck :size="17" /><span><strong>官方手册闭环</strong><small>检索、指引与人工验收已完成</small></span><b class="is-pass">已验证</b></div>
             <div><Bot :size="17" /><span><strong>真实文本模型</strong><small>qwen3.6-flash OpenAI-compatible 链路</small></span><b class="is-pass">已验证</b></div>
-            <div><Boxes :size="17" /><span><strong>真实故障图片 / Docker</strong><small>图片样本与 Docker 环境仍待补齐</small></span><b class="is-pending">未验证</b></div>
+            <div><Boxes :size="17" /><span><strong>真实故障图片</strong><small>真实现场图片样本仍待补齐</small></span><b class="is-pending">未验证</b></div>
+            <div><Boxes :size="17" /><span><strong>Docker</strong><small>当前 Docker 环境尚未完成验收</small></span><b class="is-pending">未验证</b></div>
           </div>
         </section>
 
@@ -733,6 +765,11 @@ refreshProviderStatus();
 
           <article class="system-card">
             <h3>部署策略</h3>
+            <div class="runtime-facts">
+              <span>Architecture <b>{{ systemStatus?.environment?.architecture || "未上报" }}</b></span>
+              <span>Platform <b>{{ systemStatus?.environment?.platform || "未上报" }}</b></span>
+              <span>Python <b>{{ systemStatus?.environment?.pythonVersion || "未上报" }}</b></span>
+            </div>
             <p>真实模型使用 OpenAI-compatible 配置；文档解析、向量增强与 OCR 均保留明确降级路径。</p>
             <div class="deployment-facts">
               <span><Database :size="15" />Chroma / Qdrant / sqlite-vec 为可选增强</span>

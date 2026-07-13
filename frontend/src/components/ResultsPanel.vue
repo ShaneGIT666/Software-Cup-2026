@@ -31,6 +31,32 @@ function sourceLabel(sourceType: SearchResult["sourceType"]) {
     </div>
     <p class="panel-note">系统仅使用已审核资料生成正式建议，未审核内容不会进入检修依据。</p>
 
+    <details v-if="searchPayload" class="query-processing">
+      <summary>查询处理</summary>
+      <dl v-if="searchPayload.queryProcessing">
+        <div v-if="searchPayload.queryProcessing.originalFaultText">
+          <dt>原始描述</dt><dd>{{ searchPayload.queryProcessing.originalFaultText }}</dd>
+        </div>
+        <div v-if="searchPayload.queryProcessing.normalizedFaultText">
+          <dt>标准化描述</dt><dd>{{ searchPayload.queryProcessing.normalizedFaultText }}</dd>
+        </div>
+        <div v-if="searchPayload.queryProcessing.expandedKeywords?.length">
+          <dt>扩展关键词</dt><dd>{{ searchPayload.queryProcessing.expandedKeywords.join("、") }}</dd>
+        </div>
+        <div v-if="searchPayload.queryProcessing.detectedFaultCodes?.length">
+          <dt>故障码</dt><dd>{{ searchPayload.queryProcessing.detectedFaultCodes.join("、") }}</dd>
+        </div>
+        <div>
+          <dt>检索策略</dt>
+          <dd>
+            {{ searchPayload.queryProcessing.retried ? "已触发二次检索" : "当前未触发查询扩展" }}
+            {{ searchPayload.queryProcessing.selectedAttempt ? ` / 采用第 ${searchPayload.queryProcessing.selectedAttempt} 次结果` : "" }}
+          </dd>
+        </div>
+      </dl>
+      <p v-else>当前未触发查询扩展。</p>
+    </details>
+
     <el-skeleton v-if="loading" :rows="5" animated class="result-skeleton" />
     <template v-else-if="searchPayload && searchPayload.results.length">
       <p class="summary">{{ searchPayload.summary }}</p>

@@ -55,6 +55,14 @@ export interface SearchPayload {
   queryId: string;
   summary: string;
   results: SearchResult[];
+  queryProcessing?: {
+    originalFaultText?: string;
+    normalizedFaultText?: string;
+    expandedKeywords?: string[];
+    detectedFaultCodes?: string[];
+    retried?: boolean;
+    selectedAttempt?: number;
+  };
 }
 
 export interface WorkflowStep {
@@ -183,6 +191,11 @@ export interface SystemStatusPayload {
     errors?: string[];
   };
   warnings: string[];
+  environment?: {
+    architecture?: string;
+    platform?: string;
+    pythonVersion?: string;
+  };
 }
 
 export interface ProviderStatusPayload {
@@ -302,13 +315,21 @@ async function requestBlob(path: string, options?: RequestInit): Promise<Blob> {
   return response.blob();
 }
 
-export function searchKnowledge(deviceModel: string, faultText: string, maintenanceLevel?: string) {
+export function searchKnowledge(
+  deviceModel: string,
+  faultText: string,
+  maintenanceLevel?: string,
+  deviceType?: string,
+  riskLevel?: string
+) {
   return request<SearchPayload>("/api/search", {
     method: "POST",
     body: JSON.stringify({
       deviceModel,
       faultText,
       maintenanceLevel: maintenanceLevel ?? "normal_repair",
+      ...(deviceType ? { deviceType } : {}),
+      ...(riskLevel ? { riskLevel } : {}),
       inputType: "text",
       topK: 5
     })

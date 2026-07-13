@@ -59,7 +59,10 @@ const safetyRules = computed(() => props.ragAnswer?.safetyRules ?? null);
 const answerSourceLabel = computed(() => {
   const source = props.ragAnswer?.finalAnswerSource;
   if (source === "validated_llm") {
-    return "规则校验后的模型回答";
+    return "真实模型回答";
+  }
+  if (source === "validated_llm_with_guardrails") {
+    return "真实模型回答 + 安全护栏";
   }
   if (source === "template") {
     return "证据模板回答";
@@ -230,8 +233,11 @@ async function submitFeedback() {
         生成智能检修建议
       </el-button>
       <el-tag v-if="ragAnswer?.fallback" type="warning">离线兜底</el-tag>
-      <el-tag v-if="ragAnswer && !ragAnswer.fallback" type="success">真实模型增强</el-tag>
-      <el-tag v-if="ragAnswer?.llmAnswerUsed" type="success">结构化回答已采纳</el-tag>
+      <el-tag v-if="ragAnswer && !ragAnswer.fallback" type="success">已调用真实模型</el-tag>
+      <el-tag v-if="ragAnswer?.llmAnswerUsed" type="success">模型回答已采纳</el-tag>
+      <el-tag v-if="ragAnswer && !ragAnswer.fallback && ragAnswer.llmAnswerUsed === false" type="warning">
+        最终未采用模型原文
+      </el-tag>
       <el-tag
         v-if="ragAnswer?.answerMode"
         :type="

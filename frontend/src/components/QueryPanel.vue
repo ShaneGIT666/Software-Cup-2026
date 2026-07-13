@@ -4,8 +4,10 @@ import type { MultimodalSignals, UploadPayload } from "../api";
 
 defineProps<{
   deviceModel: string;
+  deviceType: string;
   faultText: string;
   maintenanceLevel: string;
+  riskLevel: string;
   loading: boolean;
   diagnosisLoading: boolean;
   resultCount: number;
@@ -19,12 +21,15 @@ defineProps<{
 
 const emit = defineEmits<{
   "update:deviceModel": [value: string];
+  "update:deviceType": [value: string];
   "update:faultText": [value: string];
   "update:maintenanceLevel": [value: string];
+  "update:riskLevel": [value: string];
   search: [];
   upload: [file: File];
   diagnose: [file: File | null];
   demo: [];
+  clear: [];
 }>();
 
 function handleFileChange(event: Event) {
@@ -61,6 +66,13 @@ function handleDiagnosisFileChange(event: Event) {
           @update:model-value="emit('update:deviceModel', String($event))"
         />
       </el-form-item>
+      <el-form-item label="设备类型">
+        <el-input
+          :model-value="deviceType"
+          placeholder="例如：动力设备"
+          @update:model-value="emit('update:deviceType', String($event))"
+        />
+      </el-form-item>
       <el-form-item label="故障现象">
         <el-input
           :model-value="faultText"
@@ -70,18 +82,32 @@ function handleDiagnosisFileChange(event: Event) {
           @update:model-value="emit('update:faultText', String($event))"
         />
       </el-form-item>
-      <el-form-item label="检修等级">
-        <el-select
-          :model-value="maintenanceLevel"
-          placeholder="选择检修等级"
-          @update:model-value="emit('update:maintenanceLevel', String($event))"
-        >
-          <el-option label="日常检查" value="daily_check" />
-          <el-option label="一般检修" value="normal_repair" />
-          <el-option label="重大检修" value="major_repair" />
-          <el-option label="紧急处置" value="emergency" />
-        </el-select>
-      </el-form-item>
+      <div class="fault-select-grid">
+        <el-form-item label="检修等级">
+          <el-select
+            :model-value="maintenanceLevel"
+            placeholder="选择检修等级"
+            @update:model-value="emit('update:maintenanceLevel', String($event))"
+          >
+            <el-option label="日常检查" value="daily_check" />
+            <el-option label="一般检修" value="normal_repair" />
+            <el-option label="重大检修" value="major_repair" />
+            <el-option label="紧急处置" value="emergency" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="风险等级">
+          <el-select
+            :model-value="riskLevel"
+            placeholder="选择风险等级"
+            @update:model-value="emit('update:riskLevel', String($event))"
+          >
+            <el-option label="低风险" value="low" />
+            <el-option label="中风险" value="medium" />
+            <el-option label="高风险" value="high" />
+            <el-option label="关键风险" value="critical" />
+          </el-select>
+        </el-form-item>
+      </div>
       <div class="action-row">
         <el-button
           type="primary"
@@ -93,6 +119,7 @@ function handleDiagnosisFileChange(event: Event) {
           开始诊断
         </el-button>
         <el-button plain @click="emit('demo')">使用演示样例</el-button>
+        <el-button plain :disabled="loading || diagnosisLoading" @click="emit('clear')">清空</el-button>
         <label class="upload-button" :class="{ disabled: uploading }">
           <Upload :size="16" />
           <span>{{ uploading ? "上传中" : "上传资料" }}</span>
