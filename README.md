@@ -110,8 +110,8 @@ bash scripts/validate-provider.sh
 
 | 项目 | 结果 |
 | --- | --- |
-| 后端全量测试 | `174 passed in 729.77s` |
-| 前端生产构建 | `npm.cmd run build` 通过，本轮构建耗时约 `4.61s` |
+| 后端全量测试 | `317 passed in 985.23s` |
+| 前端生产构建 | `npm.cmd --prefix frontend run build` 通过，本轮 Vite 构建耗时 `8.32s` |
 | readiness | `success=true` |
 | JSON 巡检 | `success=true`，`issueCount=0` |
 | API 冒烟 | health、search、RAG、multimodal、feedback、knowledge graph 已验证 |
@@ -134,10 +134,26 @@ bash scripts/validate-provider.sh
 
 不要提交 `.env`、API Key、上传资料、运行知识库、日志、压缩包、视频、截图、`.venv`、`node_modules` 或 `frontend/dist`。真实模型能力以目标环境的 provider 验证结果为准；mock、hash、fallback 和轻量知识关系图不能包装成生产级能力。
 
-## P0 补充：PDF 页面视觉资产 fallback
+## 多模态维修手册部署
 
-维修手册 PDF 优先通过 MinerU 提取正文和图片 assets。若 MinerU 超时、不可用，或未提取到独立图片 assets，系统会基于 PDF 页码、页面文本和可检测到的页面图片对象自动生成 `pdf_page_visual_asset` 知识片段。
+Windows / x86 可选安装 PyMuPDF Renderer：
 
-这些片段默认 `pending_review`，仅用于演示、审核和知识沉淀链路，不会在审核前进入正式检索或 RAG 引用。官方演示文件“摩托车发动机维修手册”已在本地验证：PDF 共 41 页，pypdf 可检测到 36 页存在图片对象；在 MinerU 不可用 fallback 模式下可生成 12 个 PDF 页面视觉资产片段，资料卡不再显示 0 个图片片段。
+```powershell
+.\backend\.venv\Scripts\python.exe -m pip install "PyMuPDF>=1.24,<2"
+```
 
-该 fallback 不宣称生产级图像理解能力；若目标环境配置真实 OCR/多模态 provider，仍优先使用真实 provider 的分析结果。
+LoongArch / 银河麒麟推荐由管理员安装 Poppler Renderer：
+
+```bash
+sudo dnf install -y poppler-utils
+```
+
+安装后验证实际可用性，而不只检查命令是否存在：
+
+```bash
+python -c "from backend.app.pdf_renderer import renderer_operational_readiness; print(renderer_operational_readiness())"
+```
+
+维修手册 PDF 优先由 MinerU 提取正文结构和图片 assets。MinerU 不可用或执行失败时，页面 Renderer 与多模态分析仍可继续，并如实记录 parser fallback。`smart_multimodal` 是默认模式；`full_visual` 适合赛前预处理，不建议在比赛现场处理整本手册。
+
+页面视觉知识和 MinerU 图片资产一律先进入 `pending_review`。未审核片段不能参与正式检索或 RAG 引用；审核通过后才进入 approved-only 图文检索。真实 provider 失败时，smart 模式保留正文结果并标记 `completed_with_warnings`，不得把 OCR、文本 fallback 或 mock 包装成真实图片理解。
