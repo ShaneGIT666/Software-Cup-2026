@@ -184,7 +184,7 @@ def _render_with_pdftoppm(
 ) -> None:
     executable = shutil.which("pdftoppm")
     if not executable:
-        raise RendererUnavailable("PDF renderer is unavailable")
+        raise RenderExecutionError("PDF renderer command was not found", failure_category="not_found")
     prefix = output_path.with_suffix("")
     command = [
         executable,
@@ -199,13 +199,18 @@ def _render_with_pdftoppm(
         str(pdf_path),
         str(prefix),
     ]
-    process = subprocess.Popen(
-        command,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.PIPE,
-        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
-        start_new_session=os.name != "nt",
-    )
+    try:
+        process = subprocess.Popen(
+            command,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
+            start_new_session=os.name != "nt",
+        )
+    except FileNotFoundError as exc:
+        raise RenderExecutionError("PDF renderer command was not found", failure_category="not_found") from exc
+    except PermissionError as exc:
+        raise RenderExecutionError("PDF renderer permission was denied", failure_category="permission_denied") from exc
     try:
         _, stderr = process.communicate(timeout=timeout_seconds)
     except subprocess.TimeoutExpired as exc:
@@ -215,7 +220,17 @@ def _render_with_pdftoppm(
             failure_category="timeout",
         ) from exc
     if process.returncode != 0:
-        raise RenderExecutionError("pdftoppm page rendering failed")
+        safe_stderr = stderr.decode("utf-8", errors="replace").lower() if stderr else ""
+        if "permission denied" in safe_stderr or "access is denied" in safe_stderr:
+            category = "permission_denied"
+        elif any(
+            marker in safe_stderr
+            for marker in ("dll", "shared library", "cannot open shared object", "missing dependency", "failed to load")
+        ):
+            category = "missing_runtime_dependency"
+        else:
+            category = "smoke_render_failed"
+        raise RenderExecutionError("pdftoppm page rendering failed", failure_category=category)
     generated = prefix.with_suffix(".jpg")
     if generated != output_path and generated.exists():
         generated.replace(output_path)
@@ -242,13 +257,20 @@ def render_pdf_page(
     output_path: Path,
     dpi: int,
     timeout_seconds: int = 60,
+    *,
+    selected_renderer: str | None = None,
 ) -> dict[str, Any]:
     if page_number < 1:
         raise ValueError("page_number must be 1-based")
-    readiness = renderer_readiness()
-    renderer = str(readiness["renderer"])
-    if renderer == "unavailable":
-        raise RendererUnavailable("PDF renderer is unavailable")
+    if selected_renderer not in {None, "pdftoppm", "pymupdf"}:
+        raise ValueError("selected_renderer must be pdftoppm, pymupdf, or None")
+    if selected_renderer is None:
+        readiness = renderer_operational_readiness()
+        if not readiness["ready"]:
+            raise RendererUnavailable("PDF renderer is unavailable")
+        renderer = str(readiness["renderer"])
+    else:
+        renderer = selected_renderer
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.unlink(missing_ok=True)
     if renderer == "pdftoppm":

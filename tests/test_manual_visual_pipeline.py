@@ -34,7 +34,8 @@ def install_pipeline_mocks(monkeypatch, profiles: list[dict[str, object]], calls
         lambda: {"ready": True, "renderer": "pdftoppm", "status": "ready"},
     )
 
-    def process_page(pdf_path, page_profile, output_path, policy, requested_provider):
+    def process_page(pdf_path, page_profile, output_path, policy, requested_provider, *, selected_renderer):
+        assert selected_renderer == "pdftoppm"
         page = int(page_profile["page"])
         calls.append(page)
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -90,6 +91,30 @@ def test_smart_processes_all_36_visual_pages_in_41_page_manual(tmp_path, monkeyp
     assert result["visualPagesOcrProcessed"] == 36
     assert result["realMultimodalPages"] == 36
     assert result["status"] == "completed"
+
+
+def test_smart_unavailable_reports_all_candidates_without_visual_chunks(tmp_path, monkeypatch) -> None:
+    profiles = inventory(41, 36)
+    monkeypatch.setattr(pipeline, "inventory_pdf_pages", lambda *_: profiles)
+    monkeypatch.setattr(
+        pipeline,
+        "renderer_operational_readiness",
+        lambda: {"ready": False, "renderer": "unavailable", "status": "unavailable"},
+    )
+    pdf_path = tmp_path / "knowledge" / "files" / "manual.pdf"
+    pdf_path.parent.mkdir(parents=True)
+    pdf_path.write_bytes(b"pdf")
+    result = pipeline.run_manual_visual_pipeline(
+        {"id": "kdoc-test", "fileName": "manual.pdf", "sourceName": "manual"},
+        pdf_path,
+        resolve_parser_policy("smart_multimodal"),
+    )
+    assert result["pageCount"] == 41
+    assert result["visualCandidatePages"] == 36
+    assert result["visualFailedPages"] == list(range(1, 37))
+    assert result["fallbackVisualPages"] == 36
+    assert result["visualChunks"] == []
+    assert result["status"] == "completed_with_warnings"
 
 
 def test_full_visual_processes_every_page(tmp_path, monkeypatch) -> None:
@@ -180,8 +205,54 @@ def test_full_visual_reports_mineru_asset_truncation(tmp_path, monkeypatch) -> N
         mineru_assets=assets,
     )
     assert result["analyzedMineruAssetCount"] == 500
+    assert result["realMultimodalMineruAssetCount"] == 500
+    assert result["fallbackMineruAssetCount"] == 0
+    assert result["failedMineruAssetCount"] == 0
     assert result["mineruAssetsTruncated"] is True
     assert result["unprocessedMineruAssetCount"] == 100
+    assert result["status"] == "completed_with_warnings"
+
+
+def test_mineru_assets_are_classified_as_real_fallback_and_failed(tmp_path, monkeypatch) -> None:
+    calls: list[int] = []
+    install_pipeline_mocks(monkeypatch, inventory(1, 1), calls)
+    pdf_path = tmp_path / "knowledge" / "files" / "manual.pdf"
+    pdf_path.parent.mkdir(parents=True)
+    pdf_path.write_bytes(b"pdf")
+    parsed_root = tmp_path / "knowledge" / "parsed" / "kdoc-test"
+    asset_path = parsed_root / "assets" / "shared.jpg"
+    asset_path.parent.mkdir(parents=True)
+    asset_path.write_bytes(b"jpeg")
+    assets = [
+        {"assetId": f"mineru-{index}", "relativePath": "assets/shared.jpg", "page": 1}
+        for index in range(1, 4)
+    ]
+
+    def process_asset(asset, *_args):
+        if asset["assetId"] == "mineru-3":
+            raise RuntimeError("failed")
+        fallback = asset["assetId"] == "mineru-2"
+        return {
+            "assetId": asset["assetId"], "assetType": "mineru_asset", "page": 1,
+            "assetFile": asset_path, "analysis": {
+                "summary": "asset", "components": [], "operations": [], "figureLabels": [],
+                "safetyWarnings": [], "uncertainties": [], "ocrText": "", "model": "model",
+                "provider": "mock" if fallback else "openai", "fallback": fallback,
+                "semanticVerified": not fallback, "imageInputSent": not fallback,
+            },
+        }
+
+    monkeypatch.setattr(pipeline, "process_mineru_asset", process_asset)
+    result = pipeline.run_manual_visual_pipeline(
+        {"id": "kdoc-test", "fileName": "manual.pdf", "sourceName": "manual"},
+        pdf_path,
+        resolve_parser_policy("full_visual"),
+        mineru_assets=assets,
+    )
+    assert result["realMultimodalMineruAssetCount"] == 1
+    assert result["fallbackMineruAssetCount"] == 1
+    assert result["failedMineruAssetCount"] == 1
+    assert result["analyzedMineruAssetCount"] == 2
     assert result["status"] == "completed_with_warnings"
 
 
@@ -203,6 +274,19 @@ def test_manual_page_json_controls_semantic_verification() -> None:
     assert valid["fallback"] is False
     assert invalid["semanticVerified"] is False
     assert invalid["fallback"] is True
+
+
+def test_manual_page_accepts_fenced_or_thinking_prefixed_json() -> None:
+    payload = (
+        '{"visualType":"photo","summary":"黑色方形","components":[],"operations":[],'
+        '"figureLabels":[],"safetyWarnings":[],"uncertainties":[]}'
+    )
+    for response in (f"```json\n{payload}\n```", f"<think>inspect image</think>\n{payload}"):
+        result = multimodal_adapter.manual_page_from_model_text(
+            response, "probe.png", "openai", "vision-model", image_input_sent=True
+        )
+        assert result["semanticVerified"] is True
+        assert result["fallback"] is False
 
 
 def test_manual_page_semantic_verification_requires_image_model_and_content() -> None:

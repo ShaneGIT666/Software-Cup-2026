@@ -40,7 +40,12 @@ from .multimodal_adapter import analyze_multimodal_document
 from .ocr_adapter import analyze_ocr_document
 from .parser_router import parse_document, save_parse_artifacts
 from .parser_modes import ParserPolicy, resolve_parser_policy
-from .manual_visual_pipeline import empty_visual_result, process_image_document, run_manual_visual_pipeline
+from .manual_visual_pipeline import (
+    empty_visual_result,
+    inventory_pdf_pages,
+    process_image_document,
+    run_manual_visual_pipeline,
+)
 from .pdf_renderer import RenderExecutionError, RendererUnavailable, renderer_operational_readiness
 from .provider_policy import configured_llm_provider, key_configured, record_fallback, remote_api_disabled
 from .schemas import KnowledgeChunkReviewRequest, KnowledgeChunkRevisionRequest, KnowledgeChunkStatusRequest
@@ -1069,6 +1074,18 @@ def ingest_knowledge_document_bytes(
             except (RendererUnavailable, RenderExecutionError):
                 if policy.mode != "smart_multimodal":
                     raise
+                try:
+                    fallback_inventory = inventory_pdf_pages(
+                        target,
+                        stored_parse_result.get("mineruAssets", []),
+                    )
+                    fallback_candidates = [
+                        int(item["page"])
+                        for item in fallback_inventory
+                        if item.get("visualCandidate")
+                    ]
+                except Exception:
+                    fallback_candidates = []
                 visual_result = empty_visual_result(
                     page_count=page_count,
                     status="completed_with_warnings",
@@ -1076,6 +1093,9 @@ def ingest_knowledge_document_bytes(
                     failure_reason="PDF renderer is unavailable; text knowledge was preserved.",
                 )
                 visual_result["mineruAssetCount"] = len(stored_parse_result.get("mineruAssets", []))
+                visual_result["visualCandidatePages"] = len(fallback_candidates)
+                visual_result["visualFailedPages"] = fallback_candidates
+                visual_result["fallbackVisualPages"] = len(fallback_candidates)
         chunks.extend(visual_result["visualChunks"])
     if progress_callback:
         progress_callback("chunking", len(chunks), len(chunks))
@@ -1107,6 +1127,9 @@ def ingest_knowledge_document_bytes(
         "fallbackVisualPages": int(visual_result["fallbackVisualPages"]),
         "mineruAssetCount": int(visual_result["mineruAssetCount"]),
         "analyzedMineruAssetCount": int(visual_result["analyzedMineruAssetCount"]),
+        "realMultimodalMineruAssetCount": int(visual_result["realMultimodalMineruAssetCount"]),
+        "fallbackMineruAssetCount": int(visual_result["fallbackMineruAssetCount"]),
+        "failedMineruAssetCount": int(visual_result["failedMineruAssetCount"]),
         "visualCoverageRatio": float(visual_result["visualCoverageRatio"]),
         "realMultimodalCoverageRatio": float(visual_result["realMultimodalCoverageRatio"]),
         "visualFailedPages": visual_result["visualFailedPages"],
@@ -1249,7 +1272,7 @@ def process_knowledge_parse_task(task_id: str) -> None:
     queued_file = Path(str(task.get("queuedFile") or ""))
     try:
         if not queued_file.exists():
-            raise FileNotFoundError(f"queued file not found: {queued_file}")
+            raise FileNotFoundError("queued file not found")
         def report_progress(phase: str, current: int, total: int) -> None:
             update_parse_task(
                 task_id,
@@ -1293,6 +1316,9 @@ def process_knowledge_parse_task(task_id: str) -> None:
                 "fallbackVisualPages",
                 "mineruAssetCount",
                 "analyzedMineruAssetCount",
+                "realMultimodalMineruAssetCount",
+                "fallbackMineruAssetCount",
+                "failedMineruAssetCount",
                 "visualCoverageRatio",
                 "realMultimodalCoverageRatio",
                 "visualFailedPages",
@@ -1328,6 +1354,18 @@ def process_knowledge_parse_task(task_id: str) -> None:
             completedAt=utc_now(),
             error=str(exc),
         )
+    finally:
+        try:
+            queue_root = (knowledge_dir() / "parse-queue").resolve()
+            resolved_file = queued_file.resolve()
+            resolved_file.relative_to(queue_root)
+        except (OSError, ValueError):
+            logger.warning("Skipped parse queue cleanup for a path outside the queue directory")
+        else:
+            try:
+                resolved_file.unlink(missing_ok=True)
+            except OSError:
+                logger.warning("Parse queue cleanup failed")
 
 
 def list_knowledge_parse_tasks(status: str | None = None) -> dict[str, Any]:

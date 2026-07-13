@@ -48,6 +48,9 @@ def empty_visual_result(
         "visualFailureReason": failure_reason,
         "mineruAssetCount": 0,
         "analyzedMineruAssetCount": 0,
+        "realMultimodalMineruAssetCount": 0,
+        "fallbackMineruAssetCount": 0,
+        "failedMineruAssetCount": 0,
         "mineruAssetsTruncated": False,
         "unprocessedMineruAssetCount": 0,
         "status": status,
@@ -169,6 +172,8 @@ def process_visual_page(
     output_path: Path,
     policy: ParserPolicy,
     requested_provider: str | None = None,
+    *,
+    selected_renderer: str,
 ) -> dict[str, Any]:
     render_result = render_pdf_page(
         pdf_path=pdf_path,
@@ -176,6 +181,7 @@ def process_visual_page(
         output_path=output_path,
         dpi=policy.render_dpi,
         timeout_seconds=max(1, int(os.getenv("PDF_RENDER_TIMEOUT_SECONDS", "60"))),
+        selected_renderer=selected_renderer,
     )
     nearby_text = str(page_profile.get("text") or "")[:2000]
     analysis = analyze_multimodal_document(
@@ -389,10 +395,6 @@ def run_manual_visual_pipeline(
         result = empty_visual_result(page_count=0, status="completed", renderer="unavailable")
         result["mineruAssetCount"] = len(mineru_assets or [])
         return result
-    readiness = renderer_operational_readiness()
-    if policy.require_renderer and not readiness["ready"]:
-        raise RendererUnavailable("PDF renderer is unavailable")
-
     inventory = inventory_pdf_pages(pdf_path, mineru_assets)
     page_count = len(inventory)
     if policy.mode == "full_visual" and page_count > policy.visual_page_limit:
@@ -410,6 +412,24 @@ def run_manual_visual_pipeline(
         if policy.render_scope == "all"
         else select_smart_visual_pages(inventory, policy.visual_page_limit)
     )
+    readiness = renderer_operational_readiness()
+    if not readiness["ready"]:
+        if policy.mode == "full_visual":
+            raise RendererUnavailable("PDF renderer is unavailable")
+        failed_candidates = [int(item["page"]) for item in candidates]
+        return {
+            **empty_visual_result(
+                page_count=page_count,
+                status="completed_with_warnings",
+                renderer="unavailable",
+                failure_reason="PDF renderer is unavailable; text knowledge was preserved.",
+            ),
+            "visualCandidatePages": len(candidates),
+            "fallbackVisualPages": len(candidates),
+            "visualFailedPages": failed_candidates,
+            "mineruAssetCount": len(mineru_assets or []),
+        }
+    selected_renderer = str(readiness["renderer"])
     visual_dir = pdf_path.parent.parent / "parsed" / str(document["id"]) / "visual-assets"
     visual_dir.mkdir(parents=True, exist_ok=True)
     max_assets = max(0, int(os.getenv("FULL_VISUAL_MAX_ASSETS", "500")))
@@ -432,6 +452,7 @@ def run_manual_visual_pipeline(
                 output_path,
                 policy,
                 requested_provider,
+                selected_renderer=selected_renderer,
             )
             results.append((result, f"visual-assets/{output_path.name}"))
         except Exception as exc:
@@ -459,7 +480,7 @@ def run_manual_visual_pipeline(
                         "assetId": f"page-{page:04d}",
                         "assetType": "page_visual",
                         "page": page,
-                        "renderer": readiness["renderer"],
+                        "renderer": selected_renderer,
                         "ocrProcessed": False,
                         "analysisProcessed": False,
                         "analysis": fallback_analysis,
@@ -471,7 +492,9 @@ def run_manual_visual_pipeline(
         if progress_callback:
             progress_callback("multimodal", processed, total_work)
 
-    analyzed_assets = 0
+    real_assets = 0
+    fallback_assets = 0
+    failed_assets = 0
     parsed_root = visual_dir.parent
     for asset in selected_assets:
         if progress_callback:
@@ -484,9 +507,13 @@ def run_manual_visual_pipeline(
                 raise FileNotFoundError("MinerU asset file is unavailable")
             result = process_mineru_asset(asset, asset_path, requested_provider)
             results.append((result, relative_path.replace("\\", "/")))
-            analyzed_assets += 1
+            analysis = result["analysis"]
+            if analysis.get("semanticVerified") and not analysis.get("fallback"):
+                real_assets += 1
+            else:
+                fallback_assets += 1
         except Exception:
-            pass
+            failed_assets += 1
         processed += 1
 
     chunks = [
@@ -518,6 +545,8 @@ def run_manual_visual_pipeline(
         or ocr_processed < len(selected)
         or analyzed < len(selected)
         or unprocessed_assets
+        or fallback_assets
+        or failed_assets
     )
     return {
         "pageCount": page_count,
@@ -530,16 +559,24 @@ def run_manual_visual_pipeline(
         "visualCoverageRatio": round(coverage, 6),
         "realMultimodalCoverageRatio": round(real_coverage, 6),
         "visualFailedPages": failed_pages,
-        "renderer": readiness["renderer"],
+        "renderer": selected_renderer,
         "visualChunks": chunks,
         "visualChunkCount": len(chunks),
-        "visualFailureReason": (
-            f"visual processing failed for {len(failed_pages)} page(s)"
-            if failed_pages
-            else "MinerU asset processing limit exceeded." if unprocessed_assets else ""
+        "visualFailureReason": "; ".join(
+            message
+            for message in (
+                f"visual processing failed for {len(failed_pages)} page(s)" if failed_pages else "",
+                f"{fallback_assets} MinerU assets used fallback" if fallback_assets else "",
+                f"{failed_assets} MinerU assets failed" if failed_assets else "",
+                f"{unprocessed_assets} MinerU assets were not processed" if unprocessed_assets else "",
+            )
+            if message
         ),
         "mineruAssetCount": len(mineru_assets or []),
-        "analyzedMineruAssetCount": analyzed_assets,
+        "analyzedMineruAssetCount": real_assets + fallback_assets,
+        "realMultimodalMineruAssetCount": real_assets,
+        "fallbackMineruAssetCount": fallback_assets,
+        "failedMineruAssetCount": failed_assets,
         "mineruAssetsTruncated": unprocessed_assets > 0,
         "unprocessedMineruAssetCount": unprocessed_assets,
         "status": "completed_with_warnings" if has_warnings else "completed",
