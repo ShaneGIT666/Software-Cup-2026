@@ -13,6 +13,7 @@ import {
   TriangleAlert
 } from "@lucide/vue";
 import type { EvidenceItem, EvidenceTrace, RagAnswerPayload } from "../api";
+import VisualEvidenceThumbnail from "./VisualEvidenceThumbnail.vue";
 
 const props = defineProps<{
   ragAnswer: RagAnswerPayload | null;
@@ -114,6 +115,13 @@ const evidenceItems = computed<EvidenceItem[]>(() => {
     reviewStatus: citation.reviewStatus ?? "unknown",
     riskLevel: citation.riskLevel ?? citation.scoreBreakdown?.riskLevel ?? "unknown",
     score: citation.scoreBreakdown?.score ?? null,
+    assetId: citation.assetId,
+    assetType: citation.assetType,
+    previewUrl: citation.previewUrl,
+    visualType: citation.visualType,
+    semanticVerified: citation.semanticVerified,
+    analysisProvider: citation.analysisProvider,
+    analysisFallback: citation.analysisFallback,
     trace: {
       evidenceId: `E${index + 1}`,
       chunkId: citation.chunkId ?? null,
@@ -418,6 +426,16 @@ async function submitFeedback() {
           </div>
           <small>{{ item.sourceName }}{{ evidenceMeta(item) ? ` / ${evidenceMeta(item)}` : "" }}</small>
           <p>{{ item.snippet }}</p>
+          <div v-if="item.previewUrl" class="visual-citation">
+            <VisualEvidenceThumbnail :preview-url="item.previewUrl" :alt="`${item.title} 引用图片`" />
+            <dl>
+              <div><dt>页码</dt><dd>{{ item.page ? `第 ${item.page} 页` : "未上报" }}</dd></div>
+              <div><dt>视觉类型</dt><dd>{{ item.visualType || "unknown" }}</dd></div>
+              <div><dt>Provider</dt><dd>{{ item.analysisProvider || "未上报" }}</dd></div>
+              <div><dt>Fallback</dt><dd>{{ item.analysisFallback ? "是" : "否" }}</dd></div>
+              <div><dt>语义验证</dt><dd>{{ item.semanticVerified ? "真实图片理解" : "OCR/上下文降级" }}</dd></div>
+            </dl>
+          </div>
           <span class="trace-line">{{ traceText(item.trace) }}</span>
         </article>
       </div>

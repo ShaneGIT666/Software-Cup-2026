@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
-import { Database, Download, History, Pencil, UploadCloud, WandSparkles } from "@lucide/vue";
+import { onBeforeUnmount, onMounted, ref } from "vue";
+import { Database, Download, History, Pencil, RefreshCw, UploadCloud, WandSparkles } from "@lucide/vue";
 import { ElMessage } from "element-plus";
 import {
   analyzeKnowledgeDocument,
@@ -8,12 +8,16 @@ import {
   fetchKnowledgeDocumentChunks,
   fetchKnowledgeDocumentRevisions,
   fetchKnowledgeDocuments,
+  fetchKnowledgeParseTask,
+  fetchKnowledgeParseTasks,
   getApiErrorMessage,
   reviseKnowledgeChunk,
   updateKnowledgeChunkStatus,
-  uploadKnowledgeDocument,
+  uploadKnowledgeDocumentAsync,
   type KnowledgeChunkPreview,
   type KnowledgeDocument,
+  type KnowledgeParseTask,
+  type ParserMode,
   type KnowledgeRevision
 } from "../api";
 
@@ -28,6 +32,17 @@ const uploading = ref(false);
 const analyzingId = ref("");
 const sourceName = ref("设备检修资料");
 const lastUploaded = ref<KnowledgeDocument | null>(null);
+const parserMode = ref<ParserMode>("smart_multimodal");
+const parseTasks = ref<KnowledgeParseTask[]>([]);
+const taskRefreshing = ref(false);
+const activePolls = new Set<string>();
+let disposed = false;
+
+const POLL_TIMEOUTS: Record<ParserMode, number> = {
+  text_fast: 5 * 60_000,
+  smart_multimodal: 30 * 60_000,
+  full_visual: 90 * 60_000
+};
 
 const revisionDialogVisible = ref(false);
 const revisionLoading = ref(false);
@@ -136,6 +151,103 @@ function canAnalyze(document: KnowledgeDocument) {
   return ["pdf", "docx", "pptx", "xlsx", "jpg", "jpeg", "png", "webp"].includes(document.suffix);
 }
 
+function parserModeText(mode?: string) {
+  const labels: Record<string, string> = {
+    text_fast: "快速文本解析",
+    smart_multimodal: "智能多模态解析",
+    full_visual: "全量视觉解析"
+  };
+  return mode ? labels[mode] ?? mode : "未上报";
+}
+
+function phaseText(phase?: string) {
+  const labels: Record<string, string> = {
+    queued: "等待处理",
+    text_parsing: "解析正文",
+    page_inventory: "识别视觉页",
+    page_rendering: "渲染页面",
+    ocr: "识别文字",
+    multimodal: "理解图像",
+    asset_analysis: "分析独立图示",
+    chunking: "生成知识片段",
+    completed: "处理完成",
+    completed_with_warnings: "完成但有降级",
+    failed: "处理失败"
+  };
+  return phase ? labels[phase] ?? phase : "等待上报";
+}
+
+function taskProgress(task: KnowledgeParseTask) {
+  const total = task.progressTotal ?? 0;
+  if (total <= 0) {
+    return task.status === "completed" || task.status === "completed_with_warnings" ? 100 : 0;
+  }
+  return Math.min(100, Math.round(((task.progressCurrent ?? 0) / total) * 100));
+}
+
+function coverageText(value?: number) {
+  return `${Math.round((value ?? 0) * 100)}%`;
+}
+
+function isTerminalTask(task: KnowledgeParseTask) {
+  return ["completed", "completed_with_warnings", "failed"].includes(task.status);
+}
+
+function upsertTask(task: KnowledgeParseTask) {
+  const index = parseTasks.value.findIndex((item) => item.id === task.id);
+  if (index >= 0) {
+    parseTasks.value[index] = task;
+  } else {
+    parseTasks.value.unshift(task);
+  }
+}
+
+async function refreshParseTasks(showMessage = false) {
+  taskRefreshing.value = true;
+  try {
+    const payload = await fetchKnowledgeParseTasks();
+    parseTasks.value = payload.items;
+    if (showMessage) {
+      ElMessage.success("任务状态已刷新。");
+    }
+  } catch (error) {
+    if (showMessage) {
+      ElMessage.error(getApiErrorMessage(error, "任务状态读取失败。"));
+    }
+  } finally {
+    taskRefreshing.value = false;
+  }
+}
+
+async function pollParseTask(task: KnowledgeParseTask) {
+  if (activePolls.has(task.id)) {
+    return;
+  }
+  activePolls.add(task.id);
+  const mode = task.parserModeRequested ?? "smart_multimodal";
+  const deadline = Date.now() + POLL_TIMEOUTS[mode];
+  try {
+    while (!disposed && Date.now() < deadline) {
+      await new Promise((resolve) => window.setTimeout(resolve, 2000));
+      const latest = await fetchKnowledgeParseTask(task.id);
+      upsertTask(latest);
+      if (isTerminalTask(latest)) {
+        await loadDocuments();
+        return;
+      }
+    }
+    if (!disposed) {
+      ElMessage.warning("任务仍可能在后台运行，请稍后刷新任务状态。");
+    }
+  } catch (error) {
+    if (!disposed) {
+      ElMessage.error(getApiErrorMessage(error, "任务状态读取失败。"));
+    }
+  } finally {
+    activePolls.delete(task.id);
+  }
+}
+
 async function loadDocuments() {
   loading.value = true;
   try {
@@ -159,9 +271,10 @@ async function handleFileChange(event: Event) {
   }
   uploading.value = true;
   try {
-    lastUploaded.value = await uploadKnowledgeDocument(file, sourceName.value);
-    ElMessage.success(`资料已进入审核队列：${lastUploaded.value.fileName}`);
-    await loadDocuments();
+    const task = await uploadKnowledgeDocumentAsync(file, sourceName.value, parserMode.value);
+    upsertTask(task);
+    ElMessage.success(`解析任务已提交：${task.fileName}`);
+    void pollParseTask(task);
   } catch (error) {
     ElMessage.error(getApiErrorMessage(error, "资料上传失败，请检查文件格式或大小。"));
   } finally {
@@ -300,7 +413,14 @@ async function saveChunkStatus() {
   }
 }
 
-onMounted(loadDocuments);
+onMounted(async () => {
+  await Promise.all([loadDocuments(), refreshParseTasks()]);
+  parseTasks.value.filter((task) => !isTerminalTask(task)).forEach((task) => void pollParseTask(task));
+});
+
+onBeforeUnmount(() => {
+  disposed = true;
+});
 
 defineExpose({ loadDocuments });
 </script>
@@ -313,8 +433,23 @@ defineExpose({ loadDocuments });
     </div>
     <p class="panel-note">
       上传 PDF、Office、Markdown 或图片资料。解析结果默认进入待审核，审核通过前不会参与正式检索；
-      若 MinerU 提取到图片资产，系统会生成 OCR 和图片分析片段。
+      视觉解析结果会先进入待审核，确认后才参与图文联合检索。
     </p>
+
+    <el-radio-group v-model="parserMode" class="parser-mode-grid" aria-label="选择资料解析模式">
+      <el-radio value="text_fast" border class="parser-mode-option">
+        <strong>快速文本解析</strong>
+        <span>仅提取文字，速度最快，不处理图片。适合纯文字 PDF、TXT、Markdown。</span>
+      </el-radio>
+      <el-radio value="smart_multimodal" border class="parser-mode-option">
+        <strong>智能多模态解析（推荐）</strong>
+        <span>优先使用 MinerU，并对含图、低文字密度和关键图示页执行 OCR 与多模态理解。</span>
+      </el-radio>
+      <el-radio value="full_visual" border class="parser-mode-option">
+        <strong>全量视觉解析</strong>
+        <span>渲染并分析每一页，适合扫描件、爆炸图、电路图和复杂维修手册。</span>
+      </el-radio>
+    </el-radio-group>
 
     <div class="knowledge-upload">
       <el-input v-model="sourceName" placeholder="资料来源名称，例如：设备检修手册" />
@@ -329,6 +464,50 @@ defineExpose({ loadDocuments });
         />
       </label>
     </div>
+
+    <section v-if="parseTasks.length" class="parse-task-section" aria-label="资料解析任务">
+      <div class="parse-task-header">
+        <strong>解析任务</strong>
+        <el-button :loading="taskRefreshing" size="small" plain @click="refreshParseTasks(true)">
+          <RefreshCw :size="14" />
+          刷新任务状态
+        </el-button>
+      </div>
+      <article v-for="task in parseTasks.slice(0, 5)" :key="task.id" class="parse-task-card">
+        <div class="parse-task-title">
+          <div>
+            <strong>{{ task.fileName }}</strong>
+            <span>{{ parserModeText(task.parserModeRequested) }} / {{ phaseText(task.currentPhase) }}</span>
+          </div>
+          <el-tag
+            size="small"
+            :type="task.status === 'failed' ? 'danger' : task.status === 'completed_with_warnings' ? 'warning' : task.status === 'completed' ? 'success' : 'info'"
+          >
+            {{ phaseText(task.status) }}
+          </el-tag>
+        </div>
+        <el-progress :percentage="taskProgress(task)" :status="task.status === 'failed' ? 'exception' : task.status === 'completed' ? 'success' : undefined" />
+        <dl class="parse-task-metrics">
+          <div><dt>实际 parser</dt><dd>{{ task.parser || "读取中" }}</dd></div>
+          <div><dt>MinerU</dt><dd>{{ task.mineruAttempted ? (task.mineruSucceeded ? "已成功" : "已尝试，未成功") : "未调用" }}</dd></div>
+          <div><dt>渲染器</dt><dd>{{ task.renderer || "读取中" }}</dd></div>
+          <div><dt>总页数</dt><dd>{{ task.pageCount ?? "读取中" }}</dd></div>
+          <div><dt>视觉候选页</dt><dd>{{ task.visualCandidatePages ?? 0 }}</dd></div>
+          <div><dt>已渲染页</dt><dd>{{ task.visualPagesRendered ?? 0 }}</dd></div>
+          <div><dt>已 OCR 页</dt><dd>{{ task.visualPagesOcrProcessed ?? 0 }}</dd></div>
+          <div><dt>真实多模态页</dt><dd>{{ task.realMultimodalPages ?? 0 }}</dd></div>
+          <div><dt>Fallback 页</dt><dd>{{ task.fallbackVisualPages ?? 0 }}</dd></div>
+          <div><dt>视觉覆盖率</dt><dd>{{ coverageText(task.visualCoverageRatio) }}</dd></div>
+          <div><dt>真实多模态覆盖率</dt><dd>{{ coverageText(task.realMultimodalCoverageRatio) }}</dd></div>
+        </dl>
+        <p v-if="task.parserFallbackReason || task.error" class="fallback-note">
+          {{ task.error || task.parserFallbackReason }}
+        </p>
+        <p v-if="task.visualFailedPages?.length" class="fallback-note">
+          失败页码：{{ task.visualFailedPages.join("、") }}
+        </p>
+      </article>
+    </section>
 
     <div v-if="lastUploaded" class="knowledge-status">
       <strong>{{ lastUploaded.fileName }}</strong>

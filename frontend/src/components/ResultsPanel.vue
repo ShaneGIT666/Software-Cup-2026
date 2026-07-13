@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { FileText, MapPin, ShieldCheck } from "@lucide/vue";
 import type { SearchPayload, SearchResult } from "../api";
+import VisualEvidenceThumbnail from "./VisualEvidenceThumbnail.vue";
 
 defineProps<{
   searchPayload: SearchPayload | null;
@@ -61,12 +62,15 @@ function sourceLabel(sourceType: SearchResult["sourceType"]) {
     <template v-else-if="searchPayload && searchPayload.results.length">
       <p class="summary">{{ searchPayload.summary }}</p>
       <div class="result-list">
-        <button
+        <article
           v-for="item in searchPayload.results"
           :key="item.id"
           class="result-item"
           :class="{ active: selectedResult?.id === item.id }"
+          role="button"
+          tabindex="0"
           @click="emit('openWorkflow', item)"
+          @keydown.enter="emit('openWorkflow', item)"
         >
           <div>
             <strong>{{ item.title }}</strong>
@@ -75,6 +79,17 @@ function sourceLabel(sourceType: SearchResult["sourceType"]) {
           <span class="source-line">{{ item.sourceName }}{{ item.chapter ? ` / ${item.chapter}` : "" }}</span>
           <p>{{ item.snippet }}</p>
           <small v-if="item.reason" class="reason-line">{{ item.reason }}</small>
+          <div v-if="item.previewUrl" class="visual-result-evidence" @click.stop @keydown.stop>
+            <VisualEvidenceThumbnail :preview-url="item.previewUrl" :alt="`${item.title} 视觉证据`" />
+            <div class="visual-evidence-labels">
+              <el-tag size="small" :type="item.semanticVerified ? 'success' : 'warning'">
+                {{ item.semanticVerified ? "真实图片理解" : "OCR/上下文降级" }}
+              </el-tag>
+              <span>{{ item.assetType === "mineru_asset" ? "独立图示" : "页面视觉" }}</span>
+              <span v-if="item.page">第 {{ item.page }} 页</span>
+              <span v-if="item.visualType">{{ item.visualType }}</span>
+            </div>
+          </div>
           <div class="result-trace">
             <span>
               <MapPin :size="12" />
@@ -87,7 +102,7 @@ function sourceLabel(sourceType: SearchResult["sourceType"]) {
             <progress :value="Math.round(item.confidence * 100)" max="100" :aria-label="`${item.title} 可信度`"></progress>
             <small v-if="item.scoreBreakdown">排序分 {{ item.scoreBreakdown.score }}</small>
           </div>
-        </button>
+        </article>
       </div>
     </template>
     <div v-else-if="searchPayload && searchPayload.results.length === 0" class="empty-hint">

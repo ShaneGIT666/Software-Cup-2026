@@ -4,7 +4,17 @@ export interface ApiResponse<T> {
   message: string;
 }
 
-export interface SearchResult {
+export interface VisualEvidenceFields {
+  assetId?: string;
+  assetType?: "page_visual" | "mineru_asset" | string;
+  previewUrl?: string;
+  visualType?: string;
+  semanticVerified?: boolean;
+  analysisProvider?: string;
+  analysisFallback?: boolean;
+}
+
+export interface SearchResult extends VisualEvidenceFields {
   id: string;
   title: string;
   sourceId?: string;
@@ -537,7 +547,7 @@ export function fetchReviewItems(status = "pending_review") {
   return request<ReviewItemListPayload>(`/api/review/items?status=${encodeURIComponent(status)}`);
 }
 
-export interface KnowledgeChunkPreview {
+export interface KnowledgeChunkPreview extends VisualEvidenceFields {
   id: string;
   chunk_id?: string;
   title: string;
@@ -568,6 +578,12 @@ export interface KnowledgeChunkPreview {
   manuallyCorrected?: boolean;
   updatedAt?: string;
   revisionTags?: string[];
+  analysisModel?: string;
+  analysisFallbackReason?: string;
+  ocrText?: string;
+  visualSummary?: string;
+  components?: string[];
+  operations?: string[];
 }
 
 export interface KnowledgeRevision {
@@ -617,6 +633,26 @@ export interface KnowledgeDocument {
   parser: string;
   parserFallback?: boolean;
   parserFallbackReason?: string;
+  parserModeRequested?: ParserMode;
+  parserModeEffective?: ParserMode;
+  mineruAttempted?: boolean;
+  mineruSucceeded?: boolean;
+  mineruTimeoutSeconds?: number;
+  parseDurationMs?: number;
+  pageCount?: number;
+  textChunkCount?: number;
+  visualAnalysisRequested?: boolean;
+  visualAnalysisStatus?: string;
+  visualCandidatePages?: number;
+  visualPagesRendered?: number;
+  visualPagesOcrProcessed?: number;
+  visualPagesAnalyzed?: number;
+  realMultimodalPages?: number;
+  fallbackVisualPages?: number;
+  visualCoverageRatio?: number;
+  realMultimodalCoverageRatio?: number;
+  visualFailedPages?: number[];
+  renderer?: string;
   parseArtifacts?: {
     rawParseResult: string;
     parsedMarkdown: string;
@@ -660,10 +696,12 @@ export interface KnowledgeDocumentListPayload {
   total: number;
 }
 
+export type ParserMode = "text_fast" | "smart_multimodal" | "full_visual";
+
 export interface KnowledgeParseTask {
   id: string;
   type: string;
-  status: "queued" | "running" | "completed" | "failed" | string;
+  status: "queued" | "running" | "completed" | "completed_with_warnings" | "failed" | string;
   fileName: string;
   fileType: string;
   suffix: string;
@@ -683,6 +721,31 @@ export interface KnowledgeParseTask {
   assetAnalysisCount?: number;
   assetAnalysisFallbackCount?: number;
   assetAnalysisError?: string;
+  parserModeRequested?: ParserMode;
+  parserModeEffective?: ParserMode;
+  currentPhase?: string;
+  progressCurrent?: number;
+  progressTotal?: number;
+  mineruAttempted?: boolean;
+  mineruSucceeded?: boolean;
+  mineruTimeoutSeconds?: number;
+  parseDurationMs?: number;
+  pageCount?: number;
+  textChunkCount?: number;
+  visualAnalysisRequested?: boolean;
+  visualAnalysisStatus?: string;
+  visualCandidatePages?: number;
+  visualPagesRendered?: number;
+  visualPagesOcrProcessed?: number;
+  visualPagesAnalyzed?: number;
+  realMultimodalPages?: number;
+  fallbackVisualPages?: number;
+  mineruAssetCount?: number;
+  analyzedMineruAssetCount?: number;
+  visualCoverageRatio?: number;
+  realMultimodalCoverageRatio?: number;
+  visualFailedPages?: number[];
+  renderer?: string;
 }
 
 export interface KnowledgeParseTaskListPayload {
@@ -747,12 +810,13 @@ export function uploadKnowledgeDocument(file: File, sourceName?: string) {
   });
 }
 
-export function uploadKnowledgeDocumentAsync(file: File, sourceName?: string) {
+export function uploadKnowledgeDocumentAsync(file: File, sourceName?: string, parserMode: ParserMode = "smart_multimodal") {
   const formData = new FormData();
   formData.append("file", file);
   if (sourceName?.trim()) {
     formData.append("source_name", sourceName.trim());
   }
+  formData.append("parser_mode", parserMode);
   return request<KnowledgeParseTask>("/api/knowledge/documents/async", {
     method: "POST",
     body: formData
@@ -778,6 +842,10 @@ export function fetchKnowledgeDocumentChunks(documentId: string) {
 
 export function downloadKnowledgeDocumentFile(documentId: string) {
   return requestBlob(`/api/knowledge/documents/${documentId}/file`);
+}
+
+export function fetchProtectedBlob(path: string) {
+  return requestBlob(path);
 }
 
 export function fetchKnowledgeDocumentRevisions(documentId: string) {
@@ -864,12 +932,12 @@ export function analyzeKnowledgeDocument(documentId: string, provider?: "mock" |
   });
 }
 
-export interface RagCitation {
+export interface RagCitation extends VisualEvidenceFields {
   id: string;
   title: string;
   sourceId?: string;
   sourceDocId?: string;
-  sourceType: "manual" | "case" | "document";
+  sourceType: "manual" | "case" | "document" | "document_asset";
   sourceName: string;
   snippet: string;
   confidence: number;
@@ -892,7 +960,7 @@ export interface EvidenceTrace {
   section?: string | null;
 }
 
-export interface EvidenceItem {
+export interface EvidenceItem extends VisualEvidenceFields {
   evidenceId: string;
   resultId: string;
   title: string;
