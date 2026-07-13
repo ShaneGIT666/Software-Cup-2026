@@ -17,6 +17,11 @@ import {
   type KnowledgeRevision
 } from "../api";
 
+const emit = defineEmits<{
+  serviceError: [message: string];
+  serviceReady: [];
+}>();
+
 const documents = ref<KnowledgeDocument[]>([]);
 const loading = ref(false);
 const uploading = ref(false);
@@ -136,8 +141,11 @@ async function loadDocuments() {
   try {
     const payload = await fetchKnowledgeDocuments();
     documents.value = payload.items;
+    emit("serviceReady");
   } catch (error) {
-    ElMessage.error(getApiErrorMessage(error, "资料列表加载失败，请确认后端服务已启动。"));
+    const message = getApiErrorMessage(error, "资料列表加载失败，请确认后端服务已启动。");
+    emit("serviceError", message);
+    ElMessage.error(message);
   } finally {
     loading.value = false;
   }

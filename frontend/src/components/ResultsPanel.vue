@@ -27,7 +27,7 @@ function sourceLabel(sourceType: SearchResult["sourceType"]) {
   <section class="results-panel">
     <div class="section-title">
       <FileText :size="18" />
-      <span>步骤 2：查看参考依据</span>
+      <span>步骤 2：检索参考依据</span>
     </div>
     <p class="panel-note">系统仅使用已审核资料生成正式建议，未审核内容不会进入检修依据。</p>
 

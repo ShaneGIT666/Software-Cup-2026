@@ -11,7 +11,7 @@ defineProps<{
   <section class="workflow-panel">
     <div class="section-title">
       <Wrench :size="18" />
-      <span>步骤 3：标准作业步骤</span>
+      <span>步骤 3：查看标准作业流程</span>
     </div>
     <template v-if="selectedWorkflow">
       <h2>{{ selectedWorkflow.title }}</h2>

@@ -221,7 +221,7 @@ async function submitFeedback() {
   <section class="rag-panel panel-highlight">
     <div class="section-title">
       <Bot :size="18" />
-      <span>步骤 3 / 4：智能检修建议与复核修正</span>
+      <span>步骤 4：生成智能检修建议</span>
     </div>
     <p class="panel-note">
       基于当前参考依据生成检修建议，保留引用来源、页码、资料片段和不确定信息，便于现场人员复核。

@@ -4,6 +4,11 @@ import { ElMessage } from "element-plus";
 import { History, RefreshCw } from "@lucide/vue";
 import { fetchReviewEvents, getApiErrorMessage, type KnowledgeReviewEvent } from "../api";
 
+const emit = defineEmits<{
+  serviceError: [message: string];
+  serviceReady: [];
+}>();
+
 const events = ref<KnowledgeReviewEvent[]>([]);
 const objectType = ref("all");
 const loading = ref(false);
@@ -64,8 +69,11 @@ async function loadEvents() {
       })
     ).items;
     loaded.value = true;
+    emit("serviceReady");
   } catch (error) {
-    ElMessage.error(getApiErrorMessage(error, "审核记录加载失败，请稍后重试。"));
+    const message = getApiErrorMessage(error, "审核记录加载失败，请稍后重试。");
+    emit("serviceError", message);
+    ElMessage.error(message);
   } finally {
     loading.value = false;
   }

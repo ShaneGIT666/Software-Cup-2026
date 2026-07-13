@@ -17,6 +17,7 @@ import {
   RefreshCw,
   Settings2,
   ShieldCheck,
+  TriangleAlert,
   Wrench
 } from "@lucide/vue";
 import {
@@ -80,6 +81,8 @@ const ragAnswer = ref<RagAnswerPayload | null>(null);
 const multimodalDiagnosis = ref<MultimodalDiagnosisPayload | null>(null);
 const providerStatus = ref<ProviderStatusPayload | null>(null);
 const providerStatusChecked = ref(false);
+const providerStatusError = ref("");
+const managementServiceError = ref("");
 const reviewPanel = ref<InstanceType<typeof ReviewPanel> | null>(null);
 const authTokenInput = ref("");
 const authTokenConfigured = ref(hasAuthToken());
@@ -98,11 +101,11 @@ const caseForm = ref({
 });
 
 const workflowSteps = [
-  { index: "1", title: "描述故障", detail: "录入设备、现象和图片线索" },
-  { index: "2", title: "补充图片", detail: "提取 OCR 与视觉故障线索" },
-  { index: "3", title: "检索依据", detail: "仅使用已审核资料" },
-  { index: "4", title: "生成指引", detail: "输出检查、维修和安全提醒" },
-  { index: "5", title: "反馈沉淀", detail: "修正回答并沉淀现场经验" }
+  { index: "1", title: "描述故障与补充图片", detail: "录入设备、现象和图片线索" },
+  { index: "2", title: "检索参考依据", detail: "仅使用已审核资料" },
+  { index: "3", title: "查看标准作业流程", detail: "核对工具、步骤与安全要求" },
+  { index: "4", title: "生成智能检修建议", detail: "输出检查、维修和安全提醒" },
+  { index: "5", title: "反馈与经验沉淀", detail: "修正回答并沉淀现场经验" }
 ];
 
 const managementTabs: Array<{ key: ManagementTab; label: string }> = [
@@ -126,8 +129,26 @@ const activeAreaLabel = computed(() => {
   }
   return "检修助手";
 });
-const topbarProviderLabel = computed(() => providerStatus.value?.llm.effectiveProvider ?? "读取中");
-const topbarModelLabel = computed(() => providerStatus.value?.llm.model ?? "未上报");
+const providerUnavailable = computed(() => providerStatusChecked.value && Boolean(providerStatusError.value));
+const topbarProviderLabel = computed(() => {
+  if (!providerStatusChecked.value) {
+    return "读取中";
+  }
+  if (providerUnavailable.value) {
+    return "服务不可用";
+  }
+  return providerStatus.value?.llm.effectiveProvider || "未上报";
+});
+const topbarModelLabel = computed(() => {
+  if (!providerStatusChecked.value) {
+    return "读取中";
+  }
+  if (providerUnavailable.value) {
+    return "服务不可用";
+  }
+  return providerStatus.value?.llm.model || "未上报";
+});
+const managementPageError = computed(() => managementServiceError.value || providerStatusError.value);
 
 const diagnosisSummary = computed(() => {
   const diagnosis = multimodalDiagnosis.value;
@@ -139,29 +160,33 @@ const diagnosisSummary = computed(() => {
 
 const providerModeLabel = computed(() => {
   if (!providerStatus.value) {
-    return "模型服务状态读取中";
+    return providerUnavailable.value ? "模型服务不可用" : "模型服务状态读取中";
   }
   if (providerStatus.value.offlineFallback) {
     return "离线兜底模式";
   }
   const llm = providerStatus.value.llm;
+  if (!llm.effectiveProvider) {
+    return "模型服务未上报";
+  }
   return llm.effectiveProvider === "mock" ? "演示兜底模式" : `真实模型服务：${llm.effectiveProvider}`;
 });
 
 const providerDetailLabel = computed(() => {
   if (!providerStatus.value) {
-    return "等待后端状态";
+    return providerUnavailable.value ? "当前无法读取实时状态，请重新连接。" : "等待后端状态";
   }
   const llm = providerStatus.value.llm;
   const multimodal = providerStatus.value.multimodal;
   const embedding = providerStatus.value.embedding;
   const ocr = providerStatus.value.ocr;
-  const embeddingProvider = embedding?.effectiveProvider ?? "hash";
-  const ocrProvider = ocr?.effectiveProvider ?? "mock";
-  return `LLM ${llm.effectiveProvider} / 多模态 ${multimodal.effectiveProvider} / OCR ${ocrProvider} / 向量 ${embeddingProvider}`;
+  const embeddingProvider = embedding?.effectiveProvider || "未上报";
+  const ocrProvider = ocr?.effectiveProvider || "未上报";
+  return `LLM ${llm.effectiveProvider || "未上报"} / 多模态 ${multimodal.effectiveProvider || "未上报"} / OCR ${ocrProvider} / 向量 ${embeddingProvider}`;
 });
 
 const providerToneClass = computed(() => ({
+  "is-error": providerUnavailable.value,
   "is-offline": providerStatus.value?.offlineFallback,
   "is-cloud": providerStatus.value && providerStatus.value.llm.effectiveProvider !== "mock",
   "is-local": !providerStatus.value || providerStatus.value.llm.effectiveProvider === "mock"
@@ -218,33 +243,39 @@ const systemSignalItems = computed(() => {
 const statusCards = computed(() => {
   const status = providerStatus.value;
   if (!status) {
+    const value = providerUnavailable.value ? "服务不可用" : "读取中";
+    const detail = providerUnavailable.value ? "当前无法读取实时状态" : "正在连接后端服务";
     return [
-      { label: "模型服务", value: "读取中", detail: "请确认后端服务已启动" },
-      { label: "OCR / 多模态", value: "读取中", detail: "系统状态页会显示实际 provider" },
-      { label: "向量检索", value: "读取中", detail: "默认具备本地轻量检索兜底" },
-      { label: "离线兜底", value: "读取中", detail: "真实模型不可用时仍可演示主流程" }
+      { label: "模型服务", value, detail },
+      { label: "OCR / 多模态", value, detail },
+      { label: "向量检索", value, detail },
+      { label: "离线兜底", value, detail }
     ];
   }
   return [
     {
       label: "模型服务",
-      value: status.llm.effectiveProvider,
-      detail: status.llm.keyConfigured ? `已配置 Key / ${status.llm.model ?? "未返回模型名"}` : "未配置 Key 或使用演示兜底"
+      value: status.llm.effectiveProvider || "未上报",
+      detail: status.llm.keyConfigured ? `已配置 Key / ${status.llm.model || "未上报"}` : "未配置 Key 或使用演示兜底"
     },
     {
       label: "OCR / 多模态",
-      value: `${status.ocr?.effectiveProvider ?? "mock"} / ${status.multimodal.effectiveProvider}`,
+      value: `${status.ocr?.effectiveProvider || "未上报"} / ${status.multimodal.effectiveProvider || "未上报"}`,
       detail: status.multimodal.lastFallbackReason || "图片线索会进入检索上下文"
     },
     {
       label: "向量检索",
-      value: status.embedding?.effectiveProvider ?? "hash",
+      value: status.embedding?.effectiveProvider || "未上报",
       detail: status.embedding?.vectorStore ? `向量库：${status.embedding.vectorStore}` : "默认本地轻量检索兜底"
     },
     {
       label: "离线兜底",
-      value: status.offlineFallback ? "已启用" : "未启用",
-      detail: status.remoteApiMode === "off" ? "当前强制离线演示" : "真实模型失败时可自动降级"
+      value: typeof status.offlineFallback === "boolean" ? (status.offlineFallback ? "已启用" : "未启用") : "未上报",
+      detail: status.remoteApiMode
+        ? status.remoteApiMode === "off"
+          ? "当前强制离线演示"
+          : "真实模型失败时可自动降级"
+        : "未上报远程 API 模式"
     }
   ];
 });
@@ -287,14 +318,32 @@ function clearFaultInput() {
 }
 
 async function refreshProviderStatus() {
+  providerStatusChecked.value = false;
+  providerStatusError.value = "";
+  providerStatus.value = null;
   try {
     providerStatus.value = await fetchProviderStatus();
+    providerStatusError.value = "";
   } catch (error) {
     providerStatus.value = null;
-    ElMessage.warning(getApiErrorMessage(error, "后端服务暂不可用，请确认服务已启动。"));
+    providerStatusError.value = getApiErrorMessage(error, "后端服务暂不可用，请确认服务已启动。");
+    ElMessage.warning(providerStatusError.value);
   } finally {
     providerStatusChecked.value = true;
   }
+}
+
+function handleManagementServiceError(message: string) {
+  managementServiceError.value = message;
+}
+
+function clearManagementServiceError() {
+  managementServiceError.value = "";
+}
+
+async function reconnectServices() {
+  managementServiceError.value = "";
+  await refreshProviderStatus();
 }
 
 function saveSessionAuthToken() {
@@ -427,8 +476,11 @@ async function loadKnowledgeGraphOverview() {
   graphLoading.value = true;
   try {
     knowledgeGraph.value = await fetchKnowledgeGraphOverview();
+    clearManagementServiceError();
   } catch (error) {
-    ElMessage.error(getApiErrorMessage(error, "知识关系图总览读取失败，请稍后重试。"));
+    const message = getApiErrorMessage(error, "知识关系图总览读取失败，请稍后重试。");
+    handleManagementServiceError(message);
+    ElMessage.error(message);
   } finally {
     graphLoading.value = false;
   }
@@ -438,9 +490,12 @@ async function rebuildKnowledgeGraphOverview() {
   graphLoading.value = true;
   try {
     knowledgeGraph.value = await rebuildKnowledgeGraph();
+    clearManagementServiceError();
     ElMessage.success("知识关系图已根据资料、案例、流程和回答修正重建。");
   } catch (error) {
-    ElMessage.error(getApiErrorMessage(error, "知识关系图重建失败，请稍后重试。"));
+    const message = getApiErrorMessage(error, "知识关系图重建失败，请稍后重试。");
+    handleManagementServiceError(message);
+    ElMessage.error(message);
   } finally {
     graphLoading.value = false;
   }
@@ -556,11 +611,23 @@ refreshProviderStatus();
           <strong>{{ activeAreaLabel }}</strong>
         </div>
         <div class="topbar-signals">
-          <span class="live-signal" :class="{ offline: providerStatus?.offlineFallback }">
-            <i></i>后端：{{ providerStatus ? "在线" : providerStatusChecked ? "不可用" : "读取中" }}
+          <span class="live-signal" :class="{ offline: providerStatus?.offlineFallback, unavailable: providerUnavailable }">
+            <i></i>后端：{{ providerStatus ? "在线" : providerUnavailable ? "服务不可用" : "读取中" }}
           </span>
           <span>模型：{{ topbarProviderLabel }} / {{ topbarModelLabel }}</span>
-          <span>Fallback：{{ providerStatus ? (providerStatus.offlineFallback ? "已启用" : "未启用") : "状态未知" }}</span>
+          <span>
+            Fallback：{{
+              providerStatus
+                ? typeof providerStatus.offlineFallback === "boolean"
+                  ? providerStatus.offlineFallback
+                    ? "已启用"
+                    : "未启用"
+                  : "未上报"
+                : providerUnavailable
+                  ? "服务不可用"
+                  : "读取中"
+            }}
+          </span>
           <span>认证：{{ authTokenConfigured ? "已配置" : "未配置" }}</span>
         </div>
       </header>
@@ -635,7 +702,7 @@ refreshProviderStatus();
         />
 
         <details class="case-disclosure">
-          <summary><ClipboardCheck :size="17" />步骤 5：沉淀现场案例与反馈</summary>
+          <summary><ClipboardCheck :size="17" />步骤 5：反馈与经验沉淀</summary>
           <CasePanel
             v-model:device-type="caseForm.deviceType"
             v-model:component="caseForm.component"
@@ -672,9 +739,30 @@ refreshProviderStatus();
             {{ tab.label }}
           </button>
         </nav>
-        <section class="management-workspace">
-          <KnowledgePanel v-if="activeManagementTab === 'knowledge'" />
-          <ReviewPanel v-else-if="activeManagementTab === 'review'" ref="reviewPanel" />
+        <section v-if="managementPageError" class="page-error-state" role="alert">
+          <TriangleAlert :size="20" />
+          <div>
+            <strong>管理服务暂不可用</strong>
+            <p>{{ managementPageError }}</p>
+            <small>服务连接后将加载资料与审核数据。</small>
+          </div>
+          <div class="page-error-actions">
+            <el-button type="primary" @click="reconnectServices"><RefreshCw :size="15" />重新连接</el-button>
+            <el-button plain @click="switchArea('status')">前往系统状态</el-button>
+          </div>
+        </section>
+        <section v-if="!managementPageError" class="management-workspace">
+          <KnowledgePanel
+            v-if="activeManagementTab === 'knowledge'"
+            @service-error="handleManagementServiceError"
+            @service-ready="clearManagementServiceError"
+          />
+          <ReviewPanel
+            v-else-if="activeManagementTab === 'review'"
+            ref="reviewPanel"
+            @service-error="handleManagementServiceError"
+            @service-ready="clearManagementServiceError"
+          />
           <CasePanel
             v-else-if="activeManagementTab === 'cases'"
             v-model:device-type="caseForm.deviceType"
@@ -698,7 +786,11 @@ refreshProviderStatus();
             @overview="loadKnowledgeGraphOverview"
             @rebuild="rebuildKnowledgeGraphOverview"
           />
-          <ReviewEventsPanel v-else />
+          <ReviewEventsPanel
+            v-else
+            @service-error="handleManagementServiceError"
+            @service-ready="clearManagementServiceError"
+          />
         </section>
       </section>
 
@@ -711,6 +803,19 @@ refreshProviderStatus();
           </div>
           <el-button plain @click="refreshProviderStatus"><RefreshCw :size="15" />刷新状态</el-button>
         </div>
+
+        <section v-if="providerStatusError" class="page-error-state" role="alert">
+          <TriangleAlert :size="20" />
+          <div>
+            <strong>实时状态服务不可用</strong>
+            <p>{{ providerStatusError }}</p>
+            <small>当前无法读取实时指标，请确认后端服务后重新连接。</small>
+          </div>
+          <div class="page-error-actions">
+            <el-button type="primary" @click="reconnectServices"><RefreshCw :size="15" />重新连接</el-button>
+            <el-button plain disabled>当前位于系统状态</el-button>
+          </div>
+        </section>
 
         <section class="status-overview">
           <article class="status-panel" :class="providerToneClass">
@@ -757,7 +862,9 @@ refreshProviderStatus();
                 <b>{{ item.value }}</b><span>{{ item.label }}</span><small>{{ item.detail }}</small>
               </div>
             </div>
-            <div v-else class="empty-hint"><span>暂未读取到系统指标，请确认后端服务已启动。</span></div>
+            <div v-else class="empty-hint">
+              <span>{{ providerStatusError ? "当前无法读取实时指标，请重新连接后查看。" : "实时指标读取中。" }}</span>
+            </div>
             <div v-if="systemSignalItems.length" class="status-signals">
               <span v-for="item in systemSignalItems" :key="item">{{ item }}</span>
             </div>

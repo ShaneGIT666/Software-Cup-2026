@@ -11,6 +11,11 @@ import {
   type ReviewItem
 } from "../api";
 
+const emit = defineEmits<{
+  serviceError: [message: string];
+  serviceReady: [];
+}>();
+
 const items = ref<ReviewItem[]>([]);
 const loading = ref(false);
 const loaded = ref(false);
@@ -39,8 +44,11 @@ async function loadCases() {
   try {
     items.value = (await fetchReviewItems("pending_review")).items;
     loaded.value = true;
+    emit("serviceReady");
   } catch (error) {
-    ElMessage.error(getApiErrorMessage(error, "待审核内容加载失败，请确认后端服务已启动。"));
+    const message = getApiErrorMessage(error, "待审核内容加载失败，请确认后端服务已启动。");
+    emit("serviceError", message);
+    ElMessage.error(message);
   } finally {
     loading.value = false;
   }

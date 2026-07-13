@@ -84,6 +84,13 @@ button,
 }
 
 .shell {
+  --el-color-primary: #356f5a;
+  --el-color-primary-light-3: #669584;
+  --el-color-primary-light-5: #8eaea2;
+  --el-color-primary-light-7: #b8cbc4;
+  --el-color-primary-light-8: #d2dfda;
+  --el-color-primary-light-9: #e9f0ed;
+  --el-color-primary-dark-2: #285543;
   min-height: 100vh;
   padding: 24px;
   background: var(--bg);
@@ -2090,11 +2097,24 @@ h2 {
 }
 
 .topbar-signals {
-  gap: 16px;
+  gap: 0;
   color: #73818a;
-  font-size: 11px;
+  font-size: 12px;
   white-space: nowrap;
   overflow: hidden;
+}
+
+.topbar-signals > span {
+  min-height: 18px;
+  border-left: 1px solid #d6dde1;
+  margin-left: 11px;
+  padding-left: 11px;
+}
+
+.topbar-signals > span:first-child {
+  border-left: 0;
+  margin-left: 0;
+  padding-left: 0;
 }
 
 .live-signal {
@@ -2115,6 +2135,14 @@ h2 {
 
 .live-signal.offline i {
   background: #d99b32;
+}
+
+.live-signal.unavailable {
+  color: var(--danger);
+}
+
+.live-signal.unavailable i {
+  background: var(--danger);
 }
 
 .area-section {
@@ -2327,6 +2355,50 @@ h2 {
 
 .management-workspace > section {
   width: 100%;
+}
+
+.page-error-state {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  min-height: 132px;
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--line));
+  border-radius: 7px;
+  margin-bottom: 14px;
+  padding: 18px;
+  background: #fffafa;
+}
+
+.page-error-state > svg {
+  color: var(--danger);
+}
+
+.page-error-state strong {
+  color: var(--text-strong);
+  font-size: 14px;
+}
+
+.page-error-state p {
+  margin: 5px 0 3px;
+  color: var(--text-main);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.page-error-state small {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.page-error-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.status-panel.is-error {
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--line));
+  background: #fffafa;
 }
 
 .status-overview {
@@ -2719,6 +2791,14 @@ h2 {
   .provenance-panel dl > div:nth-child(2) {
     border-right: 0;
   }
+
+  .page-error-state {
+    grid-template-columns: 28px minmax(0, 1fr);
+  }
+
+  .page-error-actions {
+    grid-column: 2;
+  }
 }
 
 @media (max-width: 700px) {
@@ -2812,5 +2892,14 @@ h2 {
   .provenance-panel dl > div {
     border-right: 0;
     border-bottom: 1px solid #e0e6e9;
+  }
+
+  .page-error-state {
+    grid-template-columns: 1fr;
+  }
+
+  .page-error-actions {
+    grid-column: 1;
+    flex-wrap: wrap;
   }
 }

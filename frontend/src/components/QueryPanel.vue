@@ -52,7 +52,7 @@ function handleDiagnosisFileChange(event: Event) {
   <aside class="query-panel panel-accent">
     <div class="section-title">
       <Search :size="18" />
-      <span>步骤 1：描述故障</span>
+      <span>步骤 1：描述故障与补充图片</span>
     </div>
     <p class="panel-note">
       输入设备型号、故障现象和检修等级；可上传现场故障图片，系统会提取图片识别线索辅助诊断。
