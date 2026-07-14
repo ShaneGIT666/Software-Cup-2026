@@ -23,12 +23,21 @@ cleanup() {
 trap cleanup EXIT
 mkdir -p "$RUN_ROOT"
 
-if [[ -f .env ]]; then
+load_env_safely() {
+  [[ -f .env ]] || return 0
   while IFS='=' read -r key value; do
     [[ -z "$key" || "$key" == \#* ]] && continue
     [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
     value="${value%$'\r'}"
     printenv "$key" >/dev/null 2>&1 || export "$key=$value"
+  done < .env
+}
+
+if [[ -z "${OFFICIAL_MANUAL_PATH:-}" && -f .env ]]; then
+  while IFS='=' read -r key value; do
+    if [[ "$key" == "OFFICIAL_MANUAL_PATH" ]]; then
+      OFFICIAL_MANUAL_PATH="${value%$'\r'}"
+    fi
   done < .env
 fi
 if [[ -z "${OFFICIAL_MANUAL_PATH:-}" && -f /home/vmuser/official-motorcycle-manual.pdf ]]; then
@@ -62,6 +71,8 @@ command -v pdftoppm >/dev/null 2>&1 || { echo "LOONGARCH_RENDERER_REQUIRES_ADMIN
 pdftoppm -v
 "$PYTHON_BIN" -c 'import json; from backend.app.pdf_renderer import renderer_operational_readiness; d=renderer_operational_readiness(); print(json.dumps(d,ensure_ascii=False)); assert d.get("ready") is True and d.get("renderer") == "pdftoppm" and d.get("smokeRenderOk") is True'
 
+(
+load_env_safely
 "$PYTHON_BIN" -c 'import json; from backend.app.multimodal_adapter import multimodal_readiness,multimodal_operational_probe; r=multimodal_readiness(); p=multimodal_operational_probe(); safe={"provider":r.get("provider"),"model":r.get("model"),"ready":r.get("ready"),"probeOk":p.get("probeOk")}; print(json.dumps(safe,ensure_ascii=False)); assert r.get("ready") is True and r.get("provider") != "mock" and p.get("probeOk") is True'
 
 export TMPDIR="$RUN_ROOT" TMP="$RUN_ROOT" TEMP="$RUN_ROOT"
@@ -86,6 +97,7 @@ print(json.dumps({
     "controlledPreviewPassed": data["controlledPreviewPassed"], "result": data["result"],
 }, ensure_ascii=False))
 PY
+)
 
 export TARGET_VERIFY_EVIDENCE_ROOT="$RUN_ROOT/final-evidence"
 export PYTEST_ADDOPTS="-p no:cacheprovider"

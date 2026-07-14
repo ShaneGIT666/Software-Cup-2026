@@ -56,10 +56,12 @@ def test_venv_harness_loads_config_safely_and_isolates_pytest() -> None:
 
 def test_loongarch_multimodal_harness_loads_provider_config_without_shell_evaluation() -> None:
     script = Path("scripts/loongarch-multimodal-verify.sh").read_text(encoding="utf-8")
-    env_load = script.index('if [[ -f .env ]]')
+    env_load = script.index("load_env_safely()")
+    scoped_load = script.index("\nload_env_safely\n", env_load)
     provider_probe = script.index("multimodal_operational_probe")
+    final_verify = script.index("bash scripts/loongarch-final-verify.sh")
 
-    assert env_load < provider_probe
+    assert env_load < scoped_load < provider_probe < final_verify
     assert 'done < .env' in script
     assert '[[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]' in script
     assert 'export "$key=$value"' in script
