@@ -54,6 +54,18 @@ def test_venv_harness_loads_config_safely_and_isolates_pytest() -> None:
     assert 'OFFICIAL_MANUAL_PATH="${OFFICIAL_MANUAL_PATH:-}"' in test_prefix
 
 
+def test_loongarch_multimodal_harness_loads_provider_config_without_shell_evaluation() -> None:
+    script = Path("scripts/loongarch-multimodal-verify.sh").read_text(encoding="utf-8")
+    env_load = script.index('if [[ -f .env ]]')
+    provider_probe = script.index("multimodal_operational_probe")
+
+    assert env_load < provider_probe
+    assert 'done < .env' in script
+    assert '[[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]' in script
+    assert 'export "$key=$value"' in script
+    assert "source .env" not in script
+
+
 def test_real_provider_checks_parse_responses_before_marking_verified() -> None:
     script = Path("scripts/loongarch-final-verify.sh").read_text(encoding="utf-8")
     start = script.index("check_real_providers()")

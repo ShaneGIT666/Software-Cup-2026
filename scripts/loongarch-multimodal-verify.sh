@@ -23,11 +23,12 @@ cleanup() {
 trap cleanup EXIT
 mkdir -p "$RUN_ROOT"
 
-if [[ -z "${OFFICIAL_MANUAL_PATH:-}" && -f .env ]]; then
+if [[ -f .env ]]; then
   while IFS='=' read -r key value; do
-    if [[ "$key" == "OFFICIAL_MANUAL_PATH" ]]; then
-      OFFICIAL_MANUAL_PATH="${value%$'\r'}"
-    fi
+    [[ -z "$key" || "$key" == \#* ]] && continue
+    [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+    value="${value%$'\r'}"
+    printenv "$key" >/dev/null 2>&1 || export "$key=$value"
   done < .env
 fi
 if [[ -z "${OFFICIAL_MANUAL_PATH:-}" && -f /home/vmuser/official-motorcycle-manual.pdf ]]; then
