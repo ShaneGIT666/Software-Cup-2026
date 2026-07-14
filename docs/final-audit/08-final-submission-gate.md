@@ -31,10 +31,12 @@ The machine quality conclusion used the same configured provider and model for p
 
 ### LoongArch
 
-- Strict SSH host-key verification detected a changed target ED25519 identity before login.
-- The new fingerprint has not yet been confirmed from the VM console, so architecture, repository, Python, Renderer, provider, three-page flow, approved-only behavior, preview protection, and the existing final verifier were not re-executed.
-- No host-key bypass or privileged installation was attempted.
-- Current result: `LOONGARCH_MULTIMODAL_NO_GO`.
+- The target identity was revalidated with strict SSH host-key checking. The accepted target is LoongArch64/Kylin V11 on Loongson-3A5000 at code SHA `d47ea9bc1e03148df7c55517a5b47367709e57f8`.
+- User-local official Kylin `pdftoppm 23.12.0` passed operational readiness and smoke rendering.
+- The real provider passed its probe, and the three-page official-manual run passed with 3/3 real multimodal pages, zero fallbacks, approved-only retrieval, and controlled preview.
+- Strict target venv verification passed with 327 backend tests and a successful frontend production build.
+- Docker is separately `OPTIONAL_UNVERIFIED` because the daemon is inactive and its socket is absent.
+- Current result: `LOONGARCH_MULTIMODAL_GO` and `TARGET_CORE_GO`.
 
 ## Engineering Regression
 
@@ -51,8 +53,8 @@ The machine quality conclusion used the same configured provider and model for p
 ## Unresolved Blockers
 
 1. Pydantic 1.10.26 focused tests have not passed on the project Python 3.12 runtime.
-2. The LoongArch target host key must be confirmed before strict SSH revalidation can continue.
-3. At least 10 of the 20 human-review pages must be marked PASS, with no critical hallucination or fabricated numeric value.
+2. At least 10 of the 20 human-review pages must be marked PASS, with no critical hallucination or fabricated numeric value.
+3. Docker acceptance may be added after an administrator enables the target daemon; it is not claimed by the current venv acceptance.
 
 ## Conclusion
 
@@ -61,7 +63,7 @@ The machine quality conclusion used the same configured provider and model for p
 - Local Pydantic 1 compatibility: `LOCAL_PYDANTIC1_COMPAT_NO_GO`
 - Machine visual quality: `MACHINE_VISUAL_QUALITY_GO_SAME_MODEL`
 - Human visual review: `HUMAN_VISUAL_REVIEW_PENDING`
-- LoongArch: `LOONGARCH_MULTIMODAL_NO_GO`
+- LoongArch: `LOONGARCH_MULTIMODAL_GO` / `TARGET_CORE_GO`
 - Local engineering: `LOCAL_FINAL_ENGINEERING_NO_GO`
 - Submission: `FINAL_SUBMISSION_NO_GO`
 

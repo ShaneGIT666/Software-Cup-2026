@@ -64,3 +64,17 @@ Chroma is not rejected because it is weak; it is rejected as the default target 
 - Baseline targeted backend tests passed: `21 passed in 2.70s`.
 - Baseline frontend build passed. Existing build warnings are Rollup/Vite annotation and chunk-size warnings, not hard failures.
 - The local shell does not expose `python` on PATH, but `backend/.venv/Scripts/python.exe` works and should be used for project scripts.
+
+## 2026-07-14 LoongArch Acceptance Closure Findings
+
+- Starting branch is `codex/fix-auth-management-runtime-20260714`; the only dirty paths are preserved user content in `data/examples/repair-cases.json` and `tmp/`.
+- Existing target evidence reaches `TARGET_CORE_GO`, not final `GO`.
+- Known unresolved hard gates are real repair-image multimodal verification and target Docker daemon availability.
+- Current final-submission documentation also records local Pydantic 1 compatibility and local engineering NO-GO states; these must be rerun against the current branch before deciding whether they remain valid.
+- The public target endpoint fingerprints match the locally trusted RSA and ED25519 fingerprints; the first SSH failure was sandbox access to `known_hosts`, not a changed target identity.
+- Live target audit reconfirmed `loongarch64` and Kylin V11. The official manual exists, but no real JPG/PNG acceptance image exists in the target home tree.
+- `pdftoppm` was missing and sudo is unavailable. The official Kylin `poppler-utils-23.12.0-7.p04.ky11.loongarch64` RPM was downloaded and unpacked to the target user's local directory; `pdftoppm 23.12.0` now runs without changing the system package database.
+- The target cannot access GitHub HTTPS, and its user Git lacks the HTTPS helper. After explicit user approval, only committed public history was transferred by Git bundle into a new isolated target worktree.
+- The acceptance harness required two target-derived fixes: safely loading `.env` only inside the real-provider/manual probe subshell, and allowing the documented MinerU disabled/failed/unavailable fallback reasons in the API contract test.
+- At accepted SHA `d47ea9b`, the real provider and three-page official-manual multimodal flow passed with 3/3 real pages and zero fallbacks; strict target backend tests passed 327 tests and the frontend production build passed.
+- Docker CLI 24.0.9 is installed, but the daemon is inactive and `/var/run/docker.sock` is absent. Docker remains `OPTIONAL_UNVERIFIED`; the verified main route is venv + FastAPI static hosting.

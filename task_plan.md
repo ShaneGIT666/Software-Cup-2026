@@ -76,3 +76,14 @@ The previous T09-T22 backlog is replaced by this final competition plan and must
 3. [pending] Stage 3: scoring features and frontend redesign.
 4. [pending] Stage 4: evaluation, stability, installer package, and delivery materials.
 5. [pending] Stage 5: final physical-machine acceptance and version freeze.
+
+## 2026-07-14 LoongArch Acceptance Closure
+
+1. [complete] Reconcile the current branch, acceptance harness, evidence, and known GO/NO-GO gates.
+2. [complete] Audit the connected LoongArch/Kylin target, repository revision, runtime inputs, Docker daemon, and real multimodal prerequisites without exposing secrets.
+3. [complete] Run the strict target venv acceptance and collect sanitized evidence.
+4. [complete] Record strict Docker acceptance as externally unavailable because the daemon is inactive and its socket is absent.
+5. [complete] Fix only reproducible in-repository blockers, rerun affected local/target checks, and preserve user data.
+6. [complete] Update acceptance evidence/docs, commit verified changes, attempt the remote push, and issue a truthful final GO/NO-GO; documentation push is externally pending because GitHub port 443 reset/timed out.
+
+Current decision: `LOONGARCH_MULTIMODAL_GO` and `TARGET_CORE_GO` at `d47ea9b`; Docker remains `OPTIONAL_UNVERIFIED` and no separate real motorcycle-fault-photo claim is made.

@@ -137,3 +137,19 @@
 - Strict Docker produced `NO-GO` before build because Docker 24.0.9 could not connect to the daemon socket. No Docker success is claimed.
 - Stage 2 conclusion is `TARGET_CORE_GO`. Real repair-image validation, Astryx, Chinese query expansion, Corrective Retrieval, evaluation datasets, installers, and main merge remain unexecuted.
 - Final local regression after all target-derived fixes passed: required targeted suite `136 passed in 173.30s`, full backend `245 passed in 213.30s`, frontend build `5.93s`, Bash syntax passed, and `git diff --check` passed.
+
+## 2026-07-14 LoongArch acceptance closure
+
+- Started from `codex/fix-auth-management-runtime-20260714` with user-owned `data/examples/repair-cases.json` and `tmp/` preserved.
+- Planning catchup with system `python` failed because it is not on PATH; the project venv Python succeeded.
+- Reconciled existing records: target core, real text LLM, official manual, backend, frontend, auth, and API had passed previously; final GO remained blocked by real multimodal target verification and unavailable Docker daemon.
+- Target-related local regression passed: 49 tests, both acceptance scripts passed Bash syntax checks, and the frontend production build passed in 7.44 seconds.
+- Connected to the verified target via the public forwarding endpoint and reconfirmed LoongArch64/Kylin V11.
+- Installed the official LoongArch `poppler-utils` RPM in a reversible user-local directory; `pdftoppm -v` reports 23.12.0.
+- Target GitHub clone failed because the user Git lacks the HTTPS helper. Public GitHub archive download also failed because target outbound port 443 timed out.
+- User approved the public committed-code bundle transfer. Deployed and verified exact target SHA `d47ea9bc1e03148df7c55517a5b47367709e57f8` in a new isolated worktree.
+- Target acceptance passed: `THREE_PAGE_REAL_MULTIMODAL_GO`, `TARGET_CORE_GO`, and `LOONGARCH_MULTIMODAL_GO`; backend `327 passed in 353.88s`, frontend build passed in `20.53s`, renderer/provider/manual/auth/API gates passed.
+- Docker audit completed: CLI 24.0.9 present, daemon inactive, socket absent. Recorded Docker as `OPTIONAL_UNVERIFIED` without claiming container success.
+- Final local acceptance regression passed: 41 tests, both LoongArch scripts passed Bash syntax checks, and `git diff --check` passed.
+- Removed the four local and target Git bundles used only for transfer; the isolated accepted target worktree and persistent sanitized run log were retained.
+- Committed the acceptance closure documentation locally. Three push attempts (including HTTP/1.1) failed because GitHub port 443 reset or timed out; no remote-sync success is claimed.

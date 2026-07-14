@@ -31,3 +31,15 @@
 - Strict venv: `TARGET_CORE_GO`, `coreTargetVerified=true`, `realLlmVerified=true`, `realMultimodalVerified=false`, `finalRealProviderVerified=false`.
 - Strict Docker: `NO-GO` because the Docker daemon socket was unavailable; no container result is claimed.
 - Stage 2 status: `TARGET_CORE_GO`. Final `GO` remains forbidden until a real repair image passes strict multimodal verification.
+
+## Final revalidation result (2026-07-14)
+
+- Accepted code SHA: `d47ea9bc1e03148df7c55517a5b47367709e57f8` on branch `codex/fix-auth-management-runtime-20260714`.
+- Target identity was revalidated with strict SSH host-key checking; architecture is `loongarch64`, OS is Kylin Linux Advanced Server V11, and CPU is Loongson-3A5000.
+- The official Kylin LoongArch `poppler-utils` package was unpacked into a reversible user-local directory. `pdftoppm 23.12.0` passed the project renderer version and smoke-render checks.
+- Real multimodal provider probe passed with provider `openai`, model `qwen3.6-flash`, `ready=true`, and `probeOk=true`.
+- Three official-manual pages passed real visual analysis: 3/3 rendered, 3/3 real multimodal, zero fallback pages, all pending review before approval, approved-only retrieval enforced, and controlled preview passed.
+- Strict venv acceptance passed: backend `327 passed in 353.88s`, frontend production build passed in `20.53s`, and auth, API, official-manual, approved-only retrieval, controlled download, and real text LLM gates passed.
+- Harness results: `THREE_PAGE_REAL_MULTIMODAL_GO`, `TARGET_CORE_GO`, and outer acceptance result `LOONGARCH_MULTIMODAL_GO`.
+- Docker remains `OPTIONAL_UNVERIFIED`: Docker CLI 24.0.9 is installed, but the daemon is inactive and `/var/run/docker.sock` is absent. No Docker success is claimed.
+- This acceptance proves real multimodal processing of rendered official-manual pages. It does not fabricate a separate real motorcycle-fault-photo result because no such image was supplied on the target.
