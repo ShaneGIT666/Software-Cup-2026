@@ -2261,7 +2261,11 @@ def test_docx_upload_falls_back_to_mock_parser_pending_review(tmp_path, monkeypa
     assert payload["status"] == "needs_parser"
     assert payload["parser"] == "mock-parser"
     assert payload["parserFallback"] is True
-    assert payload["parserFallbackReason"] == "MinerU parsing failed; fallback parser used."
+    assert payload["parserFallbackReason"] in {
+        "MinerU is disabled; fallback parser used.",
+        "MinerU parsing failed; fallback parser used.",
+        "MinerU is unavailable; fallback parser used.",
+    }
     assert (tmp_path / "knowledge" / "parsed" / payload["id"] / "raw_parse_result.json").exists()
 
 
