@@ -108,3 +108,4 @@ Chroma is not rejected because it is weak; it is rejected as the default target 
 - Page 6's `machine_pass` cell was accidentally changed to `TRUE+D5:K5`; it is excluded rather than repaired or counted. Sixteen remaining human-pass pages still exceed the required threshold of ten.
 - The failed page is page 2; the reviewer recorded that the content was acceptable but an attention item was omitted.
 - The authoritative machine audit reports zero critical hallucination pages and zero unsupported numeric-claim pages. Human and machine gates therefore jointly pass.
+- `FINAL_SUBMISSION_GO` is published remotely in commit `6f7cdfb`.

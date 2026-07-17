@@ -191,3 +191,4 @@
 - Cross-checked the tracked machine audit: zero critical hallucination pages, zero unsupported numeric-claim pages, and `MACHINE_VISUAL_QUALITY_GO_SAME_MODEL`.
 - Updated the human visual audit and final submission gate to `HUMAN_VISUAL_REVIEW_GO` and `FINAL_SUBMISSION_GO`, conservatively counting 16 valid PASS decisions.
 - Human-closure regression passed 16 tests; `git diff --check` and the closure secret scan passed.
+- Committed the approved final submission gate as `6f7cdfb` and pushed it successfully to `origin/codex/fix-auth-management-runtime-20260714`.
