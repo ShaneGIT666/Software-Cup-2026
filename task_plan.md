@@ -102,6 +102,6 @@ Goal: execute every repository-defined final gate against the current branch and
 
 Protected pre-existing content: `data/examples/repair-cases.json` and unrelated `tmp/` contents remain outside the acceptance commit.
 
-External completion condition: a real reviewer must record at least 10 PASS decisions in `tmp/manual-visual-human-review/review-results.csv`, with no critical hallucination or fabricated numeric value. Machine scores are not substituted for human decisions.
+External completion condition: [satisfied 2026-07-17] the reviewer supplied 17 TRUE / 1 FALSE / 2 blank decisions. TRUE/FALSE are treated as spreadsheet equivalents of PASS/FAIL; page 6 is conservatively excluded because its machine-status cell was accidentally altered, leaving 16 valid PASS decisions against a threshold of 10.
 
-Current final result: engineering acceptance and LoongArch target acceptance are GO; submission remains `FINAL_SUBMISSION_NO_GO` only because human visual attestation is pending.
+Current final result: engineering, LoongArch target, machine visual, and human visual acceptance are GO; submission result is `FINAL_SUBMISSION_GO`.

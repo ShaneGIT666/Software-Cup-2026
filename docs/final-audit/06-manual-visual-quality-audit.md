@@ -15,7 +15,7 @@
 - Critical hallucination pages: 0
 - Unsupported numeric claim pages: 0
 - Machine conclusion: **MACHINE_VISUAL_QUALITY_GO_SAME_MODEL**
-- Human review: **HUMAN_VISUAL_REVIEW_PENDING**
+- Human review: **HUMAN_VISUAL_REVIEW_GO**
 
 | Page | Type | Score | Pass | Failure type | Critical hallucination | Unsupported numeric |
 |---:|---|---:|---|---|---|---|
@@ -40,14 +40,19 @@
 | 40 | assembly_diagram | 10 | true | none | false | 0 |
 | 41 | assembly_diagram | 10 | true | none | false | 0 |
 
-## Final acceptance review status (2026-07-17)
+## Final acceptance review result (2026-07-17)
 
 - Review package: `tmp/manual-visual-human-review/`
 - Page images present: 20/20
 - Review rows present: 20/20
-- Human PASS: 0
-- Human FAIL: 0
-- Blank decisions: 20
-- Result: `HUMAN_VISUAL_REVIEW_PENDING`
+- Submitted TRUE/PASS equivalents: 17
+- Submitted FALSE/FAIL equivalents: 1 (page 2)
+- Blank decisions: 2 (pages 1 and 34)
+- Conservatively excluded: 1 submitted pass (page 6), because its `machine_pass` cell was accidentally altered to `TRUE+D5:K5`
+- Valid human PASS after exclusion: 16
+- Required human PASS: 10
+- Critical hallucination pages: 0
+- Unsupported numeric-claim pages: 0
+- Result: `HUMAN_VISUAL_REVIEW_GO`
 
-Machine scores are not copied into the human result column. A real reviewer must inspect the images and supporting CSV, enter `PASS` or `FAIL`, and provide concise notes for the accepted pages.
+The reviewer used Excel boolean values, so `TRUE` and `FALSE` are interpreted as the spreadsheet equivalents of `PASS` and `FAIL`. The altered page-6 machine cell is not repaired or counted; the remaining valid decisions independently satisfy the threshold.

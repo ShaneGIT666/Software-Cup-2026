@@ -17,7 +17,7 @@
 | 41-page full | `FULL_VISUAL_MANUAL_GO;MULTIMODAL_RETRIEVAL_GO`; 41/41 pages and 82/82 MinerU assets real, 2460.14 seconds |
 | 20-page machine quality audit | `MACHINE_VISUAL_QUALITY_GO_SAME_MODEL`; 20 completed, 18 passed, average 9.6, lowest 6 |
 | Machine hallucination checks | 0 critical hallucination pages; 0 unsupported numeric-claim pages |
-| Human review | `HUMAN_VISUAL_REVIEW_PENDING`; 0 PASS, 0 FAIL, no result was fabricated |
+| Human review | `HUMAN_VISUAL_REVIEW_GO`; 17 TRUE/PASS submitted, 1 FALSE/FAIL, 2 blank; page 6 excluded conservatively, leaving 16 valid PASS |
 
 The machine quality conclusion used the same configured provider and model for primary analysis and judging. It is not an independent-model or human acceptance result.
 
@@ -54,11 +54,9 @@ The machine quality conclusion used the same configured provider and model for p
 | Protected user files | pre-existing `repair-cases.json` modification and `tmp/` remain unstaged and uncommitted |
 | Remote CI | `REMOTE_CI_UNAVAILABLE` |
 
-## Unresolved Blockers
+## Remaining Optional Boundaries
 
-1. At least 10 of the 20 human-review pages must be marked PASS, with no critical hallucination or fabricated numeric value. All 20 decisions are currently blank.
-
-Docker acceptance may be added after an administrator enables the target daemon. Docker is optional under the accepted venv + FastAPI static-hosting route and is not claimed by current evidence.
+Docker acceptance may be added after an administrator enables the target daemon. Docker is optional under the accepted venv + FastAPI static-hosting route and is not claimed by current evidence. A separate field fault-photo result also remains optional because no such image was supplied; neither item is a final-submission hard gate.
 
 ## Conclusion
 
@@ -66,9 +64,9 @@ Docker acceptance may be added after an administrator enables the target daemon.
 - MinerU version: `MINERU_VERSION_GO`
 - Local Pydantic 1 compatibility: `LOCAL_PYDANTIC1_COMPAT_GO`
 - Machine visual quality: `MACHINE_VISUAL_QUALITY_GO_SAME_MODEL`
-- Human visual review: `HUMAN_VISUAL_REVIEW_PENDING`
+- Human visual review: `HUMAN_VISUAL_REVIEW_GO`
 - LoongArch: `LOONGARCH_MULTIMODAL_GO` / `TARGET_CORE_GO`
 - Local engineering: `LOCAL_FINAL_ENGINEERING_GO`
-- Submission: `FINAL_SUBMISSION_NO_GO`
+- Submission: `FINAL_SUBMISSION_GO`
 
-All reproducible engineering and LoongArch target gates are GO. The branch must not be represented as `FINAL_SUBMISSION_GO` until a real human reviewer completes the visual-review CSV and the stated threshold passes.
+All required engineering, LoongArch target, machine visual, and human visual gates are GO. The branch is accepted as `FINAL_SUBMISSION_GO`; optional Docker and separate field fault-photo claims remain explicitly outside this conclusion.

@@ -100,3 +100,11 @@ Chroma is not rejected because it is weak; it is rejected as the default target 
 - The only current final-submission hard blocker is the explicit human visual attestation. Docker is an optional route under repository policy and remains accurately unverified on the current target because its daemon is inactive.
 - Final documentation contained two stale limitations (245-test Pydantic count and CRLF init script); current git EOL metadata and fresh validation close both.
 - Remote synchronization is now closed: the final acceptance evidence commit `aa8cf27` is published on the existing branch.
+
+## 2026-07-17 Human Visual Acceptance Closure
+
+- The reviewer confirmed completion and supplied spreadsheet boolean results: 17 TRUE, 1 FALSE, 2 blank, with no unsupported result values.
+- Excel boolean TRUE/FALSE is accepted as the semantic equivalent of PASS/FAIL for this review record.
+- Page 6's `machine_pass` cell was accidentally changed to `TRUE+D5:K5`; it is excluded rather than repaired or counted. Sixteen remaining human-pass pages still exceed the required threshold of ten.
+- The failed page is page 2; the reviewer recorded that the content was acceptable but an attention item was omitted.
+- The authoritative machine audit reports zero critical hallucination pages and zero unsupported numeric-claim pages. Human and machine gates therefore jointly pass.
