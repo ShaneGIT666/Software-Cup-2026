@@ -185,3 +185,4 @@
 - Updated final-audit documents to close stale local Pydantic and engineering NO-GO states, record the fresh target rerun, and retain `FINAL_SUBMISSION_NO_GO` solely for the blank human-review gate.
 - Post-document focused validation passed 20 tests; both acceptance scripts and `git diff --check` passed.
 - Reconciled capability, limitations, and local-baseline documents: added real official-manual multimodal target evidence, refreshed 327-test/Pydantic evidence, and removed the obsolete CRLF limitation after confirming all delivery scripts are LF.
+- Committed the refreshed final acceptance evidence as `aa8cf27` and successfully pushed the complete branch range `d47ea9b..aa8cf27` to `origin/codex/fix-auth-management-runtime-20260714` using HTTP/1.1.

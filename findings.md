@@ -99,3 +99,4 @@ Chroma is not rejected because it is weak; it is rejected as the default target 
 - A fresh 2026-07-17 target run independently reproduces the earlier LoongArch result at application SHA `d47ea9b`: real multimodal 3/3, backend 327/327, frontend build, auth/API/manual/real-text provider, and outer `LOONGARCH_MULTIMODAL_GO` all pass.
 - The only current final-submission hard blocker is the explicit human visual attestation. Docker is an optional route under repository policy and remains accurately unverified on the current target because its daemon is inactive.
 - Final documentation contained two stale limitations (245-test Pydantic count and CRLF init script); current git EOL metadata and fresh validation close both.
+- Remote synchronization is now closed: the final acceptance evidence commit `aa8cf27` is published on the existing branch.
