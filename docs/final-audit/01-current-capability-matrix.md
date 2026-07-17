@@ -12,5 +12,6 @@
 | LoongArch/Kylin core | VERIFIED_TARGET | LoongArch64/Kylin V11 strict venv summary reported `TARGET_CORE_GO` |
 | Real text LLM qwen3.6-flash | VERIFIED_TARGET | OpenAI-compatible chat-completions, no fallback, raw answer and 10 citations |
 | Bailian multimodal adapter | VERIFIED_LOCAL | chat-completions image payload, fallback, responses path, and PDF-limit tests |
+| Real official-manual multimodal | VERIFIED_TARGET | Fresh 2026-07-17 run analyzed 3/3 rendered pages with the real provider, zero fallbacks, approved-only retrieval, and controlled preview |
 | Real fault-image multimodal | OPTIONAL_UNVERIFIED | Intentionally skipped; no field fault image was supplied |
 | Docker target route | OPTIONAL_UNVERIFIED | Docker CLI exists but daemon socket was unavailable |

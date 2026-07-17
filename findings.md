@@ -78,3 +78,24 @@ Chroma is not rejected because it is weak; it is rejected as the default target 
 - The acceptance harness required two target-derived fixes: safely loading `.env` only inside the real-provider/manual probe subshell, and allowing the documented MinerU disabled/failed/unavailable fallback reasons in the API contract test.
 - At accepted SHA `d47ea9b`, the real provider and three-page official-manual multimodal flow passed with 3/3 real pages and zero fallbacks; strict target backend tests passed 327 tests and the frontend production build passed.
 - Docker CLI 24.0.9 is installed, but the daemon is inactive and `/var/run/docker.sock` is absent. Docker remains `OPTIONAL_UNVERIFIED`; the verified main route is venv + FastAPI static hosting.
+
+## 2026-07-17 Final Acceptance Closure Findings
+
+- Final acceptance starts from branch `codex/fix-auth-management-runtime-20260714` at local HEAD `c7963a4`.
+- The only pre-existing dirty paths remain user-owned `data/examples/repair-cases.json` and `tmp/`.
+- Existing records prove LoongArch `LOONGARCH_MULTIMODAL_GO` / `TARGET_CORE_GO`, but the submission gate still reports `FINAL_SUBMISSION_NO_GO` because human visual review and older local compatibility/engineering states have not been reconciled against current evidence.
+- GitHub HTTPS remains unstable: the 2026-07-17 read-only remote query reset, so remote synchronization cannot yet be claimed.
+- Repository-defined final gate currently has three stated blockers: stale local Pydantic 1 evidence, at least 10 human-reviewed visual pages, and optional Docker revalidation; LoongArch venv acceptance is already GO.
+- The human review package exists at `tmp/manual-visual-human-review/` with 20 page images and a 20-row CSV, but every `human_result` is blank. Machine evidence alone cannot satisfy the explicitly human gate.
+- The Pydantic compatibility test is a focused four-case schema suite and can be rerun in an isolated Pydantic 1 environment on the current Python runtime; the LoongArch target already passed the full suite under Pydantic 1.10.26.
+- Several historical documents claim an earlier Docker success, while the current acceptance target reports an inactive daemon and absent socket. Final reporting must distinguish historical Docker evidence from current-SHA Docker acceptance.
+- The current branch full backend suite passes all 327 tests locally; the stale `LOCAL_FINAL_ENGINEERING_NO_GO` statement is no longer supported by current evidence.
+- The formerly blocked local compatibility gate is now closed: Python 3.12.13 + Pydantic 1.10.26 passed `tests/test_pydantic_compat.py` (4/4), matching the target's Pydantic 1 runtime evidence.
+- `production_readiness_check.py` is sensitive to ambient auth configuration and needs explicit isolated acceptance variables; its first current run failed closed with the intended actionable 503 rather than an application exception.
+- Readiness passes completely when run under its intended isolated test/off authentication variables; this closes the earlier false-negative configuration state.
+- Secret scan's only tracked application/script match is the shell code that writes freshly generated token variables, not a literal credential.
+- The machine visual audit commit `b1a0d193...` is an ancestor of current HEAD, and the local official manual SHA256 matches the recorded `aad3c072...`; current tests cover the subsequently committed audit script.
+- No human review decisions have appeared since the machine audit. Final human GO remains a user/reviewer attestation requirement, not a reproducible code defect.
+- A fresh 2026-07-17 target run independently reproduces the earlier LoongArch result at application SHA `d47ea9b`: real multimodal 3/3, backend 327/327, frontend build, auth/API/manual/real-text provider, and outer `LOONGARCH_MULTIMODAL_GO` all pass.
+- The only current final-submission hard blocker is the explicit human visual attestation. Docker is an optional route under repository policy and remains accurately unverified on the current target because its daemon is inactive.
+- Final documentation contained two stale limitations (245-test Pydantic count and CRLF init script); current git EOL metadata and fresh validation close both.

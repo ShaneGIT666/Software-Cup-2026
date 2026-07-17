@@ -39,3 +39,15 @@
 | 38 | mixed | 10 | true | none | false | 0 |
 | 40 | assembly_diagram | 10 | true | none | false | 0 |
 | 41 | assembly_diagram | 10 | true | none | false | 0 |
+
+## Final acceptance review status (2026-07-17)
+
+- Review package: `tmp/manual-visual-human-review/`
+- Page images present: 20/20
+- Review rows present: 20/20
+- Human PASS: 0
+- Human FAIL: 0
+- Blank decisions: 20
+- Result: `HUMAN_VISUAL_REVIEW_PENDING`
+
+Machine scores are not copied into the human result column. A real reviewer must inspect the images and supporting CSV, enter `PASS` or `FAIL`, and provide concise notes for the accepted pages.

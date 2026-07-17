@@ -153,3 +153,35 @@
 - Final local acceptance regression passed: 41 tests, both LoongArch scripts passed Bash syntax checks, and `git diff --check` passed.
 - Removed the four local and target Git bundles used only for transfer; the isolated accepted target worktree and persistent sanitized run log were retained.
 - Committed the acceptance closure documentation locally. Three push attempts (including HTTP/1.1) failed because GitHub port 443 reset or timed out; no remote-sync success is claimed.
+
+## 2026-07-17 Final acceptance closure
+
+- Resumed with the planning-with-files catchup helper and read all persistent planning records.
+- Confirmed branch `codex/fix-auth-management-runtime-20260714`, HEAD `c7963a4`, preserved user changes in `data/examples/repair-cases.json` and `tmp/`, and the existing LoongArch acceptance GO evidence.
+- A current read-only GitHub branch query failed with `Recv failure: Connection was reset`; remote state remains unverified.
+- Added the seven-step final acceptance closure plan without modifying user-owned data.
+- Audited final-gate definitions, visual-review tooling, compatibility tests, submission artifacts, and target/Docker claims.
+- Confirmed the human review package contains 20 images and 20 unreviewed rows; no PASS/FAIL decisions were inferred from machine scores.
+- Phase 1 reconciliation completed. Current runtime is Python 3.12.13 and Node 24.15.0.
+- Direct `npm --version` was blocked by the workstation PowerShell execution policy; validation will use `npm.cmd`, matching previous successful frontend builds.
+- Current full backend regression passed: `327 passed, 6 warnings in 230.89s` with `MINERU_ENABLED=false`. Warnings are Pydantic 2 deprecation notices for the intentionally Pydantic-1-compatible validators, not test failures.
+- Current frontend production build passed in `5.82s`; only the established Rollup annotation and large-chunk warnings remain.
+- Final focused local gate passed `23 tests in 6.09s` across Pydantic schema compatibility, delivery contracts, official compliance, and auth-management runtime behavior.
+- Both LoongArch acceptance scripts passed Bash syntax checks and `git diff --check` passed.
+- The local pip cache contains no Pydantic 1 wheel, so the isolated Python 3.12/Pydantic 1 gate requires a temporary dependency download or must rely on the already-passed LoongArch Pydantic 1 full suite.
+- Created a disposable Python 3.12.13 venv, installed pinned `pydantic==1.10.26` and `pytest==8.4.2`, and passed all four focused compatibility tests in `0.07s`.
+- Safely removed the disposable Pydantic 1 venv after validation; no temporary acceptance environment remains.
+- Direct readiness execution failed at the async parse step with HTTP 503 because it inherited the workspace `.env` authentication state; this will be rerun under explicit isolated test/off auth variables.
+- `scripts/run-final-benchmark.py` does not implement `--help`; the attempted help invocation executed the benchmark and completed with `status=passed`, updating `docs/testing/final-benchmark-results.json`.
+- Isolated production readiness passed all seven checks in `4475.17ms`; JSON store maintenance passed for seven files with zero issues and zero repairs.
+- Sensitive-data audit found no secret pattern in acceptance changes, no tracked private `.env` files, and only one repository-code false positive where `init-config.sh` writes generated token variables. `.env` remains ignored.
+- Phase 2 local engineering acceptance is complete: full backend, focused gates, frontend build, readiness, JSON integrity, shell syntax, diff hygiene, Pydantic 1 compatibility, and secret checks all passed.
+- Confirmed the visual audit baseline is in current history and the local 17,615,124-byte official manual matches the recorded SHA256.
+- Phase 3 audit completed: machine visual quality remains GO, but the explicit human gate is blocked on reviewer input because all 20 CSV decisions are blank.
+- Reconnected to the accepted target worktree at application SHA `d47ea9b`; reconfirmed LoongArch64, Kylin V11, Python 3.11.6, Pydantic 1.10.26, Node 20.18.2, `pdftoppm 23.12.0`, official manual, and configured real text/multimodal providers without printing secrets.
+- Fresh 2026-07-17 LoongArch run passed real provider probe and `THREE_PAGE_REAL_MULTIMODAL_GO` with 3/3 real pages, zero fallbacks, review-before-retrieval, approved-only retrieval, and controlled preview.
+- Fresh target full backend regression passed `327 tests in 344.90s`; frontend production build passed in `20.27s`; final auth/API/manual/real-LLM gates passed and the harness ended with `LOONGARCH_MULTIMODAL_GO`.
+- Current target Docker remains unavailable: service inactive and socket absent. Persistent sanitized terminal log: `/home/vmuser/loongarch-final-acceptance-20260717-d47ea9b.log`.
+- Updated final-audit documents to close stale local Pydantic and engineering NO-GO states, record the fresh target rerun, and retain `FINAL_SUBMISSION_NO_GO` solely for the blank human-review gate.
+- Post-document focused validation passed 20 tests; both acceptance scripts and `git diff --check` passed.
+- Reconciled capability, limitations, and local-baseline documents: added real official-manual multimodal target evidence, refreshed 327-test/Pydantic evidence, and removed the obsolete CRLF limitation after confirming all delivery scripts are LF.

@@ -8,9 +8,9 @@
 - Renderer: user-local official Kylin LoongArch `pdftoppm 23.12.0`; operational readiness returned `ready=true`, `renderer=pdftoppm`, `versionProbeOk=true`, and `smokeRenderOk=true`.
 - Provider: real OpenAI-compatible `qwen3.6-flash`; multimodal readiness and operational probe both passed without logging credentials.
 - Three-page official-manual flow: 3/3 rendered and analyzed by the real multimodal provider, zero fallback pages, review-before-retrieval enforced, approved-only retrieval passed, and controlled preview passed.
-- Strict target regression: backend `327 passed in 353.88s`; frontend production build passed in `20.53s`.
+- Strict target regression was rerun on 2026-07-17: backend `327 passed in 344.90s`; frontend production build passed in `20.27s`.
 - Strict application gates: auth, API, official-manual upload/review/retrieval/citation/download, and real text LLM passed.
-- Persistent target log: `/home/vmuser/loongarch-acceptance-d47ea9b.log`.
+- Persistent target logs: `/home/vmuser/loongarch-acceptance-d47ea9b.log` and `/home/vmuser/loongarch-final-acceptance-20260717-d47ea9b.log`.
 
 ## Docker Boundary
 

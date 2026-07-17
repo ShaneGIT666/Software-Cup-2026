@@ -43,3 +43,12 @@
 - Harness results: `THREE_PAGE_REAL_MULTIMODAL_GO`, `TARGET_CORE_GO`, and outer acceptance result `LOONGARCH_MULTIMODAL_GO`.
 - Docker remains `OPTIONAL_UNVERIFIED`: Docker CLI 24.0.9 is installed, but the daemon is inactive and `/var/run/docker.sock` is absent. No Docker success is claimed.
 - This acceptance proves real multimodal processing of rendered official-manual pages. It does not fabricate a separate real motorcycle-fault-photo result because no such image was supplied on the target.
+
+## Final acceptance rerun (2026-07-17)
+
+- Reused the unchanged accepted application SHA `d47ea9bc1e03148df7c55517a5b47367709e57f8`; later local commits contain acceptance documentation only.
+- Reconfirmed LoongArch64, Kylin V11, Python 3.11.6, Pydantic 1.10.26, FastAPI 0.115.6, Node 20.18.2, and `pdftoppm 23.12.0`.
+- Real provider probe passed; official-manual visual smoke passed 3/3 real multimodal pages with zero fallback pages.
+- Full target backend suite passed `327 tests in 344.90s`; frontend production build passed in `20.27s`.
+- Final result reproduced: `THREE_PAGE_REAL_MULTIMODAL_GO`, `TARGET_CORE_GO`, and `LOONGARCH_MULTIMODAL_GO`.
+- Docker daemon remains inactive and its socket absent, so Docker is still `OPTIONAL_UNVERIFIED` without affecting the accepted venv route.

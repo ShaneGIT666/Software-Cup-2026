@@ -87,3 +87,19 @@ The previous T09-T22 backlog is replaced by this final competition plan and must
 6. [complete] Update acceptance evidence/docs, commit verified changes, attempt the remote push, and issue a truthful final GO/NO-GO; documentation push is externally pending because GitHub port 443 reset/timed out.
 
 Current decision: `LOONGARCH_MULTIMODAL_GO` and `TARGET_CORE_GO` at `d47ea9b`; Docker remains `OPTIONAL_UNVERIFIED` and no separate real motorcycle-fault-photo claim is made.
+
+## 2026-07-17 Final Acceptance Closure
+
+Goal: execute every repository-defined final gate against the current branch and accepted LoongArch target, close reproducible blockers, preserve user-owned data, and publish only claims supported by current evidence.
+
+1. [complete] Reconcile the current branch, dirty worktree, acceptance definitions, evidence artifacts, and remote state.
+2. [complete] Execute current local full backend, frontend, shell, sensitive-data, and final-gate regressions.
+3. [complete] Inspect machine/human visual acceptance: machine gate and artifacts are valid; human decisions remain an external reviewer attestation and were not fabricated.
+4. [complete] Revalidate the exact final application revision on LoongArch/Kylin, including real provider/manual and Docker availability boundaries.
+5. [complete] Fix only reproducible repository blockers and rerun affected gates; stale local Pydantic/engineering NO-GO records are closed by current evidence.
+6. [complete] Update the final submission gate and evidence records to a truthful result: all engineering/target gates GO, final submission pending human visual attestation.
+7. [in_progress] Commit verified closure changes and synchronize the existing remote branch when connectivity permits.
+
+Protected pre-existing content: `data/examples/repair-cases.json` and unrelated `tmp/` contents remain outside the acceptance commit.
+
+External completion condition: a real reviewer must record at least 10 PASS decisions in `tmp/manual-visual-human-review/review-results.csv`, with no critical hallucination or fabricated numeric value. Machine scores are not substituted for human decisions.
