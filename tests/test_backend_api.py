@@ -1656,7 +1656,7 @@ def test_docx_upload_falls_back_to_mock_parser_pending_review(tmp_path, monkeypa
 def test_search_merges_chroma_vector_recall(tmp_path, monkeypatch) -> None:
     def fake_vector_search(query: str, top_k: int) -> list[dict[str, Any]]:
         assert "异响" in query
-        assert top_k == 5
+        assert top_k == 20
         return [
             {
                 "id": "kdoc-vector-chunk-001",
@@ -1691,6 +1691,7 @@ def test_search_merges_chroma_vector_recall(tmp_path, monkeypatch) -> None:
     assert vector_item["sourceName"] == "Chroma 检修资料"
     assert "Chroma" in vector_item["reason"]
     assert vector_item["scoreBreakdown"]["vectorDistance"] == 0.12
+    assert vector_item["scoreBreakdown"]["candidatePool"]["vector"] == 1
 
 
 def test_rag_answer_excludes_pending_review_document_citation(tmp_path, monkeypatch) -> None:

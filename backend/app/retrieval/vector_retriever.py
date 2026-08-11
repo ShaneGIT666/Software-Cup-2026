@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from .. import vector_store
+from ..data_store import load_document_chunks
 from .keyword_retriever import confidence_from_score
 from .models import QueryContext, RetrievalHit
 
@@ -34,7 +35,13 @@ def retrieve_vector_hits(context: QueryContext) -> list[RetrievalHit]:
     if not context.vector_query:
         return hits
 
-    for index, vector_match in enumerate(vector_store.search_similar_chunks(context.vector_query, context.top_k), start=1):
+    # Legacy vector indexes may not contain the latest device and review metadata.
+    # Hydrating from the authoritative chunk store keeps vector recall subject to the
+    # same approval and device-model filters as keyword recall.
+    chunks_by_id = {str(chunk.get("id")): chunk for chunk in load_document_chunks()}
+    vector_matches = vector_store.search_similar_chunks(context.vector_query, context.candidate_k)
+    for index, vector_match in enumerate(vector_matches, start=1):
+        chunk = chunks_by_id.get(str(vector_match.get("chunkId") or vector_match.get("id")), {})
         embedding_provider = vector_match.get("embeddingProvider", "hash")
         retrieval_source = str(vector_match.get("retrievalSource") or vector_store.vector_store_kind())
         breakdown = vector_score_breakdown(vector_match.get("distance", 1.0), embedding_provider, retrieval_source)
@@ -61,7 +68,15 @@ def retrieve_vector_hits(context: QueryContext) -> list[RetrievalHit]:
                 matched_terms=[embedding_provider],
                 reason=f"{source_label} {recall_label}, distance={breakdown['vectorDistance']}",
                 score_breakdown=breakdown,
-                review_status="approved",
+                device_type=chunk.get("device_type") or chunk.get("deviceType") or vector_match.get("deviceType"),
+                device_model=chunk.get("device_model") or chunk.get("deviceModel") or vector_match.get("deviceModel"),
+                component=chunk.get("component") or vector_match.get("component"),
+                fault_type=chunk.get("fault_symptom") or chunk.get("faultType") or vector_match.get("faultType"),
+                review_status=(
+                    chunk.get("review_status", "approved")
+                    if chunk
+                    else vector_match.get("reviewStatus", "approved")
+                ),
                 vector_rank=index,
                 qdrant_rank=vector_match.get("qdrantRank"),
                 vector_score=score,

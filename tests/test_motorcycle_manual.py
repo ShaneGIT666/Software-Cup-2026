@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from pathlib import Path
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 
 import backend.app.llm_adapter as llm_adapter
@@ -13,7 +15,14 @@ import backend.app.multimodal_adapter as multimodal_adapter
 from backend.app.main import app
 
 
-MANUAL_PATH = Path("E:/Download/Downloads/摩托车发动机维修手册.pdf")
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+MANUAL_PATH = Path(
+    os.getenv("MOTORCYCLE_MANUAL_PDF", PROJECT_ROOT / "data" / "external-test" / "raw" / "摩托车发动机维修手册.pdf")
+)
+pytestmark = pytest.mark.skipif(
+    not MANUAL_PATH.is_file(),
+    reason="官方摩托车手册为外部验收资产；设置 MOTORCYCLE_MANUAL_PDF 后运行该测试组。",
+)
 
 
 def make_client(tmp_path, monkeypatch) -> TestClient:

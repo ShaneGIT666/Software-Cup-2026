@@ -12,7 +12,9 @@ def device_model_matches(expected: str, actual: str | None) -> bool:
     actual_norm = normalize_text(actual)
     if not expected_norm or not actual_norm:
         return True
-    return expected_norm == actual_norm
+    # A request may name a full model ("发动机-示例型号 A") or only a device
+    # family ("发动机"). Keep exact-model isolation while allowing the latter.
+    return expected_norm == actual_norm or expected_norm in actual_norm or actual_norm in expected_norm
 
 
 def review_status_matches(hit: RetrievalHit) -> bool:

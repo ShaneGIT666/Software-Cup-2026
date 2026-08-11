@@ -17,6 +17,19 @@ def unique_items(items: list[str]) -> list[str]:
     return list(dict.fromkeys(item for item in items if item))
 
 
+def non_overlapping_matches(query_tokens: list[str], haystack: str) -> list[str]:
+    """Prefer specific terms over their shorter overlapping fallback terms."""
+
+    matched: list[str] = []
+    for token in sorted(set(query_tokens), key=lambda item: (-len(item), item)):
+        if token not in haystack:
+            continue
+        if any(token in selected for selected in matched):
+            continue
+        matched.append(token)
+    return matched
+
+
 def score_item(
     query_tokens: list[str],
     item: dict[str, Any],
@@ -29,7 +42,7 @@ def score_item(
 
     for field, weight in field_weights.items():
         haystack = field_text(item, field).lower()
-        terms = unique_items([token for token in query_tokens if token in haystack])
+        terms = non_overlapping_matches(query_tokens, haystack)
         if not terms:
             continue
         matched.extend(terms)
@@ -44,9 +57,8 @@ def score_item(
             }
         )
 
-    query_phrase = " ".join(query_tokens)
     item_text = " ".join(field_text(item, field) for field in field_weights).lower()
-    phrase_bonus = 4 if len(query_tokens) > 1 and query_phrase in item_text else 0
+    phrase_bonus = 4 if any(len(token) >= 3 and token in item_text for token in query_tokens) else 0
     weighted_score += phrase_bonus
 
     return {
@@ -192,4 +204,4 @@ def retrieve_keyword_hits(context: QueryContext) -> list[RetrievalHit]:
     hits.sort(key=lambda item: (item.keyword_score or 0, item.confidence), reverse=True)
     for index, hit in enumerate(hits, start=1):
         hit.keyword_rank = index
-    return hits
+    return hits[: context.candidate_k]

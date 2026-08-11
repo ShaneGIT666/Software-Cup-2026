@@ -187,6 +187,10 @@ def metadata_for_chunk(chunk: dict[str, Any], embedding_provider: str) -> dict[s
         "embeddingProvider": embedding_provider,
         "reviewStatus": chunk.get("review_status", "approved"),
         "version": chunk.get("version", 1),
+        "deviceType": chunk.get("device_type") or chunk.get("deviceType") or "",
+        "deviceModel": chunk.get("device_model") or chunk.get("deviceModel") or "",
+        "component": chunk.get("component") or "",
+        "faultType": chunk.get("fault_symptom") or chunk.get("faultType") or "",
     }
     if chunk.get("analysisProvider"):
         metadata["analysisProvider"] = chunk["analysisProvider"]
@@ -469,6 +473,11 @@ def item_from_vector_match(chunk_id: str, document: str, metadata: dict[str, Any
         "version": metadata.get("version", 1),
         "distance": float(distance),
         "embeddingProvider": metadata.get("embeddingProvider") or provider,
+        "reviewStatus": metadata.get("reviewStatus", "approved"),
+        "deviceType": metadata.get("deviceType", ""),
+        "deviceModel": metadata.get("deviceModel", ""),
+        "component": metadata.get("component", ""),
+        "faultType": metadata.get("faultType", ""),
     }
 
 
