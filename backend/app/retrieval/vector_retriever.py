@@ -68,11 +68,15 @@ def retrieve_vector_hits(context: QueryContext) -> list[RetrievalHit]:
                 matched_terms=[embedding_provider],
                 reason=f"{source_label} {recall_label}, distance={breakdown['vectorDistance']}",
                 score_breakdown=breakdown,
-                device_type=vector_match.get("deviceType") or chunk.get("device_type") or chunk.get("deviceType"),
-                device_model=vector_match.get("deviceModel") or chunk.get("device_model") or chunk.get("deviceModel"),
-                component=vector_match.get("component") or chunk.get("component"),
-                fault_type=vector_match.get("faultType") or chunk.get("fault_symptom") or chunk.get("faultType"),
-                review_status=vector_match.get("reviewStatus") or chunk.get("review_status", "approved"),
+                device_type=chunk.get("device_type") or chunk.get("deviceType") or vector_match.get("deviceType"),
+                device_model=chunk.get("device_model") or chunk.get("deviceModel") or vector_match.get("deviceModel"),
+                component=chunk.get("component") or vector_match.get("component"),
+                fault_type=chunk.get("fault_symptom") or chunk.get("faultType") or vector_match.get("faultType"),
+                review_status=(
+                    chunk.get("review_status", "approved")
+                    if chunk
+                    else vector_match.get("reviewStatus", "approved")
+                ),
                 vector_rank=index,
                 qdrant_rank=vector_match.get("qdrantRank"),
                 vector_score=score,

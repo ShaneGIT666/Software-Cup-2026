@@ -166,6 +166,43 @@ def test_vector_recall_hydrates_chunk_metadata_before_filtering(monkeypatch) -> 
     assert apply_metadata_filter(context, hits) == []
 
 
+def test_vector_recall_uses_authoritative_review_status(monkeypatch) -> None:
+    monkeypatch.setattr(
+        vector_retriever,
+        "load_document_chunks",
+        lambda: [{"id": "chunk-a", "review_status": "pending_review"}],
+    )
+    monkeypatch.setattr(
+        vector_retriever.vector_store,
+        "search_similar_chunks",
+        lambda _query, _top_k: [
+            {
+                "id": "chunk-a",
+                "title": "待审核资料",
+                "sourceName": "unit",
+                "snippet": "unit",
+                "chunkId": "chunk-a",
+                "documentId": "document-a",
+                "distance": 0.1,
+                "retrievalSource": "sqlite",
+                "reviewStatus": "approved",
+            }
+        ],
+    )
+    context = QueryContext(
+        device_model="",
+        fault_text="异响",
+        top_k=5,
+        query_tokens=["异响"],
+        vector_query="异响",
+    )
+
+    hits = vector_retriever.retrieve_vector_hits(context)
+
+    assert hits[0].review_status == "pending_review"
+    assert apply_metadata_filter(context, hits) == []
+
+
 def test_reranker_none_preserves_rrf_order(monkeypatch) -> None:
     monkeypatch.setenv("RAG_RERANK_PROVIDER", "none")
     first = make_hit("first", fusion_score=0.03)
