@@ -39,11 +39,12 @@ def merge_duplicate_hit(base: RetrievalHit, incoming: RetrievalHit) -> Retrieval
 
 
 def apply_fusion_score(hit: RetrievalHit) -> RetrievalHit:
-    fusion_score = (
-        reciprocal_rank(hit.keyword_rank)
-        + reciprocal_rank(hit.vector_rank)
-        + reciprocal_rank(hit.qdrant_rank)
-    )
+    contributions = {
+        "keyword": reciprocal_rank(hit.keyword_rank),
+        "vector": reciprocal_rank(hit.vector_rank),
+        "qdrant": reciprocal_rank(hit.qdrant_rank),
+    }
+    fusion_score = sum(contributions.values())
     hit.fusion_score = fusion_score
     original_ranks = {
         "keyword": hit.keyword_rank,
@@ -74,6 +75,7 @@ def apply_fusion_score(hit: RetrievalHit) -> RetrievalHit:
             "vectorScore": hit.vector_score,
             "qdrantScore": hit.qdrant_score,
             "fusionScore": round(fusion_score, 8),
+            "rankContributions": {key: round(value, 8) for key, value in contributions.items() if value},
             "matchedFields": hit.matched_fields,
         }
     )
@@ -102,11 +104,12 @@ def fuse_hit_groups_rrf(hit_groups: dict[str, list[RetrievalHit]], top_k: int) -
     fused = [apply_fusion_score(hit) for hit in merged.values()]
     fused.sort(
         key=lambda item: (
-            item.keyword_score or 0,
             item.fusion_score or 0,
+            item.keyword_score or 0,
             item.vector_score or 0,
             item.qdrant_score or 0,
             item.confidence,
+            item.id,
         ),
         reverse=True,
     )

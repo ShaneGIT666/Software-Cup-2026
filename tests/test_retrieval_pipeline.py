@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from backend.app.retrieval.fusion import fuse_hit_groups_rrf, fuse_hits_rrf, reciprocal_rank
+from backend.app.retrieval import vector_retriever
+from backend.app.retrieval.filters import apply_metadata_filter, device_model_matches
 from backend.app.retrieval.models import QueryContext, RetrievalHit
+from backend.app.retrieval.pipeline import candidate_pool_size, tokenize
 from backend.app.retrieval.reranker import rerank_hits
 from backend.app.provider_policy import LAST_FALLBACK
 
@@ -91,16 +94,76 @@ def test_rrf_group_fusion_keeps_optional_qdrant_rank_breakdown() -> None:
     assert chunk.score_breakdown["sourceRetrievers"] == ["vector", "qdrant"]
 
 
-def test_rrf_fusion_keeps_stronger_keyword_match_first() -> None:
+def test_rrf_fusion_prioritizes_cross_retriever_agreement() -> None:
     keyword_only = make_hit("manual-1", keyword_rank=1, keyword_score=30)
     both_channels = make_hit("chunk-1", chunk_id="chunk-1", keyword_rank=3, keyword_score=10)
     vector_duplicate = make_hit("chunk-1", chunk_id="chunk-1", vector_rank=1, vector_score=18)
 
     fused = fuse_hits_rrf([keyword_only, both_channels], [vector_duplicate], top_k=5)
 
-    assert fused[0].id == "manual-1"
-    assert fused[1].id == "chunk-1"
-    assert fused[1].fusion_score and fused[1].fusion_score > (keyword_only.fusion_score or 0)
+    assert fused[0].id == "chunk-1"
+    assert fused[0].fusion_score and fused[0].fusion_score > (keyword_only.fusion_score or 0)
+
+
+def test_tokenize_extracts_chinese_symptom_bigrams_from_long_sentences() -> None:
+    tokens = tokenize("设备运行声音像周期敲击，伴随振动")
+
+    assert "设备运行声音像周期敲击" in tokens
+    assert "敲击" in tokens
+
+
+def test_candidate_pool_expands_beyond_result_size() -> None:
+    assert candidate_pool_size(1) == 12
+    assert candidate_pool_size(5) == 20
+    assert candidate_pool_size(20) == 50
+
+
+def test_device_model_filter_accepts_device_family_without_cross_model_leakage() -> None:
+    assert device_model_matches("发动机", "发动机-示例型号 A")
+    assert not device_model_matches("发动机-示例型号 A", "发动机-示例型号 C")
+
+
+def test_vector_recall_hydrates_chunk_metadata_before_filtering(monkeypatch) -> None:
+    monkeypatch.setattr(
+        vector_retriever,
+        "load_document_chunks",
+        lambda: [
+            {
+                "id": "chunk-a",
+                "device_model": "发动机-示例型号 A",
+                "review_status": "approved",
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        vector_retriever.vector_store,
+        "search_similar_chunks",
+        lambda _query, _top_k: [
+            {
+                "id": "chunk-a",
+                "title": "发动机资料",
+                "sourceName": "unit",
+                "snippet": "unit",
+                "chunkId": "chunk-a",
+                "documentId": "document-a",
+                "distance": 0.1,
+                "retrievalSource": "sqlite",
+            }
+        ],
+    )
+    context = QueryContext(
+        device_model="发动机-示例型号 C",
+        fault_text="异响",
+        top_k=5,
+        query_tokens=["异响"],
+        vector_query="发动机-示例型号 C 异响",
+        metadata_filters={"device_model": "发动机-示例型号 C"},
+    )
+
+    hits = vector_retriever.retrieve_vector_hits(context)
+
+    assert hits[0].device_model == "发动机-示例型号 A"
+    assert apply_metadata_filter(context, hits) == []
 
 
 def test_reranker_none_preserves_rrf_order(monkeypatch) -> None:

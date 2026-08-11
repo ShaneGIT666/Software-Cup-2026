@@ -11,6 +11,7 @@ class QueryContext:
     top_k: int
     query_tokens: list[str]
     vector_query: str
+    candidate_k: int = 20
     metadata_filters: dict[str, str] = field(default_factory=dict)
 
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from uuid import uuid4
 
 from fastapi import HTTPException
@@ -13,12 +14,31 @@ from .reranker import rerank_hits
 from .vector_retriever import retrieve_vector_hits
 
 
+_QUERY_FRAGMENT = re.compile(r"[a-z0-9]+|[\u4e00-\u9fff]+", re.IGNORECASE)
+_MIN_CANDIDATE_POOL = 12
+_MAX_CANDIDATE_POOL = 50
+
+
 def tokenize(*parts: str) -> list[str]:
-    text = " ".join(part for part in parts if part).lower()
-    separators = ["，", "。", "、", ",", ".", " ", "-", "_", "\n"]
-    for separator in separators:
-        text = text.replace(separator, " ")
-    return [item for item in text.split(" ") if item]
+    """Return literal terms plus useful two-character terms from long Chinese phrases.
+
+    Chinese diagnostic text is commonly entered as an uninterrupted sentence. Keeping
+    only whitespace-delimited terms makes those queries nearly impossible to match.
+    The full fragment remains available for exact phrase matches; bigrams add a
+    conservative lexical fallback for symptoms such as "周期敲击".
+    """
+
+    tokens: list[str] = []
+    for part in parts:
+        for fragment in _QUERY_FRAGMENT.findall((part or "").lower()):
+            tokens.append(fragment)
+            if len(fragment) >= 5 and all("\u4e00" <= char <= "\u9fff" for char in fragment):
+                tokens.extend(fragment[index : index + 2] for index in range(len(fragment) - 1))
+    return list(dict.fromkeys(tokens))
+
+
+def candidate_pool_size(top_k: int) -> int:
+    return min(_MAX_CANDIDATE_POOL, max(_MIN_CANDIDATE_POOL, top_k * 4))
 
 
 def build_query_context(request: SearchRequest) -> QueryContext:
@@ -29,6 +49,7 @@ def build_query_context(request: SearchRequest) -> QueryContext:
         top_k=request.topK,
         query_tokens=query_tokens,
         vector_query=" ".join([request.deviceModel, request.faultText]).strip(),
+        candidate_k=candidate_pool_size(request.topK),
         metadata_filters={"device_model": request.deviceModel.strip()},
     )
 
@@ -54,8 +75,8 @@ def build_search_summary(results: list[dict[str, object]], query_tokens: list[st
     )
 
 
-def merge_results(keyword_hits: list[RetrievalHit], vector_hits: list[RetrievalHit], top_k: int) -> list[RetrievalHit]:
-    return fuse_hits_rrf(keyword_hits, vector_hits, top_k)
+def merge_results(keyword_hits: list[RetrievalHit], vector_hits: list[RetrievalHit], candidate_k: int) -> list[RetrievalHit]:
+    return fuse_hits_rrf(keyword_hits, vector_hits, candidate_k)
 
 
 def search_knowledge(request: SearchRequest) -> dict[str, object]:
@@ -65,10 +86,19 @@ def search_knowledge(request: SearchRequest) -> dict[str, object]:
 
     keyword_hits = apply_metadata_filter(context, retrieve_keyword_hits(context))
     vector_hits = apply_metadata_filter(context, retrieve_vector_hits(context))
-    fused_hits = merge_results(keyword_hits, vector_hits, request.topK)
+    fused_hits = merge_results(keyword_hits, vector_hits, context.candidate_k)
     final_hits = rerank_hits(context, fused_hits)[: request.topK]
     for final_rank, hit in enumerate(final_hits, start=1):
-        hit.score_breakdown["finalRank"] = final_rank
+        hit.score_breakdown.update(
+            {
+                "finalRank": final_rank,
+                "candidatePool": {
+                    "keyword": len(keyword_hits),
+                    "vector": len(vector_hits),
+                    "fused": len(fused_hits),
+                },
+            }
+        )
     results = [hit.to_search_result() for hit in final_hits]
 
     return {
