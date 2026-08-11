@@ -204,4 +204,4 @@ def retrieve_keyword_hits(context: QueryContext) -> list[RetrievalHit]:
     hits.sort(key=lambda item: (item.keyword_score or 0, item.confidence), reverse=True)
     for index, hit in enumerate(hits, start=1):
         hit.keyword_rank = index
-    return hits[: context.candidate_k]
+    return hits

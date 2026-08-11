@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from backend.app.retrieval.fusion import fuse_hit_groups_rrf, fuse_hits_rrf, reciprocal_rank
-from backend.app.retrieval import vector_retriever
+from backend.app.retrieval import keyword_retriever, pipeline as retrieval_pipeline, vector_retriever
 from backend.app.retrieval.filters import apply_metadata_filter, device_model_matches
 from backend.app.retrieval.models import QueryContext, RetrievalHit
 from backend.app.retrieval.pipeline import candidate_pool_size, tokenize
 from backend.app.retrieval.reranker import rerank_hits
 from backend.app.provider_policy import LAST_FALLBACK
+from backend.app.schemas import SearchRequest
 
 
 def make_hit(
@@ -116,6 +117,51 @@ def test_candidate_pool_expands_beyond_result_size() -> None:
     assert candidate_pool_size(1) == 12
     assert candidate_pool_size(5) == 20
     assert candidate_pool_size(20) == 50
+
+
+def test_keyword_candidates_are_filtered_before_truncation_and_reranked(monkeypatch) -> None:
+    wrong_model_manuals = [
+        {
+            "id": f"wrong-{index}",
+            "title": "target model fault",
+            "deviceModel": f"other-{index}",
+            "chapter": "unit",
+            "page": index,
+            "content": "target model fault",
+            "sourceName": "unit",
+            "tags": ["target", "model", "fault"],
+        }
+        for index in range(20)
+    ]
+    target_manual = {
+        "id": "target-manual",
+        "title": "target guide",
+        "deviceModel": "target-model",
+        "chapter": "unit",
+        "page": 99,
+        "content": "fault",
+        "sourceName": "unit",
+        "tags": [],
+    }
+    monkeypatch.setattr(
+        keyword_retriever,
+        "load_seed_data",
+        lambda: {"manuals": [*wrong_model_manuals, target_manual], "cases": []},
+    )
+    monkeypatch.setattr(keyword_retriever, "load_document_chunks", lambda: [])
+    monkeypatch.setattr(retrieval_pipeline, "retrieve_vector_hits", lambda _context: [])
+
+    payload = retrieval_pipeline.search_knowledge(
+        SearchRequest(deviceModel="target-model", faultText="fault", topK=5)
+    )
+
+    assert [result["id"] for result in payload["results"]] == ["target-manual"]
+    assert payload["results"][0]["scoreBreakdown"]["originalRanks"] == {"keyword": 1}
+
+
+def test_vector_retrieval_oversamples_filtered_candidates() -> None:
+    assert vector_retriever.vector_retrieval_pool_size(20) == 60
+    assert vector_retriever.vector_retrieval_pool_size(50) == 100
 
 
 def test_device_model_filter_accepts_device_family_without_cross_model_leakage() -> None:
