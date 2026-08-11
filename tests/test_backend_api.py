@@ -1656,7 +1656,7 @@ def test_docx_upload_falls_back_to_mock_parser_pending_review(tmp_path, monkeypa
 def test_search_merges_chroma_vector_recall(tmp_path, monkeypatch) -> None:
     def fake_vector_search(query: str, top_k: int) -> list[dict[str, Any]]:
         assert "异响" in query
-        assert top_k == 20
+        assert top_k == 60
         return [
             {
                 "id": "kdoc-vector-chunk-001",

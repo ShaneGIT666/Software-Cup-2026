@@ -8,6 +8,14 @@ from .keyword_retriever import confidence_from_score
 from .models import QueryContext, RetrievalHit
 
 
+_OVERSAMPLE_FACTOR = 3
+_MAX_RETRIEVAL_POOL = 100
+
+
+def vector_retrieval_pool_size(candidate_k: int) -> int:
+    return min(_MAX_RETRIEVAL_POOL, max(candidate_k, candidate_k * _OVERSAMPLE_FACTOR))
+
+
 def vector_score_breakdown(distance: float, embedding_provider: str, retrieval_source: str) -> dict[str, Any]:
     similarity = max(0.0, min(1.0, 1.0 - distance))
     score = max(1, round(similarity * 20))
@@ -39,7 +47,10 @@ def retrieve_vector_hits(context: QueryContext) -> list[RetrievalHit]:
     # Hydrating from the authoritative chunk store keeps vector recall subject to the
     # same approval and device-model filters as keyword recall.
     chunks_by_id = {str(chunk.get("id")): chunk for chunk in load_document_chunks()}
-    vector_matches = vector_store.search_similar_chunks(context.vector_query, context.candidate_k)
+    vector_matches = vector_store.search_similar_chunks(
+        context.vector_query,
+        vector_retrieval_pool_size(context.candidate_k),
+    )
     for index, vector_match in enumerate(vector_matches, start=1):
         chunk = chunks_by_id.get(str(vector_match.get("chunkId") or vector_match.get("id")), {})
         embedding_provider = vector_match.get("embeddingProvider", "hash")
