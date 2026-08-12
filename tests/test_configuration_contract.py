@@ -70,7 +70,9 @@ def test_env_example_matches_runtime_configuration_contract() -> None:
     assert "APP_EXAMPLES_DIR=" in env_example
     assert "APP_UPLOAD_DIR=" in env_example
     assert "APP_KNOWLEDGE_DIR=" in env_example
-    assert "DATABASE_URL=" not in env_example
+    assert "\nDATABASE_URL=" not in env_example
+    assert "APP_DATABASE_URL=" in env_example
+    assert "APP_DATABASE_REQUIRED=false" in env_example
     assert "\nUPLOAD_DIR=" not in env_example
     assert "RAG_EMBEDDING_PROVIDER=openai" in env_example
     assert "text-embedding-3-small is the OpenAI default only" in env_example

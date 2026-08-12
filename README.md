@@ -129,6 +129,8 @@
 | 部署 | Windows Service 为默认；Linux systemd 和容器为可选 |
 | 可观测性 | 结构化日志、请求 ID、健康检查、指标和告警 |
 
+当前代码已完成“模块 0：契约与数据底座”的第一步：新增 `/api/v1` 系统健康检查、请求 ID、统一 v1 错误响应、SQLAlchemy/PostgreSQL 连接基础及 Alembic 初始迁移。旧 `/api` 与 JSON 原型业务链路暂时保留，身份、知识、Worker 等领域模块尚未迁移；具体使用方式见 [后端说明](backend/README.md)。
+
 ## 6. 目录结构
 
 ```text

@@ -7,12 +7,16 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from .api.v1.responses import v1_error
+from .api.v1.router import api_v1_router
+from .core.errors import AppError
+from .core.request_context import RequestContextMiddleware, request_id_from_request
 from .data_store import PROJECT_ROOT, knowledge_dir, upload_dir
 from .knowledge import (
     analyze_document_assets,
@@ -82,6 +86,7 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="设备检修知识检索与作业辅助系统", version="0.1.0")
 
+app.add_middleware(RequestContextMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
@@ -90,15 +95,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(api_v1_router)
+
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 app.mount("/knowledge", StaticFiles(directory=KNOWLEDGE_DIR), name="knowledge")
 
 
-def error_response(status_code: int, message: str) -> JSONResponse:
+def error_response(status_code: int, message: str, request_id: str | None = None) -> JSONResponse:
     payload = ApiResponse(success=False, data=None, message=message)
+    content = payload.model_dump() if hasattr(payload, "model_dump") else payload.dict()
+    if request_id:
+        content["requestId"] = request_id
     return JSONResponse(
         status_code=status_code,
-        content=payload.model_dump() if hasattr(payload, "model_dump") else payload.dict(),
+        content=content,
     )
 
 
@@ -182,14 +192,43 @@ def annotate_cross_modal_matches(items: list[dict[str, Any]], signals: dict[str,
 
 
 @app.exception_handler(HTTPException)
-async def http_exception_handler(_: Any, exc: HTTPException) -> JSONResponse:
+async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
     detail = exc.detail if isinstance(exc.detail, str) else "请求处理失败"
-    return error_response(exc.status_code, detail)
+    if request.url.path.startswith("/api/v1"):
+        return v1_error(
+            request,
+            status_code=exc.status_code,
+            code="HTTP_ERROR",
+            message=detail,
+        )
+    return error_response(exc.status_code, detail, request_id_from_request(request))
 
 
 @app.exception_handler(RequestValidationError)
-async def request_validation_exception_handler(_: Any, exc: RequestValidationError) -> JSONResponse:
-    return error_response(422, validation_message(exc.errors()))
+async def request_validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    message = validation_message(exc.errors())
+    if request.url.path.startswith("/api/v1"):
+        return v1_error(
+            request,
+            status_code=422,
+            code="VALIDATION_ERROR",
+            message=message,
+            details=exc.errors(),
+        )
+    return error_response(422, message, request_id_from_request(request))
+
+
+@app.exception_handler(AppError)
+async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
+    if request.url.path.startswith("/api/v1"):
+        return v1_error(
+            request,
+            status_code=exc.status_code,
+            code=exc.code,
+            message=exc.message,
+            details=exc.details,
+        )
+    return error_response(exc.status_code, exc.message, request_id_from_request(request))
 
 
 @app.get("/api/health", response_model=ApiResponse)
