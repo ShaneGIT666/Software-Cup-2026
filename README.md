@@ -1,28 +1,177 @@
-# 设备检修知识检索与作业辅助系统
+# 轻量设备检修知识与作业辅助系统
 
-本仓库是中国软件杯 A 组 A1 赛题“基于多模态大模型技术的设备检修知识检索与作业系统”的参赛作品。系统面向设备检修现场，提供资料入库、审核、知识检索、图片识别线索、标准作业步骤、智能检修建议、回答修正和经验沉淀闭环。
+本项目面向单个企业、工厂或设备运维部门，提供检修知识检索、标准作业指引、维修经验沉淀、知识审核和智能辅助建议。目标是建设一套可在普通企业服务器上长期运行、易安装、易维护、结果可追溯的小型知识系统。
 
-当前版本定位为可演示、可部署、可答辩的准生产级原型。默认主链路优先保证 LoongArch / 银河麒麟环境可运行；真实 LLM、MinerU、向量增强和多模态 provider 均可配置，失败时保留离线兜底能力。
+目标产品默认部署在 Windows，业务代码保持跨平台，并以 Linux CI 和可选 Linux 发行包验证可移植性；采用 B/S 架构，用户通过现代浏览器访问。系统定位为检修决策辅助工具，不替代现场负责人、安全规程、设备原厂手册或专业人员的最终判断。
 
-## 前端入口
+当前仓库只提供 Windows 开发运行路径和历史 Linux/Docker 资料，尚未提供可验收的 Windows Service 安装包或 Linux systemd 发行包。
 
-前端已调整为三个任务区域：
+## 1. 项目状态
 
-1. 检修助手：默认首页，面向一线检修人员。
-2. 管理中心：面向管理员、班组长和知识维护人员。
-3. 系统状态：面向运维、部署复验和答辩展示。
+仓库由比赛原型演进而来，现有代码已实现主要业务闭环，但尚未全部达到本文档定义的小型生产版标准。
 
-检修助手按 5 步组织主流程：
+| 状态 | 含义 |
+| --- | --- |
+| 已实现 | 当前代码中存在并可用于原型验证 |
+| 待改造 | 小型生产版上线前必须完成 |
+| 可选 | 按现场需求启用，不作为基础版本硬依赖 |
+
+当前能力：
+
+- 已实现：设备型号与故障描述检索、关键词与轻量向量融合、来源引用、种子作业流程关联与展示。
+- 已实现：资料上传、解析、知识切片、维修案例、回答修正和审核记录。
+- 已实现：原型级 OCR/多模态线索、RAG 建议、Evidence Pack、规则评估及演示降级。
+- 已实现：Windows 开发启动脚本和历史 Linux/Docker 部署资料。
+- 待改造：PostgreSQL 业务存储、登录与角色权限、受控文件下载、可靠后台任务和知识版本审核。
+- 待改造：RAG 最终答案一致性、生产安全降级、作业流程准确匹配、派生缓存失效和索引一致性。
+- 待改造：Windows Service 安装、备份恢复、结构化日志、生产监控和 Windows/Linux CI。
+
+当前原型的上线阻断项：
+
+| 阻断项 | 当前限制 | 目标要求 |
+| --- | --- | --- |
+| 身份与权限 | 业务接口没有登录、RBAC，审核身份可由请求传入 | 服务端认证、授权和真实操作人审计 |
+| 文件访问 | 上传和知识目录仍由静态路径提供 | 统一通过授权接口下载 |
+| 知识修订 | 已审核片段可原地修改并继续生效 | 新版本、重新审核、单一有效版本 |
+| RAG 安全 | 主回答与结构化安全结果可能不一致 | 只返回规则处理后的唯一最终回答 |
+| 图片降级 | mock 视觉线索可能影响诊断文本 | 生产禁用伪造线索，仅返回真实结果或不可用状态 |
+| 后台任务 | 使用 Web 进程内任务，重启后不能可靠恢复 | 持久任务、租约、重试和独立 Worker |
+| 部署运维 | 仅有开发脚本，旧引导脚本含固定用户路径 | 可重复的 Windows 安装、升级、备份、恢复和卸载 |
+
+详细目标与验收标准见 [软件需求规格说明书](docs/requirements/software-requirements-spec.md)。历史比赛材料仍保留在 `docs/submission/`、`docs/testing/` 和 `docs/project-management/`，不作为新产品的现状承诺。
+
+## 2. 目标使用范围
+
+基础版本按以下规模设计：
+
+- 单企业、单实例，不支持多租户 SaaS。
+- 一线检修人员、审核人员、知识管理员和系统管理员共 10–100 人。
+- 正常并发不超过 20 个交互请求。
+- 数千份资料、数万级有效知识片段。
+- 单台 Windows 服务器部署，可按需拆分数据库或模型服务。
+- 支持云端或企业内网 OpenAI-compatible 模型；模型不可用时仍可检索和查看正式知识。
+
+以下内容不属于基础版本：微服务、Kubernetes、多地域容灾、复杂流程引擎、自动控制设备、无人值守执行维修操作及完整工业图数据库平台。
+
+## 3. 目标业务流程
 
 ```text
-描述故障 -> 查看依据 -> 生成指引 -> 复核修正 -> 提交经验
+描述故障
+  -> 检索已审核知识
+  -> 查看来源和作业步骤
+  -> 生成智能辅助建议
+  -> 人工复核并执行现场流程
+  -> 提交维修经验或知识修正
+  -> 审核通过后形成新生效版本
+  -> 重新进入检索
 ```
 
-管理中心集中放置资料入库、待审核内容、审核记录和知识关系图。系统状态集中展示模型服务、OCR、多模态、向量检索、离线兜底、MinerU/Chroma 状态和初始化配置指引。
+目标产品遵循以下原则；当前原型尚未全部满足：
 
-## 快速启动
+1. 正式检索只使用当前生效且审核通过的知识版本。
+2. 自动解析及由 OCR/多模态生成的知识候选默认进入待审核；现场图片识别结果只作为本次查询线索，不能作为正式证据。
+3. 已生效知识不得原地覆盖；修订必须生成新版本并重新审核。
+4. 每条建议应尽可能追溯到资料、片段、版本、页码或案例。
+5. LLM 输出属于辅助建议，高风险操作必须人工复核。
 
-推荐使用统一开发入口：
+## 4. 目标功能区域
+
+### 检修助手
+
+- 输入设备型号、设备类型、故障现象和检修等级。
+- 上传现场图片，提取 OCR 或视觉线索辅助查询。
+- 查看手册、案例和知识片段的排序结果及命中原因。
+- 查看工具、检查步骤、安全提醒和验收标准。
+- 生成带引用、不确定信息和风险提示的智能建议。
+- 提交维修结果、经验总结或回答修正。
+
+### 知识与审核
+
+- 上传 PDF、Office、Markdown、文本和常见图片资料。
+- 异步解析资料并查看任务进度和失败原因。
+- 查看、修订、审核、废弃和替换知识版本。
+- 审核维修案例和智能回答修正。
+- 查询审核人、审核时间、原因及版本差异。
+
+### 系统管理
+
+- 管理用户和角色；基础版采用单一共享知识域，不实现复杂数据域 ACL。
+- 查看 Provider 的非敏感配置与状态；密钥只允许在服务器安全配置中维护。
+- 查看任务、服务、索引、存储和模型连接状态。
+- 由授权运维人员通过服务器脚本执行备份、恢复验证和诊断，不在普通 Web 页面中直接操作备份文件。
+
+## 5. 目标架构
+
+小型生产版采用模块化单体，避免不必要的微服务和复杂中间件。
+
+```text
+浏览器
+  -> IIS / Caddy / Nginx（HTTPS、反向代理、静态前端）
+  -> FastAPI 模块化 API
+       -> PostgreSQL（业务数据、审核、任务、审计）
+       -> 受控文件存储（本地数据盘或企业 NAS）
+       -> 向量检索（基础版单一后端）
+       -> LLM / OCR / 文档解析 Provider
+  -> 后台 Worker（解析、OCR、索引、重试）
+```
+
+推荐技术路线：
+
+| 层级 | 目标方案 |
+| --- | --- |
+| 前端 | Vue 3 + TypeScript + Vite + Element Plus + Vue Router |
+| 后端 | FastAPI 模块化单体，API 基础路径 `/api/v1` |
+| 业务数据库 | PostgreSQL，使用迁移工具管理版本 |
+| 文件存储 | 默认本地受控目录，可适配 NAS 或对象存储 |
+| 后台任务 | PostgreSQL 任务表 + 单一 Worker，支持重试和重启恢复 |
+| 检索 | 关键词 + 单一向量后端 + RRF/重排 + effective-only 过滤 |
+| 身份 | 本地账户或 OIDC，采用 RBAC |
+| 部署 | Windows Service 为默认；Linux systemd 和容器为可选 |
+| 可观测性 | 结构化日志、请求 ID、健康检查、指标和告警 |
+
+## 6. 目录结构
+
+```text
+backend/                 FastAPI 后端和领域服务
+  app/
+    retrieval/           检索、融合、过滤和重排
+    evaluation/          检索评测
+frontend/                Vue 前端
+data/examples/           开发样例数据
+docs/requirements/       产品需求和范围
+docs/design/             设计与接口草案
+docs/deployment/         部署资料
+scripts/                 开发、验证和部署脚本
+tests/                   后端自动化测试
+```
+
+运行数据、密钥、上传文件、数据库备份和生产日志不得提交到 Git。
+
+## 7. 当前原型运行
+
+以下命令用于运行仓库当前原型，不代表目标生产安装方式。
+
+### Windows
+
+前置条件：Python 3.11、Node.js 20.19+（或 22.12+）、npm。当前仓库的部分旧环境脚本仍需在改造阶段去除用户路径假设。
+
+```powershell
+python -m venv backend\.venv
+.\backend\.venv\Scripts\python.exe -m pip install -r backend\requirements.txt
+
+cd frontend
+npm install
+npm run build
+cd ..
+```
+
+初始化开发配置。以下命令启用离线演示模式，其中 mock 输出只用于界面和链路调试，不可作为真实诊断：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\init-config.ps1 -Mode offline
+```
+
+在虚拟环境已经创建后，开发模式可使用：
 
 ```bat
 dev start
@@ -32,112 +181,77 @@ dev logs
 dev stop
 ```
 
-也可以手动启动：
+其中 `dev verify` 只检查本地前后端 HTTP 可达性，不代表运行完整测试或生产就绪验收。现有本地综合验证入口如下；它会运行后端测试、前端构建和离线 readiness，但仍不包含前端 E2E 或真实外部 Provider 验收：
 
 ```powershell
-.\backend\.venv\Scripts\python.exe -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
-cd frontend
-npm.cmd run dev
+powershell -ExecutionPolicy Bypass -File .\scripts\run-local-verification.ps1
 ```
 
-访问：
+访问 `http://127.0.0.1:5173/`。
 
-```text
-http://127.0.0.1:5173/
-```
+不建议直接裸运行 Uvicorn，因为应用本身不会自动加载仓库根目录的 `.env`；现有 `dev`/`start-backend.ps1` 会负责加载它。首次运行前请手工创建 `backend\.venv`，避免触发仍含固定 Anaconda 用户路径的旧引导逻辑。
 
-生产演示时可由 FastAPI 静态托管 `frontend/dist`。
+### Linux
 
-## 初始化配置脚本
+当前仓库没有完成可重复验证的 Linux 快速启动路径，现有 Linux/Docker 文档仅作为历史适配资料。目标版将提供安装说明、独立环境模板和可选 systemd 单元；领域代码不得依赖 PowerShell、盘符或固定用户目录。Linux 发行包不作为 Windows 基础版上线前置条件，但同一代码必须通过 Ubuntu CI。
 
-Windows：
+## 8. 配置原则
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\init-config.ps1
-```
+当前原型使用 `.env`。目标版本允许环境变量或外部 YAML，但敏感信息不得写入仓库、前端或普通日志。
 
-Linux / Kylin / LoongArch：
+主要配置类别：
 
-```bash
-bash scripts/init-config.sh
-```
+- 应用：环境、端口、公开地址、数据目录。
+- 数据库：PostgreSQL 连接、连接池和迁移策略。
+- 身份：本地账户或 OIDC issuer/client 配置。
+- Provider：LLM、embedding、OCR、多模态和解析服务。
+- 文件：上传大小、允许类型、存储根目录和病毒扫描接口。
+- 任务：Worker 数量、租约、超时和重试次数。
+- 日志：级别、输出位置、保留周期和脱敏规则。
 
-脚本支持两种模式：
+复制 `.env.example` 后必须审阅全部默认值。生产环境触发模型或视觉降级时，只能返回已审核的检索结果、确定性证据模板或明确的不可用提示；不得使用 mock Provider 生成的固定诊断、OCR 或视觉内容，也不得把这类内容写入查询、证据、索引或审核对象。
 
-- 离线演示模式：写入 `REMOTE_API_MODE=off`、`LLM_PROVIDER=mock`、`MULTIMODAL_PROVIDER=mock`、`OCR_PROVIDER=mock` 和本地检索兜底配置。
-- 真实 LLM 模式：写入 OpenAI-compatible `OPENAI_BASE_URL`、`OPENAI_MODEL`、`OPENAI_API_KEY`、`OPENAI_API_STYLE=chat_completions` 等配置。
+## 9. 安全边界
 
-`.env` 已被 `.gitignore` 忽略。脚本在覆盖前会备份旧 `.env`，并且只脱敏显示 API Key。
+- 系统不直接控制、启停或调整设备。
+- 智能建议不能替代原厂手册、作业票、安全规程和人工批准。
+- 未审核内容不得进入正式检索、RAG 上下文或有效知识关系。
+- 文档下载必须经过授权，不能直接暴露知识存储目录。
+- 高风险、关键参数缺失或证据不足时必须停止确定性结论并提示复核。
+- 上传文档属于不可信输入，需要防范恶意文件和提示注入。
+- 所有审核、版本切换、权限变更和配置变更必须记录审计事件。
 
-验证模型服务：
+## 10. 质量与验收
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\validate-provider.ps1
-```
+目标版本的最低交付门槛：
 
-或：
+- Windows 默认安装、启动、升级、停止和卸载流程可重复执行。
+- Windows 与 Ubuntu CI 均通过后端测试、前端构建和核心 E2E；Linux 生产发行包为可选交付物。
+- 权限越权、未审核知识泄漏和受控文件下载测试必须通过。
+- 数据库迁移、备份恢复和 Worker 重启恢复经过验证。
+- 检索评测包含 Hit@K、Recall@K、MRR、空结果率及 effective-only 违规数。
+- LLM、OCR 或向量服务不可用时，正式知识检索仍可用并明确展示降级状态。
+- 不以历史测试数字替代当前提交的可复现验证报告。
 
-```bash
-bash scripts/validate-provider.sh
-```
+## 11. 改造优先级
 
-## 核心能力
+1. PostgreSQL、身份认证、RBAC、受控文件访问和 `/api/v1`。
+2. 知识版本审核、事务/outbox 和索引一致性。
+3. 持久化 Worker、失败重试、备份恢复和 Windows Service。
+4. 前端路由与状态拆分、异步任务进度、统一错误处理。
+5. 检索质量评测、模型治理、监控告警和跨平台 CI。
 
-- 多类型输入：设备型号、故障描述、检修等级、现场图片和维修资料。
-- 图片识别线索：OCR / 多模态结果进入当前诊断上下文，用于增强检索，不直接作为未审核正式依据。
-- approved-only 检索：正式检索、RAG 引用和知识关系图默认只使用已审核内容。
-- 标准作业步骤：按设备、故障和检修等级展示检查步骤、安全提醒和验收标准。
-- 智能检修建议：输出初步判断、检查步骤、维修步骤、安全提醒、验收标准、引用来源和不确定信息。
-- 知识沉淀：资料片段、维修案例、回答修正均进入审核流程，通过后沉淀到知识库或轻量知识关系图。
-- 知识关系图：展示设备、故障、资料、案例、流程、术语和回答修正之间的关系，提供摘要、图例、SVG 图谱和节点详情。
-- 现场兜底：真实模型、OCR、向量或解析服务不可用时，系统仍可通过离线演示模式完成主流程。
+在第一至第三项完成前，项目仍应标识为开发/试点状态，不应用于无人监督的现场检修决策。
 
-## 技术路线
+## 12. 开发约定
 
-| 模块 | 当前方案 |
-| --- | --- |
-| 前端 | Vue 3 + TypeScript + Vite + Element Plus |
-| 后端 | FastAPI |
-| 存储 | JSON 原子写入与备份，运行数据不提交 |
-| 检索 | approved-only 关键词检索 + 可选向量增强 + Evidence Pack |
-| 向量 | 默认 SQLite python_scan / hash fallback，Chroma/Qdrant/sqlite-vec 为可选增强 |
-| LLM | OpenAI-compatible adapter，mock/offline 仅作兜底 |
-| 文档解析 | parser_router + MinerU adapter，未安装时优雅降级 |
-| 多模态 | OCR/视觉 provider 可选，失败时降级到 OCR/文本 LLM/本地兜底 |
-| 部署 | Docker 优先，venv + FastAPI 静态托管兜底 |
+- 新增生产接口统一放在 `/api/v1`，旧 `/api` 仅在迁移期保留。
+- 所有数据库结构变更必须附迁移脚本。
+- 所有生产写操作必须携带经过认证的用户身份。
+- 领域服务不得依赖具体操作系统命令。
+- 修复缺陷时必须增加对应测试。
+- 文档中的“已实现”“规划中”“可选”必须与代码状态一致。
 
-## 当前验证状态
+## 13. 许可证与使用说明
 
-| 项目 | 结果 |
-| --- | --- |
-| 后端全量测试 | `174 passed in 729.77s` |
-| 前端生产构建 | `npm.cmd run build` 通过，本轮构建耗时约 `4.61s` |
-| readiness | `success=true` |
-| JSON 巡检 | `success=true`，`issueCount=0` |
-| API 冒烟 | health、search、RAG、multimodal、feedback、knowledge graph 已验证 |
-| LoongArch / Kylin | 已有主链路复验记录，最终提交前建议再跑 `scripts/loongarch-final-verify.sh` |
-
-## 交付文档
-
-- `docs/submission/01-软件功能需求分析文档.md`
-- `docs/submission/02-软件功能设计文档.md`
-- `docs/submission/03-软件产品说明书.md`
-- `docs/submission/04-软件功能测试报告.md`
-- `docs/submission/05-软件安装包及部署文档.md`
-- `docs/product/demo-runbook-final.md`
-- `docs/product/final-delivery-summary.md`
-- `docs/ppt-assets/final-demo-script-7min.md`
-- `docs/ppt-assets/screenshot-checklist-final.md`
-- `docs/project-management/final-engineering-test-report.md`
-
-## 安全边界
-
-不要提交 `.env`、API Key、上传资料、运行知识库、日志、压缩包、视频、截图、`.venv`、`node_modules` 或 `frontend/dist`。真实模型能力以目标环境的 provider 验证结果为准；mock、hash、fallback 和轻量知识关系图不能包装成生产级能力。
-
-## P0 补充：PDF 页面视觉资产 fallback
-
-维修手册 PDF 优先通过 MinerU 提取正文和图片 assets。若 MinerU 超时、不可用，或未提取到独立图片 assets，系统会基于 PDF 页码、页面文本和可检测到的页面图片对象自动生成 `pdf_page_visual_asset` 知识片段。
-
-这些片段默认 `pending_review`，仅用于演示、审核和知识沉淀链路，不会在审核前进入正式检索或 RAG 引用。官方演示文件“摩托车发动机维修手册”已在本地验证：PDF 共 41 页，pypdf 可检测到 36 页存在图片对象；在 MinerU 不可用 fallback 模式下可生成 12 个 PDF 页面视觉资产片段，资料卡不再显示 0 个图片片段。
-
-该 fallback 不宣称生产级图像理解能力；若目标环境配置真实 OCR/多模态 provider，仍优先使用真实 provider 的分析结果。
+当前仓库未提供明确的开源许可证。在决定内部交付、对外分发或引入第三方代码前，应完成依赖许可证和数据授权审查。

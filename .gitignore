@@ -40,3 +40,7 @@ target/
 out/
 *.tsbuildinfo
 release/
+
+# Local environment
+.env
+.env.*
