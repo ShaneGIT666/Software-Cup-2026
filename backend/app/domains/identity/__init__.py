@@ -2,6 +2,7 @@
 
 from .authorization import ensure_not_self_review, permissions_for_roles
 from .contracts import CurrentUser, Permission, RoleCode
+from .runtime import validate_identity_runtime_settings
 
 __all__ = [
     "CurrentUser",
@@ -9,4 +10,5 @@ __all__ = [
     "RoleCode",
     "ensure_not_self_review",
     "permissions_for_roles",
+    "validate_identity_runtime_settings",
 ]

@@ -110,8 +110,6 @@ def get_settings() -> AppSettings:
     if session_cookie_name.startswith("__Host-") and not session_cookie_secure:
         raise ValueError("__Host- Cookie 必须启用 APP_SESSION_COOKIE_SECURE")
     if environment == "production":
-        if not auth_secret:
-            raise ValueError("生产环境必须配置 APP_AUTH_SECRET")
         if not session_cookie_secure:
             raise ValueError("生产环境必须启用安全会话 Cookie")
         if not session_cookie_name.startswith("__Host-"):

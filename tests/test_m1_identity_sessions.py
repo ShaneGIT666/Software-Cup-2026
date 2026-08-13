@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from backend.app.domains.identity.sessions import (
+    csrf_token_for_session,
     issue_session_secrets,
     secret_digest,
     secrets_equal,
@@ -22,9 +23,23 @@ def test_session_issues_only_digests_for_persistence() -> None:
     assert issued.token != issued.token_digest
     assert issued.csrf_token != issued.csrf_digest
     assert issued.token_digest == secret_digest(issued.token, secret="test-auth-secret")
+    assert issued.csrf_token == csrf_token_for_session(issued.token, secret="test-auth-secret")
     assert secrets_equal(issued.csrf_token, issued.csrf_digest, secret="test-auth-secret")
     assert issued.expires_at == now + timedelta(minutes=480)
     assert issued.idle_expires_at == now + timedelta(minutes=30)
+
+
+def test_csrf_token_can_be_reconstructed_after_page_refresh() -> None:
+    issued = issue_session_secrets(
+        secret="test-auth-secret",
+        ttl_minutes=60,
+        idle_timeout_minutes=15,
+    )
+
+    reconstructed = csrf_token_for_session(issued.token, secret="test-auth-secret")
+    assert reconstructed == issued.csrf_token
+    assert secrets_equal(reconstructed, issued.csrf_digest, secret="test-auth-secret")
+    assert not secrets_equal("forged", issued.csrf_digest, secret="test-auth-secret")
 
 
 def test_session_requires_both_absolute_and_idle_validity() -> None:
@@ -39,4 +54,3 @@ def test_session_requires_both_absolute_and_idle_validity() -> None:
         revoked_at=None,
         now=now,
     )
-

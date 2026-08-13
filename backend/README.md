@@ -28,7 +28,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\init-config.ps1 -Mode offline
 .\dev.bat start
 ```
 
-M1 本地账户基础依赖已包含 `argon2-cffi`。开发环境会话配置示例见仓库根目录 `.env.example`；生产环境必须提供独立的 `APP_AUTH_SECRET`，并使用 `Secure` 的 `__Host-` 会话 Cookie。M1 当前仅完成身份/审计基础内核和数据库迁移，登录与用户管理 HTTP API 尚未交付，不能将其标记为认证功能已上线。
+M1 本地账户基础依赖已包含 `argon2-cffi`。开发环境会话配置示例见仓库根目录 `.env.example`；启用 M1 登录或身份依赖前，生产环境必须提供独立的 `APP_AUTH_SECRET`，并使用 `Secure` 的 `__Host-` 会话 Cookie。M1 当前仅完成身份/审计基础内核和数据库迁移，登录与用户管理 HTTP API 尚未交付，不能将其标记为认证功能已上线。
 
 健康检查：
 
