@@ -27,12 +27,12 @@
 | --- | --- | --- |
 | 检索与引用 | 原型部分实现 | 权限过滤、有效版本模型、统一流程匹配和稳定分页 |
 | RAG 与多模态 | 原型部分实现 | 唯一最终回答、生成前证据约束、生产安全降级和真实 Provider 验收 |
-| 身份与权限 | 基础内核部分实现 | 已有身份/角色/会话/审计表、Argon2id、RBAC/`CurrentUser` 契约、会话/CSRF 原语和审计写入端口；Repository、登录限流状态机、当前用户依赖、登录/用户/审计 API、bootstrap、前端接入和真实 PostgreSQL 集成测试待实现 |
+| 身份与权限 | 持久化接缝部分实现 | 已有身份/角色/会话/审计表、Argon2id、RBAC/`CurrentUser`、会话/CSRF、身份 Repository、登录限流原子更新及当前用户/权限依赖；登录/用户/审计 API、bootstrap、前端接入和真实 PostgreSQL 集成测试待实现 |
 | 文件访问 | 未实现生产边界 | 取消静态目录暴露，统一授权下载和下载审计 |
 | 知识版本审核 | 未实现目标模型 | 修订生成新版本、职责分离、单一有效版本和可靠发布 |
 | 后台任务 | 原型部分实现 | 独立 Worker、任务租约、重试和重启恢复 |
 | 业务存储 | 基础设施部分实现 | 已有 PostgreSQL 连接、Alembic、outbox、共享幂等记录及 M1 身份/审计表；其余领域数据、在线 PostgreSQL 验证、事务发布和备份恢复待实现 |
-| API 契约与可观测性 | 基础设施部分实现 | 已有 `/api/v1` 系统健康检查、request ID、统一 v1 错误/分页模型和 M1 追加式审计存储；身份及业务路由、授权依赖、幂等编排和审计查询待迁移 |
+| API 契约与可观测性 | 基础设施部分实现 | 已有 `/api/v1` 系统健康检查、request ID、统一 v1 错误/分页/游标/并发条件模型、服务端可信来源检查、M1 追加式审计存储和身份授权依赖；身份及业务路由、幂等编排和审计查询待迁移 |
 | Windows 生产部署 | 未实现 | Service 安装、升级、诊断、备份、恢复和卸载 |
 | Linux 适配 | 历史资料/未形成基线 | Ubuntu CI；发行包和 systemd 为可选交付物 |
 | 质量体系 | 原型测试为主 | 锁定依赖、权限/恢复/并发测试、E2E 和可复现报告 |
@@ -566,9 +566,9 @@ uninstall.ps1
 | M6 | 前端重构 | 路由、登录、权限守卫、检索会话、任务中心、版本差异、证据选择 | `frontend/src/router/`、`stores/`、`views/`、`services/` | OpenAPI/DTO 契约；不直接依赖后端内部实现 | M1、M2、M3、M5 |
 | M7 | 部署、测试与运维 | Windows Service、备份恢复、CI、E2E、性能/安全测试、运行报告 | `deploy/`、`scripts/`、`tests/`、CI 配置 | 各模块公开 API、健康检查与验收样本 | 从 M0 开始持续并行 |
 
-当前状态：M0 已完成第一步及 M1 前置公共能力，提供 `/api/v1/health/live`、`/api/v1/health/ready`、请求 ID、统一 v1 错误/分页响应、受控 CORS 来源配置、可选领域路由和模型发现、SQLAlchemy/PostgreSQL 连接基础、Alembic 基础迁移、outbox 与共享幂等记录表。详细公共接缝见 `docs/design/m0-public-contract.md`。M0 不包含身份、领域业务表、Worker 或业务 API 迁移；旧 `/api` 和 JSON 原型链路在迁移期间保留。
+当前状态：M0 已完成第一步及 M1 前置公共能力，提供 `/api/v1/health/live`、`/api/v1/health/ready`、请求 ID、统一 v1 错误/分页响应、cursor codec、强 ETag/`If-Match`、受控 CORS/服务端可信来源配置、可选领域路由和模型发现、SQLAlchemy/PostgreSQL 连接基础、Alembic 基础迁移、outbox 与共享幂等记录表。详细公共接缝见 `docs/design/m0-public-contract.md`。M0 不包含身份、领域业务表、Worker 或业务 API 迁移；旧 `/api` 和 JSON 原型链路在迁移期间保留。
 
-M1 当前已完成身份与审计基础内核和 `20260813_0003` 迁移，但尚未发布 `get_current_user()`、`require_permissions()` FastAPI 依赖或任何 `/api/v1/auth`、`/users`、`/audit-events` 路由。M2/M3 可依赖 `CurrentUser`、禁止自审和 `AuditWriter` 契约开发领域逻辑或 Mock 测试，在 M1 真实身份依赖交付前不得将生产写路由标记为完成。旧 `/api` 写接口仍可匿名并信任客户端 `reviewer`，因此必须在生产发布前禁用或完成 v1 迁移，不能把 M1 基础内核视为 AUTH-01/02 已满足。
+M1 当前已完成身份与审计基础内核、`20260813_0003` 迁移、身份 Repository、登录限流/会话服务及 `get_current_user()`、`require_permissions()`、CSRF FastAPI 依赖，但尚未发布任何 `/api/v1/auth`、`/users`、`/audit-events` 路由，也未完成真实 PostgreSQL 集成验证。M2/M3 可依赖 `CurrentUser`、身份依赖、禁止自审和 `AuditWriter` 契约开发领域逻辑或测试，不得导入 M1 ORM/Repository；在登录入口和 PostgreSQL 验收完成前不得将生产写路由标记为完成。旧 `/api` 写接口仍可匿名并信任客户端 `reviewer`，因此必须在生产发布前禁用或完成 v1 迁移，不能把当前持久化接缝视为 AUTH-01/02 已满足。
 
 ### 14.2 并行开发前置条件
 

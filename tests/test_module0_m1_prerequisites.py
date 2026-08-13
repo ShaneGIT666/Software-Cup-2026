@@ -9,9 +9,12 @@ from starlette.requests import Request
 from backend.app.api.v1.domain_registry import DOMAIN_ROUTER_MODULES
 from backend.app.api.v1.responses import v1_page, v1_success
 from backend.app.core.config import get_settings
+from backend.app.core.concurrency import etag_for_version, parse_if_match, require_matching_version
 from backend.app.core.cors import CORS_ALLOWED_HEADERS, cors_middleware_options
 from backend.app.core.error_codes import ErrorCode
 from backend.app.core.errors import AppError
+from backend.app.core.pagination import decode_cursor, encode_cursor
+from backend.app.core.trusted_origins import require_trusted_browser_origin
 from backend.app.db.domain_models import load_domain_models
 from backend.app.db.idempotency import request_fingerprint, validate_idempotency_key
 from backend.app.main import app
@@ -199,3 +202,73 @@ def test_srs_auditor_requires_an_explicit_business_role() -> None:
 
     assert "默认禁止；需叠加检修人员角色" in srs
     assert "基线权限只能读取脱敏后的审计事件和运行报告" in srs
+
+
+def test_cursor_codec_is_versioned_opaque_and_rejects_damage() -> None:
+    cursor = encode_cursor({"id": "user-001", "createdAt": "2026-08-13T00:00:00Z"})
+
+    assert cursor.startswith("v1.")
+    assert "user-001" not in cursor
+    assert decode_cursor(cursor) == {"createdAt": "2026-08-13T00:00:00Z", "id": "user-001"}
+    assert decode_cursor(None) is None
+
+    with pytest.raises(AppError) as exc_info:
+        decode_cursor(cursor + "!")
+    assert exc_info.value.code == ErrorCode.INVALID_CURSOR
+
+
+def test_if_match_contract_uses_strong_version_etags() -> None:
+    assert etag_for_version(3) == '"v3"'
+    assert parse_if_match('"v3"') == 3
+    assert require_matching_version('"v3"', 3) == 3
+
+    with pytest.raises(AppError) as missing:
+        parse_if_match(None)
+    assert missing.value.status_code == 428
+    assert missing.value.code == ErrorCode.PRECONDITION_REQUIRED
+
+    with pytest.raises(AppError) as malformed:
+        parse_if_match("3")
+    assert malformed.value.code == ErrorCode.INVALID_PRECONDITION
+
+    with pytest.raises(AppError) as stale:
+        require_matching_version('"v2"', 3)
+    assert stale.value.status_code == 412
+    assert stale.value.code == ErrorCode.VERSION_CONFLICT
+
+
+def test_browser_write_origin_is_checked_server_side(monkeypatch) -> None:
+    monkeypatch.setenv("APP_ENV", "test")
+    monkeypatch.setenv("APP_TRUSTED_ORIGINS", "https://repair.example.com,http://localhost:5173")
+    settings = get_settings()
+
+    origin_request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/api/v1/auth/login",
+            "headers": [(b"origin", b"https://repair.example.com")],
+        }
+    )
+    referer_request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/api/v1/auth/login",
+            "headers": [(b"referer", b"http://localhost:5173/login?next=%2F")],
+        }
+    )
+    assert require_trusted_browser_origin(origin_request, settings) == "https://repair.example.com"
+    assert require_trusted_browser_origin(referer_request, settings) == "http://localhost:5173"
+
+    untrusted = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/api/v1/auth/login",
+            "headers": [(b"origin", b"https://evil.example.com")],
+        }
+    )
+    with pytest.raises(AppError) as exc_info:
+        require_trusted_browser_origin(untrusted, settings)
+    assert exc_info.value.code == ErrorCode.TRUSTED_ORIGIN_REQUIRED

@@ -1,10 +1,10 @@
 # M1 身份与审计模块设计方案
 
-> 状态：实施中；基础内核已完成并经 `2026-08-13-007-m1-completion-audit` 复核，本地账户 HTTP/API 层待实现，OIDC 作为 M1.1 扩展。<br>
+> 状态：实施中；基础内核及身份持久化接缝已完成，本地账户 HTTP/API 层待实现，OIDC 作为 M1.1 扩展。<br>
 > 主责模块：M1；协作模块：M0、M7。<br>
-> 关联记录：`2026-08-13-002-auth-entry-exception`、`2026-08-13-003-m0-m1-prerequisites`、`2026-08-13-004-m1-design`、`2026-08-13-005-m1-contract-gates`、`2026-08-13-006-m1-core-foundation`、`2026-08-13-007-m1-completion-audit`。
+> 关联记录：`2026-08-13-002-auth-entry-exception`、`2026-08-13-003-m0-m1-prerequisites`、`2026-08-13-004-m1-design`、`2026-08-13-005-m1-contract-gates`、`2026-08-13-006-m1-core-foundation`、`2026-08-13-007-m1-completion-audit`、`2026-08-13-008-m0-http-concurrency-contract`、`2026-08-13-009-m1-identity-persistence`。
 
-实施进度：已完成配置约束、领域包、RBAC/`CurrentUser`、Argon2id 适配、可恢复的会话/CSRF 密钥原语、身份与审计 ORM、角色种子、不可变审计迁移和 `AuditWriter`。第 6 节 HTTP 路由、Repository/业务服务、登录限流状态机、FastAPI 身份依赖、bootstrap CLI 与真实 PostgreSQL 集成测试仍待后续逻辑批次实现。完成度按能力状态追踪，不使用百分比推断可发布性，详见第 10 节。
+实施进度：已完成配置约束、领域包、RBAC/`CurrentUser`、Argon2id 适配、可恢复的会话/CSRF 密钥原语、身份与审计 ORM、角色种子、不可变审计迁移、`AuditWriter`、用户名规范化、身份 Repository、登录限流原子更新、登录验证/会话创建服务及 FastAPI 当前用户/权限/CSRF 依赖。第 6 节 HTTP 路由、用户管理服务、审计查询 Repository、bootstrap CLI 与真实 PostgreSQL 集成测试仍待后续逻辑批次实现。完成度按能力状态追踪，不使用百分比推断可发布性，详见第 10 节。
 
 ## 1. 目标与实施边界
 
@@ -36,7 +36,9 @@ M2、M3、M5 公开端口            IdentityService / AuditWriter
 | 领域模型发现 | 新增 `domains/identity/models.py`、`domains/audit/models.py` 并继承 `Base` | Alembic 读取 `Base.metadata` 前会发现模型 |
 | 迁移基础 | 首个 M1 revision 以 `20260813_0002` 为起点；生成前重查 head | 离线升级已生成 M0 两条迁移 |
 | 响应与分页 | 普通接口用 `v1_success()`；列表用 `v1_page()` 和 `PageRequest` | `data.items` / `meta.nextCursor` 已冻结 |
+| 游标与并发条件 | M1 列表复用 `encode_cursor()`/`decode_cursor()`；资源修改复用强 ETag/`If-Match` 帮助函数 | 已由 M0 第 008 号变更冻结并有契约测试 |
 | CORS | Cookie 会话复用 `APP_TRUSTED_ORIGINS` 与 M0 全局中间件 | 可信来源预检 200；非可信来源 400 |
+| 浏览器写来源 | 登录和 Cookie 写接口复用 `require_trusted_browser_origin()` | 独立于 CORS；缺失或不可信来源返回 403 |
 | 幂等 | 关键写接口以同一事务调用 `IdempotencyService` | HMAC 指纹、冲突/回放语义已冻结 |
 | 请求 ID 与错误处理 | 抛出 `AppError`，让 M0 返回 v1 错误信封 | request ID 已由中间件注入 |
 
@@ -61,9 +63,11 @@ backend/app/
       __init__.py
       models.py              # User、Role、UserRole、AuthSession、LoginThrottle
       contracts.py           # 内部领域 DTO、权限码、CurrentUser
+      usernames.py           # 唯一用户名规范化策略
       repository.py          # IdentityRepository；只访问 M1 表
       passwords.py           # Argon2id 哈希与校验
-      sessions.py            # 随机会话令牌、Cookie、CSRF、撤销和过期判断
+      sessions.py            # 随机会话令牌、CSRF 与过期判断
+      responses.py           # 待新增：统一 Cookie/no-store 响应帮助
       authorization.py       # require_permissions、职责分离断言
       dependencies.py        # get_current_user、require_permissions 的 FastAPI 依赖
       service.py             # 登录、登出、用户/角色/状态编排
@@ -85,6 +89,8 @@ tests/
   test_m1_identity_passwords.py
   test_m1_identity_sessions.py
   test_m1_authorization.py
+  test_m1_identity_repository.py
+  test_m1_identity_dependencies.py
   test_m1_identity_api.py
   test_m1_audit_api.py
   test_m1_postgres_integration.py
@@ -223,9 +229,9 @@ M2/M3 的关键写操作在一个事务中写入领域状态、调用 `AuditWrit
 
 ## 9. 实施顺序与验收
 
-1. 解决 G1、G2，新增 M1 配置契约与 `argon2-cffi` 锁定依赖，建立 `domains/` 骨架。
-2. 实现模型、角色种子、迁移、审计触发器和 PostgreSQL 集成测试。
-3. 实现密码、会话、CSRF、登录限流与 `CurrentUser`，完成单元测试。
+1. 已完成：解决 G1、G2，新增 M1 配置契约与 `argon2-cffi` 锁定依赖，建立 `domains/` 骨架。
+2. 部分完成：模型、角色种子、迁移和审计触发器已实现；真实 PostgreSQL 集成测试待 M7 环境完成。
+3. 已完成单元层：实现密码、会话、CSRF、登录限流与 `CurrentUser`；在线并发验证仍属于第 2 步门槛。
 4. 实现本地登录与 `me/logout/password` API，验证匿名 allowlist 不扩大。
 5. 实现用户、角色与审计查询 API，接入 M0 分页、幂等、`If-Match` 和审计写入。
 6. 提供 bootstrap CLI、OpenAPI/契约测试和 M2/M3 使用示例；OIDC 单独进入 M1.1。
@@ -239,12 +245,12 @@ M2/M3 的关键写操作在一个事务中写入领域状态、调用 `AuditWrit
 | 需求/设计能力 | 当前状态 | 已有证据 | 仍缺内容 |
 | --- | --- | --- | --- |
 | AUTH-07、密码安全基础 | 基础内核完成 | Argon2id 适配、密码策略、真实哈希单测 | 创建/改密/重置服务及密码历史等企业策略属于后续扩展 |
-| RBAC、AUTH-05/09 基础 | 基础内核完成 | 固定角色/权限、`CurrentUser`、权限集合和禁止自审单测 | FastAPI `get_current_user()`/`require_permissions()`、最后管理员与角色变更服务 |
-| 会话、AUTH-08 基础 | 部分完成 | 令牌/CSRF HMAC、绝对/空闲过期、会话表和配置测试 | Repository、Cookie 设置/清除、活动续期、撤销、账号/角色变更即时失效 |
-| 登录限流、FR-IAM-05 | 仅模型/配置 | `login_throttles` 表与阈值配置 | 并发安全状态机、成功重置、失败提交、IP/用户名 HMAC 和集成测试 |
+| RBAC、AUTH-05/09 基础 | 持久化接缝完成 | 固定角色/权限、`CurrentUser`、服务器端角色重算、`get_current_user()`/`require_permissions()` 和禁止自审单测 | 最后管理员与角色变更服务、路由级集成测试 |
+| 会话、AUTH-08 基础 | 持久化接缝完成 | 令牌/CSRF HMAC、会话 Repository、每请求状态/`auth_version` 复验、节流活动续期和撤销接口 | Cookie 响应帮助、登录/登出路由、账号/角色变更即时失效集成测试 |
+| 登录限流、FR-IAM-05 | 服务接缝完成 | 用户名/来源 HMAC、PostgreSQL 单语句 upsert、成功清除、dummy Argon2 路径和 SQL/单元测试 | 登录端点的失败事务提交、脱敏审计及真实 PostgreSQL 并发测试 |
 | 审计、FR-IAM-04/OBS-03 | 部分完成 | `audit_events`、不可变触发器、脱敏 `AuditWriter` | 登录/登出/用户变更实际写入、查询 Repository/API、保留策略、真实 PostgreSQL 触发器测试 |
 | FR-IAM-01/02、AUTH-01/02/03 | 未完成 | 路由和模型发现接缝已预留 | 登录、本人信息、用户/角色管理接口及后端强制授权；旧写入口生产下线 |
-| API-01～04 | 部分完成 | v1 路径、信封、错误码、分页/幂等公共能力 | M1 DTO/路由、游标、`If-Match`、幂等事务编排和 OpenAPI 契约测试 |
+| API-01～04 | 公共契约完成 | v1 路径、信封、错误码、cursor codec、强 ETag/`If-Match`、可信来源和幂等公共能力 | M1 DTO/路由、幂等事务编排和 OpenAPI 契约测试 |
 | bootstrap CLI | 未完成 | 无 | 空用户库检查、交互式密码输入、首个系统管理员和审计事件 |
 | OIDC（AUTH-06 SHOULD） | 未开始 | 配置枚举和显式不可用校验 | M1.1 独立设计、SDK、state/nonce/PKCE 表和回调 |
 | PostgreSQL 验收 | 未完成 | 单一迁移 head、离线升级/降级 SQL | PostgreSQL 16 在线迁移、约束/触发器、事务、并发、回滚和 API 集成测试 |
@@ -261,9 +267,9 @@ M2/M3 的关键写操作在一个事务中写入领域状态、调用 `AuditWrit
 8. 旧 `/api` 与静态目录是兼容层，不因 M1 路由出现而自动受保护。M1 可以继续开发，但 1.0 生产验收前必须由 M2/M3/M7 完成 v1 迁移或在部署入口禁用旧写接口和静态暴露，否则 AUTH-01/02/03 仍判失败。
 9. 用户名必须在 M1 单一函数中执行长度/字符策略和 Unicode NFKC + `casefold()` 规范化；登录不存在用户时仍执行固定的 Argon2id dummy hash 验证，避免通过响应时间枚举账户。登录来源 IP 只能来自 M0/M7 冻结的可信代理解析结果，禁止直接信任客户端 `X-Forwarded-For`。
 10. 空闲会话活动时间不得在每个读请求上无条件写库；Repository 使用可配置或冻结的最小刷新间隔做条件更新，并保证并发请求不会把 `idle_expires_at` 缩短，以降低热点会话行争用。
-11. M0 当前只冻结了分页字段与 `VERSION_CONFLICT`，尚未提供不透明游标 codec，也未定义 `If-Match` 的引号/版本格式。M1 在实现 `/users`、`/audit-events` 前必须先通过 M0 协作冻结公共 cursor 编解码/非法游标错误，以及 `If-Match` 解析和响应 ETag 规则；M1 不得私自形成与 M2/M3 不同的第二套格式。
+11. M0 已通过第 008 号变更冻结不透明 cursor codec、强 ETag/`If-Match` 和可信浏览器来源规则。M1 在实现 `/users`、`/audit-events` 和 Cookie 写路由时必须直接复用这些帮助函数，不得形成与 M2/M3 不同的第二套格式或来源判断。
 12. 身份相关响应（登录、`me`、CSRF、用户和审计数据）必须返回 `Cache-Control: no-store`；登录 Cookie 设置和清除统一由 M1 响应帮助函数生成，固定 `HttpOnly`、`SameSite=Lax`、`Path=/`、生产 `Secure` 且不设置 `Domain`，不得由各路由手写不同属性。
 
 ### 10.3 可继续开发的结论
 
-M1 后续 Repository、Service、FastAPI 身份依赖和本地认证 API 可以在现有结构上继续搭建，不需要重构 M0 或回退现有表。M2/M3 可并行开发纯领域逻辑与契约 Mock；只有在 M1 发布真实身份依赖后才能接入生产写路由。M7 可并行准备 PostgreSQL 16、认证配置预检和双平台测试。满足第 10.2 节后，三条开发线不会直接修改同一私有目录；共享配置、错误码、迁移 head 或就绪检查的变化仍必须按 M0 契约单独评审并记录。
+M1 的 Repository、登录限流、会话持久化和 FastAPI 身份依赖已经按既定目录完成，未修改根路由、`main.py`、历史迁移或其他领域表。后续可直接新增 M1 DTO、Cookie 响应帮助和本地认证 API，不需要重构 M0。M2/M3 可通过 `domains.identity.dependencies` 中的真实身份依赖接入开发态写路由，但在真实 PostgreSQL 集成测试和 M1 登录路由完成前不得标记为生产可用；也不得导入 M1 Repository/ORM。M7 可并行准备 PostgreSQL 16、可信代理来源、认证配置预检和双平台测试。共享配置、错误码、迁移 head 或就绪检查的变化仍必须按 M0 契约单独评审并记录。

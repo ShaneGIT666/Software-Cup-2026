@@ -9,5 +9,7 @@
 | `2026-08-13-005-m1-contract-gates` | 2026-08-13 | M1 | 已完成 | 关闭身份错误码、审计权限与 Cookie 设计门槛 | [记录](2026-08-13-005-m1-contract-gates.md) |
 | `2026-08-13-006-m1-core-foundation` | 2026-08-13 | M1 | 已完成 | 搭建身份、会话、RBAC 与不可变审计基础内核 | [记录](2026-08-13-006-m1-core-foundation.md) |
 | `2026-08-13-007-m1-completion-audit` | 2026-08-13 | M1 | 已完成 | 对照 SRS/设计复核完成度并修正后续搭建冲突 | [记录](2026-08-13-007-m1-completion-audit.md) |
+| `2026-08-13-008-m0-http-concurrency-contract` | 2026-08-13 | M0 | 已完成 | 冻结游标、If-Match/ETag 与可信来源公共契约 | [记录](2026-08-13-008-m0-http-concurrency-contract.md) |
+| `2026-08-13-009-m1-identity-persistence` | 2026-08-13 | M1 | 已完成 | 搭建身份持久化、登录限流和请求依赖接缝 | [记录](2026-08-13-009-m1-identity-persistence.md) |
 
 新增记录前先检查变更标识、受影响模块和关联记录，避免为同一目标重复建档或产生相互矛盾的设计。

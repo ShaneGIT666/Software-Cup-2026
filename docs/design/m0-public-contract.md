@@ -45,7 +45,11 @@ operations  M7
 
 请求统一使用 `limit`（1～100）与不透明 `cursor`。领域模块不得创造第二种分页字段或在普通响应中附加未登记的 `nextCursor`。
 
-M0 当前冻结以下公共错误码：`HTTP_ERROR`、`VALIDATION_ERROR`、`DEPENDENCY_UNAVAILABLE`、`AUTHENTICATION_REQUIRED`、`FORBIDDEN`、`IDEMPOTENCY_KEY_REQUIRED`、`IDEMPOTENCY_CONFLICT`、`REQUEST_IN_PROGRESS`、`VERSION_CONFLICT`。
+M0 提供 `encode_cursor()`/`decode_cursor()`。游标使用 `v1.` 版本前缀和 URL-safe Base64 JSON 信封，仅用于隐藏 keyset 分页位置，不是签名、授权或过滤条件；Repository 每页都必须重新应用当前用户、状态和数据范围过滤。损坏、超长、未知版本或非对象 payload 返回 `INVALID_CURSOR`。领域模块不得解析编码内部或复制 codec。
+
+并发修改统一使用强 ETag：响应 ETag 和请求 `If-Match` 均为 `"v<正整数>"`，例如 `"v3"`。M0 提供 `etag_for_version()`、`parse_if_match()` 和 `require_matching_version()`；缺少条件返回 `PRECONDITION_REQUIRED`/428，格式非法返回 `INVALID_PRECONDITION`/400，版本过期返回 `VERSION_CONFLICT`/412。不接受裸整数、弱 ETag、`*` 或多 ETag 列表。
+
+M0 当前冻结以下公共错误码：`HTTP_ERROR`、`VALIDATION_ERROR`、`DEPENDENCY_UNAVAILABLE`、`AUTHENTICATION_REQUIRED`、`FORBIDDEN`、`IDEMPOTENCY_KEY_REQUIRED`、`IDEMPOTENCY_CONFLICT`、`REQUEST_IN_PROGRESS`、`VERSION_CONFLICT`、`INVALID_CURSOR`、`PRECONDITION_REQUIRED`、`INVALID_PRECONDITION`、`TRUSTED_ORIGIN_REQUIRED`。
 
 M1 身份与审计错误码已登记为：`INVALID_CREDENTIALS`、`ACCOUNT_LOCKED`、`ACCOUNT_DISABLED`、`SESSION_EXPIRED`、`CSRF_INVALID`、`SELF_REVIEW_FORBIDDEN`、`LAST_ADMIN_PROTECTED`、`PASSWORD_POLICY_VIOLATION`、`AUTH_MODE_UNAVAILABLE`。匿名登录对不存在用户、密码错误和已锁定账户统一返回 `INVALID_CREDENTIALS`，不得利用其他错误码泄露账户是否存在；领域模块不得改变这些代码的含义。
 
@@ -60,6 +64,8 @@ APP_TRUSTED_ORIGINS=https://repair.example.com,https://repair-admin.example.com
 开发/测试未设置时，M0 仅允许 `http://localhost:5173` 和 `http://127.0.0.1:5173`。生产未设置时以空列表启动，浏览器跨源请求将被拒绝；部署不得将其视为有效生产配置。所有版本共用一个凭据 CORS 策略，允许的方法和请求头为显式列表，禁止 `*`。
 
 Cookie 会话由 M1 实现，但必须复用该来源列表；M1 不得自行添加第二套 CORS 中间件。
+
+M0 另提供 `require_trusted_browser_origin()`，供所有建立或使用 Cookie 会话的浏览器写端点执行服务端来源校验。它优先读取 `Origin`，仅在缺失时使用 `Referer` 的 origin 部分，并按规范化 scheme/host/effective-port 与 `APP_TRUSTED_ORIGINS` 精确比较；缺失或不可信返回 `TRUSTED_ORIGIN_REQUIRED`。该函数不信任代理头、不建立身份，也不替代已登录请求的 CSRF 校验。
 
 ## 4. 关键写操作幂等
 
