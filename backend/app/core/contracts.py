@@ -15,8 +15,23 @@ class ErrorBody(BaseModel):
     details: Any = None
 
 
+class PageRequest(BaseModel):
+    limit: int = Field(default=20, ge=1, le=100)
+    cursor: str | None = None
+
+
+class PageMeta(ResponseMeta):
+    nextCursor: str | None = None
+
+
+class PageData(BaseModel):
+    """Payload shape for every cursor-paginated v1 list endpoint."""
+
+    items: list[Any] = Field(default_factory=list)
+
+
 class V1Response(BaseModel):
-    """Stable envelope for new ``/api/v1`` endpoints only.
+    """Stable envelope for non-paginated ``/api/v1`` endpoints only.
 
     Legacy ``/api`` responses deliberately keep their existing shape during
     the staged migration.
@@ -28,11 +43,10 @@ class V1Response(BaseModel):
     meta: ResponseMeta
 
 
-class PageRequest(BaseModel):
-    limit: int = Field(default=20, ge=1, le=100)
-    cursor: str | None = None
+class V1PageResponse(BaseModel):
+    """Stable envelope for cursor-paginated ``/api/v1`` list endpoints."""
 
-
-class PageMeta(ResponseMeta):
-    nextCursor: str | None = None
-
+    success: bool = True
+    data: PageData
+    error: ErrorBody | None = None
+    meta: PageMeta

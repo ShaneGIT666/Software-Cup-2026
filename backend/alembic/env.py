@@ -8,6 +8,7 @@ from sqlalchemy import engine_from_config, pool
 from app.core.config import get_settings
 from app.db import models  # noqa: F401 - imports foundational table metadata
 from app.db.base import Base
+from app.db.domain_models import load_domain_models
 
 
 config = context.config
@@ -21,6 +22,7 @@ config.set_main_option("sqlalchemy.url", settings.database_url)
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
+load_domain_models()
 target_metadata = Base.metadata
 
 

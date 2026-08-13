@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import DateTime, Integer, String, Text, func
+from sqlalchemy import DateTime, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -46,3 +46,25 @@ class OutboxEvent(Base):
     processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+
+class IdempotencyRecord(Base):
+    """Shared request-deduplication state for critical v1 write operations.
+
+    A domain stores its final successful response in the same transaction as
+    its business state. The next identical request can therefore return the
+    original outcome without invoking the domain service again.
+    """
+
+    __tablename__ = "idempotency_records"
+    __table_args__ = (UniqueConstraint("scope", "actor_id", "idempotency_key", name="uq_idempotency_scope_actor_key"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    scope: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    actor_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False, default="in_progress", index=True)
+    response_status: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    response_data: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

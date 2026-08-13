@@ -565,7 +565,7 @@ uninstall.ps1
 | M6 | 前端重构 | 路由、登录、权限守卫、检索会话、任务中心、版本差异、证据选择 | `frontend/src/router/`、`stores/`、`views/`、`services/` | OpenAPI/DTO 契约；不直接依赖后端内部实现 | M1、M2、M3、M5 |
 | M7 | 部署、测试与运维 | Windows Service、备份恢复、CI、E2E、性能/安全测试、运行报告 | `deploy/`、`scripts/`、`tests/`、CI 配置 | 各模块公开 API、健康检查与验收样本 | 从 M0 开始持续并行 |
 
-当前状态：M0 已完成第一步，提供 `/api/v1/health/live`、`/api/v1/health/ready`、请求 ID、统一 v1 错误响应、SQLAlchemy/PostgreSQL 连接基础、Alembic 初始迁移及 outbox 基础表。M0 不包含身份、领域业务表、Worker 或业务 API 迁移；旧 `/api` 和 JSON 原型链路在迁移期间保留。
+当前状态：M0 已完成第一步及 M1 前置公共能力，提供 `/api/v1/health/live`、`/api/v1/health/ready`、请求 ID、统一 v1 错误/分页响应、受控 CORS 来源配置、可选领域路由和模型发现、SQLAlchemy/PostgreSQL 连接基础、Alembic 基础迁移、outbox 与共享幂等记录表。详细公共接缝见 `docs/design/m0-public-contract.md`。M0 不包含身份、领域业务表、Worker 或业务 API 迁移；旧 `/api` 和 JSON 原型链路在迁移期间保留。
 
 ### 14.2 并行开发前置条件
 
