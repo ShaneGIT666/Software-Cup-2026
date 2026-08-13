@@ -7,11 +7,12 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 
 from ...core.config import AppSettings
-from .models import User
 from .passwords import Argon2PasswordHasher, PasswordHasherPort
 from .repository import (
     IdentityRepository,
+    LoginCredentialRecord,
     LoginThrottleRepository,
+    LoginThrottleSnapshot,
     LoginThrottleState,
     login_throttle_digests,
 )
@@ -29,14 +30,16 @@ _DUMMY_PASSWORD_HASH = (
 
 @dataclass(frozen=True)
 class LoginVerification:
-    user: User | None
+    user_id: str | None
+    password_hash: str | None
+    auth_version: int | None
     subject_hmac: str
     source_hmac: str
     locked: bool
 
     @property
     def authenticated(self) -> bool:
-        return self.user is not None and not self.locked
+        return self.user_id is not None and self.password_hash is not None and self.auth_version is not None and not self.locked
 
 
 @dataclass(frozen=True)
@@ -72,13 +75,14 @@ class IdentityService:
 
     def verify_login_candidate(
         self,
-        session: Session,
         *,
         username: str,
         password: str,
         source_address: str,
         settings: AppSettings,
         now: datetime,
+        credential: LoginCredentialRecord | None,
+        throttle_snapshot: LoginThrottleSnapshot,
     ) -> LoginVerification:
         throttle_subject, normalized_username = self._throttle_subject(username)
         subject_hmac, source_hmac = login_throttle_digests(
@@ -86,23 +90,20 @@ class IdentityService:
             source_address=source_address,
             secret=settings.auth_secret,
         )
-        throttle_state = self.throttles.get_state(
-            session,
-            subject_hmac=subject_hmac,
-            source_hmac=source_hmac,
-        )
-        locked = throttle_state.is_locked(now) if throttle_state else False
-        user = (
-            self.repository.find_local_user_for_login(session, normalized_username)
-            if normalized_username is not None
-            else None
-        )
-        candidate_hash = user.password_hash if user is not None and user.password_hash else _DUMMY_PASSWORD_HASH
+        locked = throttle_snapshot.is_locked(now)
+        candidate_hash = credential.password_hash if credential is not None else _DUMMY_PASSWORD_HASH
         verified = self.password_hasher.verify(candidate_hash, password)
-        if user is None or not user.is_active or user.deleted_at is not None or not verified or locked:
-            user = None
+        accepted = (
+            credential is not None
+            and credential.is_active
+            and credential.deleted_at is None
+            and verified
+            and not locked
+        )
         return LoginVerification(
-            user=user,
+            user_id=credential.user_id if accepted and credential is not None else None,
+            password_hash=credential.password_hash if accepted and credential is not None else None,
+            auth_version=credential.auth_version if accepted and credential is not None else None,
             subject_hmac=subject_hmac,
             source_hmac=source_hmac,
             locked=locked,
@@ -115,7 +116,7 @@ class IdentityService:
         verification: LoginVerification,
         settings: AppSettings,
         now: datetime,
-    ) -> LoginThrottleState:
+    ) -> LoginThrottleSnapshot:
         return self.throttles.record_failure(
             session,
             subject_hmac=verification.subject_hmac,
@@ -134,8 +135,26 @@ class IdentityService:
         settings: AppSettings,
         now: datetime,
     ) -> CreatedSession:
-        if not verification.authenticated or verification.user is None:
+        if not verification.authenticated:
             raise ValueError("只有成功的凭据验证才能创建会话")
+        assert verification.user_id is not None
+        assert verification.password_hash is not None
+        assert verification.auth_version is not None
+        throttle_snapshot = self.throttles.get_states(
+            session,
+            subject_hmac=verification.subject_hmac,
+            source_hmac=verification.source_hmac,
+        )
+        if throttle_snapshot.is_locked(now):
+            raise ValueError("凭据验证后登录限流状态已变化")
+        user = self.repository.revalidate_login_candidate(
+            session,
+            user_id=verification.user_id,
+            password_hash=verification.password_hash,
+            auth_version=verification.auth_version,
+        )
+        if user is None:
+            raise ValueError("凭据验证后账号安全状态已变化")
         secrets = issue_session_secrets(
             secret=settings.auth_secret,
             ttl_minutes=settings.session_ttl_minutes,
@@ -144,15 +163,13 @@ class IdentityService:
         )
         record = self.repository.create_session(
             session,
-            user_id=verification.user.id,
-            auth_version=verification.user.auth_version,
+            user_id=user.id,
+            auth_version=user.auth_version,
             secrets=secrets,
             now=now,
         )
-        self.throttles.clear(
+        self.throttles.clear_subject(
             session,
             subject_hmac=verification.subject_hmac,
-            source_hmac=verification.source_hmac,
         )
         return CreatedSession(session_id=record.id, secrets=secrets)
-

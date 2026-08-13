@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from ipaddress import ip_network
 from urllib.parse import urlparse
 
 
@@ -57,6 +58,27 @@ def parse_trusted_origins(value: str, *, environment: str) -> tuple[str, ...]:
     return tuple(origins)
 
 
+def parse_trusted_proxy_cidrs(value: str) -> tuple[str, ...]:
+    """Validate and normalize the explicit proxy allowlist.
+
+    An empty value means that forwarded client-address headers are never
+    trusted.  Host bits are normalized away so equivalent CIDRs do not create
+    different runtime policies.
+    """
+
+    networks: list[str] = []
+    for item in (part.strip() for part in value.split(",")):
+        if not item:
+            continue
+        try:
+            normalized = str(ip_network(item, strict=False))
+        except ValueError as exc:
+            raise ValueError(f"APP_TRUSTED_PROXY_CIDRS 包含无效网段：{item}") from exc
+        if normalized not in networks:
+            networks.append(normalized)
+    return tuple(networks)
+
+
 @dataclass(frozen=True)
 class AppSettings:
     """Settings owned by the production foundation.
@@ -82,6 +104,7 @@ class AppSettings:
     auth_max_login_failures: int
     auth_login_window_seconds: int
     auth_lock_seconds: int
+    trusted_proxy_cidrs: tuple[str, ...] = ()
 
     @property
     def database_configured(self) -> bool:
@@ -135,4 +158,5 @@ def get_settings() -> AppSettings:
         auth_max_login_failures=env_int("APP_AUTH_MAX_LOGIN_FAILURES", 5),
         auth_login_window_seconds=env_int("APP_AUTH_LOGIN_WINDOW_SECONDS", 900),
         auth_lock_seconds=env_int("APP_AUTH_LOCK_SECONDS", 900),
+        trusted_proxy_cidrs=parse_trusted_proxy_cidrs(os.getenv("APP_TRUSTED_PROXY_CIDRS", "")),
     )

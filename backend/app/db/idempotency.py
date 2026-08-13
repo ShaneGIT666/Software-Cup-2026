@@ -87,6 +87,33 @@ class IdempotencyReservation:
 class IdempotencyService:
     """PostgreSQL-backed reservation and replay service shared by domains."""
 
+    def lookup(
+        self,
+        session: Session,
+        *,
+        scope: str,
+        actor_id: str,
+        key: str,
+        request_hash: str,
+    ) -> IdempotencyReplay | None:
+        """Read an existing replay before expensive work without reserving it."""
+
+        validated_key = validate_idempotency_key(key)
+        record = session.scalar(
+            select(IdempotencyRecord).where(
+                IdempotencyRecord.scope == scope,
+                IdempotencyRecord.actor_id == actor_id,
+                IdempotencyRecord.idempotency_key == validated_key,
+            )
+        )
+        if record is None:
+            return None
+        if record.request_hash != request_hash:
+            raise AppError(409, ErrorCode.IDEMPOTENCY_CONFLICT, "Idempotency-Key 已用于不同请求。")
+        if record.state != "completed" or record.response_status is None or record.response_data is None:
+            raise AppError(409, ErrorCode.REQUEST_IN_PROGRESS, "相同幂等请求正在处理中，请稍后重试。")
+        return IdempotencyReplay(status_code=record.response_status, data=dict(record.response_data))
+
     def begin(
         self,
         session: Session,

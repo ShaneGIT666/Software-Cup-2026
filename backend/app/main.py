@@ -16,6 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from .api.v1.responses import v1_error
 from .api.v1.router import api_v1_router
 from .core.config import get_settings
+from .core.cache_control import SensitiveResponseCacheMiddleware
 from .core.cors import cors_middleware_options
 from .core.errors import AppError
 from .core.request_context import RequestContextMiddleware, request_id_from_request
@@ -89,6 +90,7 @@ logger = logging.getLogger(__name__)
 app = FastAPI(title="设备检修知识检索与作业辅助系统", version="0.1.0")
 
 app.add_middleware(RequestContextMiddleware)
+app.add_middleware(SensitiveResponseCacheMiddleware)
 app.add_middleware(CORSMiddleware, **cors_middleware_options(get_settings()))
 
 app.include_router(api_v1_router)

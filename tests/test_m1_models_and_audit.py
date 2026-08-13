@@ -11,7 +11,15 @@ from backend.app.domains.audit.writer import AuditWriter
 def test_m1_domain_models_are_discovered_by_m0() -> None:
     load_domain_models()
 
-    assert {"users", "roles", "user_roles", "auth_sessions", "login_throttles", "audit_events"}.issubset(
+    assert {
+        "users",
+        "roles",
+        "user_roles",
+        "auth_sessions",
+        "login_throttles",
+        "login_throttle_buckets",
+        "audit_events",
+    }.issubset(
         Base.metadata.tables
     )
 

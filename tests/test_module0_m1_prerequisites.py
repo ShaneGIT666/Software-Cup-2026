@@ -8,7 +8,8 @@ from starlette.requests import Request
 
 from backend.app.api.v1.domain_registry import DOMAIN_ROUTER_MODULES
 from backend.app.api.v1.responses import v1_page, v1_success
-from backend.app.core.config import get_settings
+from backend.app.core.client_address import ClientAddressResolver
+from backend.app.core.config import AppSettings, get_settings
 from backend.app.core.concurrency import etag_for_version, parse_if_match, require_matching_version
 from backend.app.core.cors import CORS_ALLOWED_HEADERS, cors_middleware_options
 from backend.app.core.error_codes import ErrorCode
@@ -272,3 +273,72 @@ def test_browser_write_origin_is_checked_server_side(monkeypatch) -> None:
     with pytest.raises(AppError) as exc_info:
         require_trusted_browser_origin(untrusted, settings)
     assert exc_info.value.code == ErrorCode.TRUSTED_ORIGIN_REQUIRED
+
+
+def _client_address_settings(*cidrs: str) -> AppSettings:
+    return AppSettings(
+        environment="test",
+        database_url="postgresql+psycopg://test:test@localhost/test",
+        database_required=True,
+        application_name="m0-client-address-test",
+        trusted_origins=("http://localhost:5173",),
+        idempotency_secret="i" * 32,
+        auth_mode="local",
+        auth_secret="a" * 32,
+        session_cookie_name="repair_session",
+        session_cookie_secure=False,
+        session_ttl_minutes=480,
+        session_idle_timeout_minutes=30,
+        auth_max_login_failures=5,
+        auth_login_window_seconds=900,
+        auth_lock_seconds=900,
+        trusted_proxy_cidrs=cidrs,
+    )
+
+
+def _address_request(*, client: str, forwarded_for: str | None = None) -> Request:
+    headers = [] if forwarded_for is None else [(b"x-forwarded-for", forwarded_for.encode("ascii"))]
+    return Request(
+        {
+            "type": "http",
+            "http_version": "1.1",
+            "method": "POST",
+            "scheme": "https",
+            "path": "/api/v1/auth/login",
+            "raw_path": b"/api/v1/auth/login",
+            "query_string": b"",
+            "headers": headers,
+            "client": (client, 50000),
+            "server": ("testserver", 443),
+        }
+    )
+
+
+def test_client_address_ignores_forwarding_header_from_untrusted_peer() -> None:
+    resolved = ClientAddressResolver().resolve(
+        _address_request(client="198.51.100.8", forwarded_for="192.0.2.50"),
+        _client_address_settings("10.0.0.0/8"),
+    )
+
+    assert resolved == "198.51.100.8"
+
+
+def test_client_address_walks_only_explicitly_trusted_proxy_hops() -> None:
+    resolver = ClientAddressResolver()
+    settings = _client_address_settings("10.0.0.0/8")
+
+    assert resolver.resolve(
+        _address_request(client="10.0.0.3", forwarded_for="192.0.2.50, 10.0.0.2"),
+        settings,
+    ) == "192.0.2.50"
+    assert resolver.resolve(
+        _address_request(client="10.0.0.3", forwarded_for="192.0.2.50, 198.51.100.9"),
+        settings,
+    ) == "198.51.100.9"
+
+
+def test_invalid_trusted_proxy_cidr_fails_configuration(monkeypatch) -> None:
+    monkeypatch.setenv("APP_TRUSTED_PROXY_CIDRS", "not-a-network")
+
+    with pytest.raises(ValueError, match="APP_TRUSTED_PROXY_CIDRS"):
+        get_settings()

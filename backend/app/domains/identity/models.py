@@ -98,3 +98,22 @@ class LoginThrottle(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
     )
 
+
+class LoginThrottleBucket(Base):
+    """Independent account/source throttling required by NFR-SEC-07."""
+
+    __tablename__ = "login_throttle_buckets"
+    __table_args__ = (
+        CheckConstraint("bucket_type IN ('subject', 'source')", name="ck_login_throttle_buckets_type"),
+        UniqueConstraint("bucket_type", "bucket_hmac", name="uq_login_throttle_buckets_type_hmac"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    bucket_type: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    bucket_hmac: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    failure_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    window_started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )

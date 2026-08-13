@@ -5,6 +5,8 @@ from fastapi import APIRouter, Request, status
 from ...core.config import get_settings
 from ...core.contracts import V1Response
 from ...db import database_status
+from ...core.errors import AppError
+from ...domains.identity.runtime import validate_identity_runtime_settings
 from .responses import v1_error, v1_success
 
 
@@ -36,12 +38,26 @@ def ready(request: Request):  # type: ignore[no-untyped-def]
     503 so a service manager can stop routing traffic to the instance.
     """
 
-    db = database_status()
+    settings = get_settings()
+    db = database_status(settings)
+    identity_required = settings.environment == "production" or settings.database_required
+    try:
+        validate_identity_runtime_settings(settings)
+        identity = {"required": identity_required, "healthy": True, "mode": settings.auth_mode, "reason": ""}
+    except AppError:
+        identity = {
+            "required": identity_required,
+            "healthy": False,
+            "mode": settings.auth_mode,
+            "reason": "身份认证配置未就绪",
+        }
+    ready = (db.healthy or not db.required) and (identity["healthy"] or not identity_required)
     payload = {
-        "status": "ok" if (db.healthy or not db.required) else "not_ready",
+        "status": "ok" if ready else "not_ready",
         "database": db.to_dict(),
+        "identity": identity,
     }
-    if db.required and not db.healthy:
+    if not ready:
         return v1_error(
             request,
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

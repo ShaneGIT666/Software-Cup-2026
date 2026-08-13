@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from contextlib import contextmanager
 from typing import Iterator
 
 from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.engine import URL, make_url
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import InterfaceError, OperationalError, SQLAlchemyError, TimeoutError as SQLAlchemyTimeoutError
 from sqlalchemy.orm import Session, sessionmaker
 
 from ..core.config import AppSettings, get_settings
+from ..core.error_codes import ErrorCode
+from ..core.errors import AppError
 
 
 @dataclass(frozen=True)
@@ -65,12 +68,44 @@ def get_engine(settings: AppSettings | None = None) -> Engine:
     return _engine
 
 
-def get_session() -> Iterator[Session]:
+@contextmanager
+def new_session() -> Iterator[Session]:
+    """Create and own one short transaction using the shared M0 engine.
+
+    Callers may flush but must not commit or roll back.  The context owns the
+    full transaction lifecycle and always closes the Session.
+    """
+
     global _session_factory
-    if _session_factory is None:
-        get_engine()
+    try:
+        if _session_factory is None:
+            get_engine()
+    except (RuntimeError, SQLAlchemyError) as exc:
+        raise AppError(
+            503,
+            ErrorCode.DEPENDENCY_UNAVAILABLE,
+            "关键数据库依赖未就绪。",
+        ) from exc
     assert _session_factory is not None
     with _session_factory() as session:
+        try:
+            yield session
+            session.commit()
+        except Exception as exc:
+            session.rollback()
+            if isinstance(exc, (InterfaceError, OperationalError, SQLAlchemyTimeoutError)):
+                raise AppError(
+                    503,
+                    ErrorCode.DEPENDENCY_UNAVAILABLE,
+                    "关键数据库依赖未就绪。",
+                ) from exc
+            raise
+
+
+def get_session() -> Iterator[Session]:
+    """FastAPI request Session with stable dependency-unavailable failures."""
+
+    with new_session() as session:
         yield session
 
 
@@ -108,7 +143,7 @@ def database_status(settings: AppSettings | None = None) -> DatabaseStatus:
             required=resolved.database_required,
             healthy=False,
             dialect="postgresql",
-            reason=str(exc),
+            reason="数据库连接失败",
         )
 
 

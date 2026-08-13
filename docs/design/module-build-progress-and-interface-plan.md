@@ -3,7 +3,7 @@
 > 审查日期：2026-08-13<br>
 > 状态：当前代码审查基线；不构成功能完成或发布结论。<br>
 > 主责：M7 状态与验证治理；协作：M0～M6。<br>
-> 依据：SRS 第 1、14 节，M0 公共契约，M1 设计方案及修改日志 001～010。
+> 依据：SRS 第 1、14 节，M0 公共契约，M1 设计方案及修改日志 001～011。
 
 ## 1. 状态判定规则
 
@@ -13,8 +13,8 @@
 
 | 模块 | 代码证据 | 当前判定 | 未关闭问题 |
 | --- | --- | --- | --- |
-| M0 | `core/`、`db/`、`api/v1/`、迁移 `0001/0002`；健康/契约单元测试 | 基础代码已搭建，部分进程内 HTTP 已验证；模块未完成 | 无真实 PostgreSQL 在线升降级；请求 DB 失败尚无稳定 503 映射；无独立短事务公开端口和可信客户端地址解析 |
-| M1 | `domains/identity/`、`domains/audit/`、迁移 `0003`、`test_m1_*` | 基础/持久化代码已搭建，单元已验证；功能未完成 | 无公开 API；共享 Session 被身份依赖提交；授权分步读取；签发前无并发复验；限流仅组合维度；无真实 PostgreSQL 验证 |
+| M0 | `core/`、`db/`、`api/v1/`、迁移 `0001/0002`；短事务、DB 503、可信客户端地址和健康/契约测试 | 公共代码已搭建，进程内 HTTP/异常路径已验证；模块未完成 | 无真实 PostgreSQL 在线升降级/中断恢复、真实代理链和生产部署验收 |
+| M1 | `domains/identity/`、`domains/audit/`、三个 v1 路由、迁移 `0003/0004`、`test_m1_*` | 本地身份/用户/审计代码已搭建，进程内单元/API 已验证；功能未完成 | 无真实 PostgreSQL 在线迁移、触发器、锁/并发/API 集成；前端未接入；旧匿名 `/api` 与静态目录未退役 |
 | M2 | 旧 `knowledge.py`/JSON 数据和旧 `/api` 路由 | 仅原型存在；目标模块未开始 | 无目标领域表/Repository/v1 路由；修订、审核、受控下载和 Worker 均不满足目标规则 |
 | M3 | 旧种子流程及关联展示 | 仅原型存在；目标模块未开始 | 无设备/流程领域表、版本审核、CSV 导入或可靠匹配端口 |
 | M4 | M0 `outbox_events` 表 | 仅共享表代码存在；Worker/索引模块未开始 | 无 claim/lease/retry/恢复、索引世代、缓存/图谱失效；M4 不能直接操作 M0 私有 ORM |
@@ -24,24 +24,24 @@
 
 ## 3. 待建公共接口与文件
 
-### 3.1 M0：先于 M1 公开路由
+### 3.1 M0：M1 已消费的公共端口
 
 | 文件 | 待建接口 | 消费方 | 冲突规避 |
 | --- | --- | --- | --- |
-| `backend/app/db/session.py` | `new_session()` 独立短事务上下文；统一 DB 请求错误映射 | M1、后续基础设施 | M1 不读取 `_session_factory`、不重建 Engine；领域 Repository 不提交业务事务 |
-| `backend/app/core/client_address.py` | `ClientAddressResolver.resolve(request) -> str` | M1 登录审计/限流、M7 代理部署 | 默认直连地址；只有显式可信代理可解释代理头；M1 不直接读取 `X-Forwarded-For` |
+| `backend/app/db/session.py` | 已搭建 `new_session()` 独立短事务上下文和统一 DB 请求错误映射 | M1、后续基础设施 | M1 未读取 `_session_factory`/重建 Engine；进程内测试已过，在线 PostgreSQL 待验收 |
+| `backend/app/core/client_address.py` | 已搭建 `ClientAddressResolver.resolve(request, settings) -> str` | M1 登录审计/限流、M7 代理部署 | 默认直连地址；只有显式可信代理解释代理头；M1 未直接读取 `X-Forwarded-For`；真实代理链待验收 |
 | `backend/app/db/outbox.py` | `OutboxWriter` 与后续 `OutboxClaimPort` | M2/M3 写事务、M4 消费者 | outbox 表仍归 M0；M4 不直接导入/更新 `db.models.OutboxEvent` |
-| `tests/test_module0_database_dependencies.py`、`test_module0_client_address.py` | 错误映射、事务所有权、代理欺骗测试 | 全模块 | 使用 M0 前缀，避免与 `test_m1_*` 同文件修改 |
+| `tests/test_module0_foundation.py`、`test_module0_m1_prerequisites.py` | 已覆盖错误映射、事务所有权、代理欺骗测试 | 全模块 | 使用 M0 测试文件，未与 `test_m1_*` 重复实现 |
 
 ### 3.2 M1：身份与审计
 
-详细 P0～P2 文件清单见 `m1-identity-audit-design.md` 第 11 节。最先关闭：
+详细 P0～P2 文件及验收门槛见 `m1-identity-audit-design.md` 第 11 节。当前代码已搭建：
 
 1. `repository.py` 一致授权快照及签发前用户/凭据/版本复验。
 2. `transactions.py` 独立活动续期，不提交请求业务 Session。
 3. `dependencies.py` 零 commit/rollback，消费 M0 客户端地址和短事务端口。
 4. 账号桶与来源桶限流模型；若现有表不能表达则新建最新 head 的迁移。
-5. 之后才新增 `http_contracts.py`、`http_responses.py` 和预留路由 `auth.py`、`users.py`、`audit.py`。
+5. `http_contracts.py`、`http_responses.py` 和预留路由 `auth.py`、`users.py`、`audit.py` 已新增并通过进程内测试。
 
 公开给 M2/M3/M5 的端口仍仅限 `CurrentUser`、`require_permissions()`、`ensure_not_self_review()` 和 `AuditWriter`；Repository、ORM、Cookie、节流实现均为 M1 私有。
 
@@ -97,17 +97,17 @@
 
 ## 4. 无冲突并行条件
 
-- M0 只修改 `core/`、`db/` 和公共契约；M1 只消费端口并修改 `domains/identity|audit` 与三个预留路由，不修改 `main.py` 或根 router。
+- M0 只修改 `core/`、`db/`、全局基础中间件装配和公共契约；M1 只消费端口并修改 `domains/identity|audit` 与三个预留路由，不把业务逻辑写入 `main.py` 或根 router。第 011 号变更对 `main.py` 的修改归属 M0，仅安装敏感响应缓存中间件。
 - M2、M3 可同时开发各自领域表和契约 Mock；同一时间只允许一个集成人员基于最新 head 创建/重定迁移。
 - M4 在事件 DTO 冻结前只写消费者契约测试；不得轮询 M2/M3 表。
 - M5/M6 在真实端口交付前使用版本化 Mock；Mock 不进入生产 Provider、索引或审核数据。
 - M7 只提供环境、脚本和共享夹具，不在测试夹具中复制领域业务实现。
-- 当前 M1 身份依赖未关闭冲突，任何 M2/M3 生产写路由不得接入；这是阻止冲突扩散的硬门槛。
+- 当前 M1 的进程内身份事务/快照冲突已关闭，但真实 PostgreSQL 并发与系统级旧入口冲突未关闭；M2/M3 生产写路由仍不得把它标为已验收依赖。
 
 ## 5. 下一步顺序
 
-1. M0/M7 搭建独立 Session、稳定 DB 503 和可信客户端地址端口。
-2. M1 修正共享事务、授权快照、登录签发竞态和独立限流维度，并用 PostgreSQL 16 验证。
-3. M1 完成认证最小 HTTP 闭环后，M2/M3 才接入真实身份依赖；此前继续 Mock 并行。
+1. M0 独立 Session、稳定 DB 503 和可信客户端地址端口的代码已搭建；M7 补真实 PostgreSQL/代理验收。
+2. M1 共享事务、授权快照、登录签发竞态和独立限流维度已在代码层修正；下一步用 PostgreSQL 16 验证迁移、触发器、锁和并发。
+3. M1 认证最小 HTTP 闭环已搭建；M2/M3 在真实 PostgreSQL 门槛通过前继续 Mock 并行，通过后再接入真实身份依赖。
 4. M2/M3 冻结事件与只读端口后，M4/M5 切换真实依赖。
 5. M6 联调，M7 执行 Windows/Ubuntu、恢复、安全和完整 E2E 验收。

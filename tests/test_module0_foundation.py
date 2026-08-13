@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import TimeoutError as SQLAlchemyTimeoutError
+from unittest.mock import Mock
 
 from backend.app.core.config import get_settings
+from backend.app.core.errors import AppError
+from backend.app.db import session as session_module
 from backend.app.db.session import database_status, dispose_engine
 from backend.app.main import app
 
@@ -82,6 +87,7 @@ def test_ready_is_degraded_but_available_when_database_is_optional(monkeypatch) 
         "dialect": None,
         "reason": "APP_DATABASE_URL 未配置",
     }
+    assert payload["data"]["identity"]["required"] is False
 
 
 def test_ready_fails_when_required_database_is_missing(monkeypatch) -> None:
@@ -100,6 +106,26 @@ def test_ready_fails_when_required_database_is_missing(monkeypatch) -> None:
     assert payload["error"]["details"]["database"]["required"] is True
 
 
+def test_ready_fails_closed_for_required_identity_configuration(monkeypatch) -> None:
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("APP_DATABASE_REQUIRED", "false")
+    monkeypatch.delenv("APP_AUTH_SECRET", raising=False)
+    monkeypatch.setenv("APP_SESSION_COOKIE_NAME", "__Host-repair_session")
+    monkeypatch.setenv("APP_SESSION_COOKIE_SECURE", "true")
+    dispose_engine()
+
+    response = TestClient(app).get("/api/v1/health/ready")
+
+    assert response.status_code == 503
+    identity = response.json()["error"]["details"]["identity"]
+    assert identity == {
+        "required": True,
+        "healthy": False,
+        "mode": "local",
+        "reason": "身份认证配置未就绪",
+    }
+
+
 def test_database_contract_only_accepts_postgres(monkeypatch) -> None:
     monkeypatch.setenv("APP_DATABASE_URL", "sqlite:///not-supported.db")
     monkeypatch.setenv("APP_DATABASE_REQUIRED", "true")
@@ -111,3 +137,62 @@ def test_database_contract_only_accepts_postgres(monkeypatch) -> None:
     assert settings.is_postgres_database is False
     assert status.healthy is False
     assert status.reason == "APP_DATABASE_URL 必须使用 PostgreSQL 连接串"
+
+
+def test_request_session_maps_missing_database_to_stable_503(monkeypatch) -> None:
+    monkeypatch.delenv("APP_DATABASE_URL", raising=False)
+    dispose_engine()
+
+    dependency = session_module.get_session()
+    with pytest.raises(AppError) as exc_info:
+        next(dependency)
+
+    assert exc_info.value.status_code == 503
+    assert exc_info.value.code == "DEPENDENCY_UNAVAILABLE"
+    assert "APP_DATABASE_URL" not in exc_info.value.message
+
+
+class _SessionContext:
+    def __init__(self, session) -> None:  # type: ignore[no-untyped-def]
+        self.session = session
+
+    def __enter__(self):  # type: ignore[no-untyped-def]
+        return self.session
+
+    def __exit__(self, exc_type, exc, traceback) -> None:  # type: ignore[no-untyped-def]
+        return None
+
+
+def test_new_session_owns_commit_and_rollback(monkeypatch) -> None:
+    committed = Mock()
+    monkeypatch.setattr(session_module, "_session_factory", lambda: _SessionContext(committed))
+
+    with session_module.new_session() as yielded:
+        assert yielded is committed
+
+    committed.commit.assert_called_once()
+    committed.rollback.assert_not_called()
+
+    rolled_back = Mock()
+    monkeypatch.setattr(session_module, "_session_factory", lambda: _SessionContext(rolled_back))
+    with pytest.raises(ValueError, match="business failure"):
+        with session_module.new_session():
+            raise ValueError("business failure")
+
+    rolled_back.rollback.assert_called_once()
+    rolled_back.commit.assert_not_called()
+
+
+def test_new_session_maps_pool_timeout_to_stable_503(monkeypatch) -> None:
+    session = Mock()
+    session.commit.side_effect = SQLAlchemyTimeoutError("pool exhausted")
+    monkeypatch.setattr(session_module, "_session_factory", lambda: _SessionContext(session))
+
+    with pytest.raises(AppError) as exc_info:
+        with session_module.new_session():
+            pass
+
+    assert exc_info.value.status_code == 503
+    assert exc_info.value.code == "DEPENDENCY_UNAVAILABLE"
+    assert "pool exhausted" not in exc_info.value.message
+    session.rollback.assert_called_once()

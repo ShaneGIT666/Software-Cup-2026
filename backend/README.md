@@ -5,13 +5,13 @@ FastAPI 后端正在从演示原型迁移为模块化单体。旧业务接口保
 ## 模块 0：已提供的基础能力
 
 - `core/`：`APP_` 前缀配置、请求 ID、稳定 v1 响应与错误模型。
-- `core/`：受控 CORS 来源、列表分页信封和公共错误码契约。
-- `db/`：SQLAlchemy 2、PostgreSQL 连接/就绪状态、共享元数据根和关键写操作的幂等记录服务。
-- `alembic/`：基础迁移与幂等记录迁移；领域模型通过 M0 的发现入口登记到 `Base.metadata`。
+- `core/`：受控 CORS/浏览器来源、可信代理客户端地址、敏感身份响应 `no-store`、列表分页信封和公共错误码契约。
+- `db/`：SQLAlchemy 2、PostgreSQL 连接/就绪状态、独立短事务、脱敏数据库 503、共享元数据根和关键写操作的幂等记录服务。
+- `alembic/`：基础迁移、幂等记录和 M1 身份迁移；领域模型通过 M0 的发现入口登记到 `Base.metadata`。
 - `/api/v1/health/live`：进程存活检查。
 - `/api/v1/health/ready`：数据库就绪检查。生产环境设置 `APP_DATABASE_REQUIRED=true` 后，数据库未配置或不可连接时返回 `503`。
 
-M1 身份与审计基础内核及身份持久化接缝已有代码；现有代码包含身份 Repository、组合维度登录限流、会话服务及实验性的当前用户/权限/CSRF 依赖，但没有公开登录、用户或审计查询路由。身份依赖仍存在共享 Session 提交活动续期、授权数据分步读取和可信客户端地址端口缺失，真实 PostgreSQL 集成测试也未完成。知识、文件、审核、Worker 和检索领域仍未迁移，因此当前 `/api` 原型继续使用 JSON 存储。不要把内部代码或单元测试通过视为认证、授权或用户管理功能完成。
+M1 已有本地账户、会话/CSRF、独立账号/来源限流、同一授权快照、事务外 Argon2 校验与签发前复验、用户/角色管理、审计查询和 bootstrap CLI 代码。`/api/v1/auth/*`、`/users*`、`/roles`、`/audit-events` 已由预留注册表自动装配，Cookie、可信来源、权限、ETag/`If-Match`、幂等和 `no-store` 已有进程内 API 测试。真实 PostgreSQL 16 在线迁移、触发器、锁/并发和回滚测试仍未执行，前端也未接入；知识、文件、审核、Worker 和检索领域仍未迁移，旧 `/api` 与静态目录依旧绕过 M1。当前状态是“代码已搭建、进程内已验证，功能未完成”，不能据此宣称生产认证、授权或用户管理已上线。
 
 M1 及后续领域模块只能新增自己的 `domains/<domain>/`、`api/v1/<domain>.py`、迁移和测试文件。v1 根路由会从 M0 的可选领域注册表加载 `auth`、`users`、`audit` 等模块；领域团队不得直接编辑 `main.py`、`api/v1/router.py`、`db/models.py` 或 `alembic/env.py`。
 
@@ -28,7 +28,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\init-config.ps1 -Mode offline
 .\dev.bat start
 ```
 
-M1 本地账户基础依赖已包含 `argon2-cffi`。开发环境会话配置示例见仓库根目录 `.env.example`；启用 M1 登录或身份依赖前，生产环境必须提供独立的 `APP_AUTH_SECRET`，并使用 `Secure` 的 `__Host-` 会话 Cookie。M1 当前仅为身份/审计基础、迁移和持久化接缝代码已搭建，已知冲突、登录与用户管理 HTTP API、真实数据库验证仍未完成，不能将其标记为认证功能已上线或完成。
+M1 本地账户基础依赖已包含 `argon2-cffi`。开发环境配置示例见仓库根目录 `.env.example`；运行 M1 前必须配置 PostgreSQL、执行 Alembic、设置 `APP_AUTH_SECRET` 和 `APP_IDEMPOTENCY_SECRET`，生产环境还必须使用 `Secure` 的 `__Host-` 会话 Cookie。首次管理员使用 `python -m app.domains.identity.bootstrap --username <name> --display-name <name>` 在空用户库中创建，不提供 HTTP 注册入口。真实数据库验收完成前不得将 M1 标记为生产可用或完成。
 
 健康检查：
 

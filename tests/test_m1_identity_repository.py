@@ -11,7 +11,9 @@ from backend.app.core.config import AppSettings
 from backend.app.domains.identity.models import User
 from backend.app.domains.identity.repository import (
     IdentityRepository,
+    LoginCredentialRecord,
     LoginThrottleRepository,
+    LoginThrottleSnapshot,
     LoginThrottleState,
     login_throttle_digests,
 )
@@ -115,6 +117,21 @@ def test_repository_assigns_session_id_before_flush_and_never_commits() -> None:
     assert not hasattr(session, "commit")
 
 
+def test_session_identity_resolution_uses_one_aggregate_statement() -> None:
+    repository = IdentityRepository()
+    session = Mock()
+    session.execute.return_value.one_or_none.return_value = None
+
+    assert repository.resolve_session(session, "d" * 64) is None
+
+    session.execute.assert_called_once()
+    sql = str(session.execute.call_args.args[0].compile(dialect=postgresql.dialect())).lower()
+    assert "array_agg" in sql
+    assert "auth_sessions" in sql
+    assert "users" in sql
+    assert "user_roles" in sql
+
+
 def test_session_activity_refresh_is_conditional_and_never_shortens_idle_expiry() -> None:
     session = _RecordingSession(_ExecuteResult(rowcount=1))
 
@@ -132,7 +149,7 @@ def test_session_activity_refresh_is_conditional_and_never_shortens_idle_expiry(
     assert "greatest(" in sql
 
 
-def test_login_failure_uses_one_postgresql_upsert_statement() -> None:
+def test_login_failure_updates_independent_subject_and_source_buckets() -> None:
     expected_lock = NOW + timedelta(minutes=15)
     session = _RecordingSession(_ExecuteResult(row=(5, expected_lock)))
 
@@ -147,16 +164,18 @@ def test_login_failure_uses_one_postgresql_upsert_statement() -> None:
     )
 
     sql = str(session.statements[0].compile(dialect=postgresql.dialect())).lower()
-    assert "on conflict on constraint uq_login_throttles_subject_source do update" in sql
-    assert "returning login_throttles.failure_count, login_throttles.locked_until" in sql
-    assert state == LoginThrottleState(failure_count=5, locked_until=expected_lock)
+    assert "on conflict on constraint uq_login_throttle_buckets_type_hmac do update" in sql
+    assert "returning login_throttle_buckets.failure_count, login_throttle_buckets.locked_until" in sql
+    assert len(session.statements) == 2
+    assert state == LoginThrottleSnapshot(
+        subject=LoginThrottleState(failure_count=5, locked_until=expected_lock),
+        source=LoginThrottleState(failure_count=5, locked_until=expected_lock),
+    )
 
 
 def test_missing_user_still_runs_dummy_argon2_path_and_is_throttled() -> None:
     repository = Mock()
-    repository.find_local_user_for_login.return_value = None
     throttles = Mock()
-    throttles.get_state.return_value = None
     hasher = Mock()
     hasher.verify.return_value = False
     service = IdentityService(
@@ -166,17 +185,17 @@ def test_missing_user_still_runs_dummy_argon2_path_and_is_throttled() -> None:
     )
 
     verification = service.verify_login_candidate(
-        Mock(),
         username="missing-user",
         password="not-the-password",
         source_address="192.0.2.8",
         settings=_settings(),
         now=NOW,
+        credential=None,
+        throttle_snapshot=LoginThrottleSnapshot(subject=None, source=None),
     )
 
     assert verification.authenticated is False
     hasher.verify.assert_called_once()
-    repository.find_local_user_for_login.assert_called_once()
     service.record_failed_login(Mock(), verification=verification, settings=_settings(), now=NOW)
     throttles.record_failure.assert_called_once()
 
@@ -197,12 +216,16 @@ def test_successful_login_creation_uses_one_caller_owned_transaction() -> None:
     throttles = Mock()
     service = IdentityService(repository=repository, throttle_repository=throttles, password_hasher=Mock())
     verification = LoginVerification(
-        user=user,
+        user_id=user.id,
+        password_hash=user.password_hash,
+        auth_version=user.auth_version,
         subject_hmac="s" * 64,
         source_hmac="i" * 64,
         locked=False,
     )
     session = Mock()
+    repository.revalidate_login_candidate.return_value = user
+    throttles.get_states.return_value = LoginThrottleSnapshot(subject=None, source=None)
 
     created = service.create_authenticated_session(
         session,
@@ -213,6 +236,28 @@ def test_successful_login_creation_uses_one_caller_owned_transaction() -> None:
 
     assert created.session_id == "session-1"
     repository.create_session.assert_called_once()
-    throttles.clear.assert_called_once()
+    throttles.clear_subject.assert_called_once()
     session.commit.assert_not_called()
 
+
+def test_session_issuance_rechecks_throttle_after_password_verification() -> None:
+    repository = Mock()
+    throttles = Mock()
+    throttles.get_states.return_value = LoginThrottleSnapshot(
+        subject=LoginThrottleState(failure_count=5, locked_until=NOW + timedelta(minutes=15)),
+        source=None,
+    )
+    service = IdentityService(repository=repository, throttle_repository=throttles, password_hasher=Mock())
+    verification = LoginVerification(
+        user_id="user-1",
+        password_hash="hash",
+        auth_version=3,
+        subject_hmac="s" * 64,
+        source_hmac="i" * 64,
+        locked=False,
+    )
+
+    with pytest.raises(ValueError, match="限流状态"):
+        service.create_authenticated_session(Mock(), verification=verification, settings=_settings(), now=NOW)
+
+    repository.revalidate_login_candidate.assert_not_called()

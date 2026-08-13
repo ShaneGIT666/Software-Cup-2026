@@ -1,6 +1,6 @@
 # M0 公共 HTTP、数据与装配契约
 
-> 状态：第 1～5 节契约已冻结且帮助代码通过单元/离线检查，不表示真实业务集成已经完成；第 6 节为启用 M1 路由前待关闭协作项。<br>
+> 状态：第 1～5 节契约已冻结；第 6 节协作端口代码已搭建并通过进程内测试，但尚无真实 PostgreSQL/代理环境验收，不表示 M0 或 M1 已完成。<br>
 > 主责模块：M0；首次记录：`2026-08-13-003-m0-m1-prerequisites`。
 
 本文件定义模块化单体的公共接缝。领域模块可以依赖本文件中的接口，但不得直接修改 M0 所有的 `core/`、`db/`、`api/v1/router.py`、`main.py` 或 Alembic 环境文件。
@@ -96,20 +96,20 @@ workers.models           M4
 indexing.models          M4
 ```
 
-每个领域模型继承 `app.db.base.Base`，领域迁移使用独立 revision，并在合并前以最新 M0 迁移头为 `down_revision`。M1 的首个迁移当前应依赖 `20260813_0002`；创建前必须再次检查迁移头。领域模块不得修改 `app.db.models` 或 `alembic/env.py`。
+每个领域模型继承 `app.db.base.Base`，领域迁移使用独立 revision，并在合并前以最新迁移头为 `down_revision`。M1 的首个迁移 `20260813_0003` 已依赖 `20260813_0002`，后续 `0004` 依赖 `0003`；新领域创建迁移前仍必须再次检查 head。领域模块不得修改 `app.db.models` 或 `alembic/env.py`。
 
-## 6. M1 公开路由前待关闭的 M0/M7 协作项
+## 6. M1 公共协作端口及实现记录
 
-本节记录尚未实现的公共端口，不得据此宣称 M0 或 M1 功能已完成。M1 可以针对端口编写 Mock 测试，但在真实实现和集成测试交付前不得注册生产认证路由。
+本节端口已经由 M0 搭建，M1 路由也已按契约注册并通过进程内测试。真实 PostgreSQL、反向代理和部署配置尚未验收，因此这些路由仍不是生产可用结论。
 
 ### 6.1 独立数据库短事务
 
-M0 应在 `db/session.py` 提供公开的 `new_session()` 上下文端口（名称可在实现评审时冻结），供会话活动续期等基础设施操作创建独立短事务。该端口负责 commit/rollback/close；领域 Repository 和请求业务 Session 仍不得自行结束事务。M1 不得读取 `_session_factory`、重建 Engine 或复制数据库配置。
+M0 已在 `db/session.py` 提供公开的 `new_session()` 上下文端口，负责 commit/rollback/close；M1 的身份快照、活动续期和命令用例通过该端口拥有独立短事务。测试已覆盖提交、异常回滚和关闭；真实连接池故障与 PostgreSQL 事务行为仍待在线验证。领域 Repository 和请求业务 Session 仍不得自行结束事务，M1 不得读取 `_session_factory`、重建 Engine 或复制数据库配置。
 
 ### 6.2 数据库依赖错误映射
 
-M1 路由启用前，M0 必须让请求数据库依赖在未配置、连接失败或连接池不可用时返回不含连接串和驱动堆栈的 `DEPENDENCY_UNAVAILABLE/503`。健康检查继续报告脱敏状态；领域路由不得各自捕获并形成不同错误码。
+M0 已将数据库未配置、初始化失败、连接失败或连接池不可用映射为不含连接串和驱动堆栈的 `DEPENDENCY_UNAVAILABLE/503`，健康检查只报告脱敏状态。进程内异常映射测试已通过；真实 PostgreSQL 中断/恢复场景仍待 M7 验收。领域路由不得各自捕获并形成不同错误码。
 
 ### 6.3 可信客户端地址
 
-M0/M7 应新增 `core/client_address.py` 中的 `ClientAddressResolver`（或等价端口）及可信代理配置。返回值为标准化地址字符串：默认使用 `request.client.host`；只有直接上游匹配显式可信代理 CIDR 时才允许解析受支持的代理头。非法、多跳不一致或未受信代理提供的头不能覆盖直连地址。M1 登录限流和审计只消费解析结果，不直接读取 `X-Forwarded-For`。
+M0 已新增 `core/client_address.py` 的 `ClientAddressResolver` 和 `APP_TRUSTED_PROXY_CIDRS`。它默认使用 `request.client.host`，只有直接上游位于显式可信代理 CIDR 时才从右向左剥离可信代理链；非法、过长或未受信代理提供的头不能覆盖直连地址。M1 登录限流和审计只消费解析结果，不直接读取 `X-Forwarded-For`。代理欺骗进程内测试已通过；实际 IIS/Caddy/Nginx 拓扑仍由 M7 验收。

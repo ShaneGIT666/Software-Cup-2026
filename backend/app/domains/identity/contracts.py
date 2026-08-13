@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
 
 
@@ -80,3 +81,14 @@ class CurrentUser:
     permissions: frozenset[str]
     session_id: str
 
+
+@dataclass(frozen=True)
+class ResolvedIdentity:
+    """M1-private request identity with session/profile details for auth APIs."""
+
+    current_user: CurrentUser
+    display_name: str
+    must_change_password: bool
+    expires_at: datetime
+    idle_expires_at: datetime
+    csrf_digest: str

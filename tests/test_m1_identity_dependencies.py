@@ -8,8 +8,8 @@ from starlette.requests import Request
 
 from backend.app.core.config import AppSettings
 from backend.app.core.errors import AppError
-from backend.app.domains.identity.contracts import Permission
-from backend.app.domains.identity.dependencies import get_current_user, require_csrf, require_permissions
+from backend.app.domains.identity.contracts import CurrentUser, Permission, ResolvedIdentity
+from backend.app.domains.identity.dependencies import get_current_user, get_resolved_identity, require_csrf, require_permissions
 from backend.app.domains.identity.repository import SessionIdentityRecord
 from backend.app.domains.identity.sessions import csrf_token_for_session, secret_digest
 
@@ -67,6 +67,8 @@ def _record(settings: AppSettings, *, auth_version: int = 2) -> SessionIdentityR
         user_auth_version=2,
         user_is_active=True,
         user_deleted_at=None,
+        display_name="Test User",
+        must_change_password=False,
         csrf_digest=secret_digest(
             csrf,
             secret=settings.auth_secret,
@@ -81,52 +83,50 @@ def _record(settings: AppSettings, *, auth_version: int = 2) -> SessionIdentityR
 
 def test_current_user_is_resolved_from_server_session_and_roles(monkeypatch: pytest.MonkeyPatch) -> None:
     settings = _settings()
-    repository = Mock()
-    repository.resolve_session.return_value = _record(settings)
-    repository.refresh_session_activity.return_value = False
-    db_session = Mock()
+    identity_resolver = Mock()
+    identity_resolver.resolve.return_value = _record(settings)
+    activity_refresher = Mock()
     monkeypatch.setattr("backend.app.domains.identity.dependencies.utc_now", lambda: NOW)
 
-    current_user = get_current_user(_request(), db_session, settings, repository)
+    resolved = get_resolved_identity(_request(), settings, identity_resolver, activity_refresher)
+    current_user = get_current_user(resolved)
 
     assert current_user.id == "user-1"
     assert current_user.roles == frozenset({"technician"})
     assert Permission.KNOWLEDGE_READ.value in current_user.permissions
-    repository.resolve_session.assert_called_once_with(
-        db_session,
-        secret_digest(RAW_TOKEN, secret=settings.auth_secret),
-    )
-    db_session.commit.assert_not_called()
+    identity_resolver.resolve.assert_called_once_with(secret_digest(RAW_TOKEN, secret=settings.auth_secret))
+    activity_refresher.refresh.assert_called_once()
 
 
 def test_auth_version_mismatch_invalidates_existing_session(monkeypatch: pytest.MonkeyPatch) -> None:
     settings = _settings()
-    repository = Mock()
-    repository.resolve_session.return_value = _record(settings, auth_version=1)
+    identity_resolver = Mock()
+    identity_resolver.resolve.return_value = _record(settings, auth_version=1)
+    activity_refresher = Mock()
     monkeypatch.setattr("backend.app.domains.identity.dependencies.utc_now", lambda: NOW)
 
     with pytest.raises(AppError) as exc_info:
-        get_current_user(_request(), Mock(), settings, repository)
+        get_resolved_identity(_request(), settings, identity_resolver, activity_refresher)
 
     assert exc_info.value.status_code == 401
     assert exc_info.value.code == "SESSION_EXPIRED"
-    repository.refresh_session_activity.assert_not_called()
+    activity_refresher.refresh.assert_not_called()
 
 
 def test_csrf_header_is_bound_to_the_current_session(monkeypatch: pytest.MonkeyPatch) -> None:
     settings = _settings()
     csrf = csrf_token_for_session(RAW_TOKEN, secret=settings.auth_secret)
     request = _request(csrf=csrf)
-    repository = Mock()
-    repository.resolve_session.return_value = _record(settings)
-    repository.refresh_session_activity.return_value = False
+    identity_resolver = Mock()
+    identity_resolver.resolve.return_value = _record(settings)
+    activity_refresher = Mock()
     monkeypatch.setattr("backend.app.domains.identity.dependencies.utc_now", lambda: NOW)
-    current_user = get_current_user(request, Mock(), settings, repository)
+    current_user = get_current_user(get_resolved_identity(request, settings, identity_resolver, activity_refresher))
 
     assert require_csrf(request, current_user, settings) == current_user
 
     bad_request = _request(csrf="wrong-token")
-    bad_user = get_current_user(bad_request, Mock(), settings, repository)
+    bad_user = get_current_user(get_resolved_identity(bad_request, settings, identity_resolver, activity_refresher))
     with pytest.raises(AppError) as exc_info:
         require_csrf(bad_request, bad_user, settings)
     assert exc_info.value.code == "CSRF_INVALID"
@@ -134,12 +134,37 @@ def test_csrf_header_is_bound_to_the_current_session(monkeypatch: pytest.MonkeyP
 
 def test_permission_dependency_consumes_current_user_contract() -> None:
     dependency = require_permissions(Permission.KNOWLEDGE_READ)
+    request = _request()
     allowed = Mock(permissions=frozenset({Permission.KNOWLEDGE_READ.value}))
-    assert dependency(allowed) is allowed
+    assert dependency(request, allowed) is allowed
 
     denied = Mock(permissions=frozenset())
     with pytest.raises(AppError) as exc_info:
-        dependency(denied)
+        dependency(request, denied)
     assert exc_info.value.status_code == 403
     assert exc_info.value.code == "FORBIDDEN"
 
+
+def test_permission_dependency_blocks_temporary_password_session() -> None:
+    request = _request()
+    current_user = CurrentUser(
+        id="user-1",
+        roles=frozenset({"system_admin"}),
+        permissions=frozenset({"iam:users:read"}),
+        session_id="session-1",
+    )
+    request.state.resolved_identity = ResolvedIdentity(
+        current_user=current_user,
+        display_name="Temporary Admin",
+        must_change_password=True,
+        expires_at=NOW + timedelta(hours=1),
+        idle_expires_at=NOW + timedelta(minutes=30),
+        csrf_digest="c" * 64,
+    )
+    dependency = require_permissions("iam:users:read")
+
+    with pytest.raises(AppError) as exc_info:
+        dependency(request, current_user)
+
+    assert exc_info.value.status_code == 403
+    assert exc_info.value.code == "FORBIDDEN"

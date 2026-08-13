@@ -1,10 +1,10 @@
 # M1 身份与审计模块设计方案
 
-> 状态：代码搭建中、功能未完成；基础内核及身份持久化接缝已有代码和单元测试，身份请求依赖存在待关闭冲突，本地账户 HTTP/API 层未实现，OIDC 作为 M1.1 扩展。<br>
+> 状态：代码已搭建、进程内单元/API 已验证、功能未完成；本地账户 HTTP/API、管理服务与 bootstrap 已实现，真实 PostgreSQL 在线/并发验收和前端接入未完成，OIDC 作为 M1.1 扩展。<br>
 > 主责模块：M1；协作模块：M0、M7。<br>
-> 关联记录：`2026-08-13-002-auth-entry-exception`、`2026-08-13-003-m0-m1-prerequisites`、`2026-08-13-004-m1-design`、`2026-08-13-005-m1-contract-gates`、`2026-08-13-006-m1-core-foundation`、`2026-08-13-007-m1-completion-audit`、`2026-08-13-008-m0-http-concurrency-contract`、`2026-08-13-009-m1-identity-persistence`、`2026-08-13-010-module-progress-audit`。
+> 关联记录：`2026-08-13-002-auth-entry-exception`、`2026-08-13-003-m0-m1-prerequisites`、`2026-08-13-004-m1-design`、`2026-08-13-005-m1-contract-gates`、`2026-08-13-006-m1-core-foundation`、`2026-08-13-007-m1-completion-audit`、`2026-08-13-008-m0-http-concurrency-contract`、`2026-08-13-009-m1-identity-persistence`、`2026-08-13-010-module-progress-audit`、`2026-08-13-011-m1-local-identity-http`。
 
-实施进度：配置约束、领域包、RBAC/`CurrentUser`、Argon2id、会话/CSRF 原语、身份与审计 ORM、角色种子、不可变审计迁移、`AuditWriter`、用户名规范化、身份 Repository、登录限流 SQL 和登录验证/会话创建服务已有代码及隔离测试。FastAPI 当前用户/权限/CSRF 依赖已有实验实现，但因共享 Session 提交活动续期、分步读取授权快照、可信客户端地址端口缺失和组合维度限流不足，尚不能作为生产写路由依赖。第 6 节 HTTP 路由、用户管理服务、审计查询 Repository、bootstrap CLI 与真实 PostgreSQL 集成测试均未实现。上述内容只能记录为“代码已搭建/单元已验证”，不能记录为功能已完成，详见第 10、11 节。
+实施进度：P0 的独立短事务、单查询授权快照、签发前安全状态复验、独立账号/来源限流、数据库 503 和可信客户端地址已经搭建；P1/P2 的认证、用户、角色、审计 HTTP 路由、Cookie/no-store 帮助、管理服务与 bootstrap CLI 也已有代码。全量进程内回归为 `239 passed, 25 skipped`，M1 的 3 项真实 PostgreSQL 验收因未配置专用 `_test` 数据库而跳过。在线迁移、不可变触发器、行锁/并发、回滚、旧匿名入口下线及前端联调仍未验证，因此只能记录为“代码已搭建、进程内已验证，功能未完成”，详见第 10、11 节。
 
 ## 1. 目标与实施边界
 
@@ -67,12 +67,15 @@ backend/app/
       repository.py          # IdentityRepository；只访问 M1 表
       passwords.py           # Argon2id 哈希与校验
       sessions.py            # 随机会话令牌、CSRF 与过期判断
-      http_contracts.py      # 待新增：M1 私有 HTTP DTO，禁止放入旧 schemas.py
-      http_responses.py      # 待新增：统一 Cookie/no-store 响应帮助
+      http_contracts.py      # M1 私有 HTTP DTO，禁止放入旧 schemas.py
+      http_responses.py      # 统一 Cookie/no-store 响应帮助
       authorization.py       # require_permissions、职责分离断言
       dependencies.py        # get_current_user、require_permissions 的 FastAPI 依赖
-      service.py             # 登录、登出、用户/角色/状态编排
-      transactions.py        # 待新增：基于 M0 new_session() 的会话活动续期适配器
+      service.py             # 会话创建和安全状态复验基础服务
+      login.py               # 登录短读、事务外哈希、短写编排
+      commands.py            # 登出、本人改密命令
+      admin.py               # 用户/角色/状态/重设密码编排
+      transactions.py        # 基于 M0 new_session() 的身份快照/活动续期适配器
       bootstrap.py           # 一次性初始管理员 CLI，不提供 HTTP 注册接口
       oidc.py                # M1.1 接口桩；M1.0 不导入 Authlib
     audit/
@@ -86,7 +89,8 @@ backend/app/
     users.py                 # 用户、状态、角色、管理员重设密码
     audit.py                 # 审计只读查询
 backend/alembic/versions/
-  <timestamp>_m1_identity_audit.py
+  20260813_0003_m1_identity_audit.py
+  20260813_0004_m1_login_throttle_buckets.py
 tests/
   test_m1_identity_passwords.py
   test_m1_identity_sessions.py
@@ -94,7 +98,9 @@ tests/
   test_m1_identity_repository.py
   test_m1_identity_dependencies.py
   test_m1_identity_api.py
+  test_m1_users_api.py
   test_m1_audit_api.py
+  test_m1_bootstrap.py
   test_m1_postgres_integration.py
 docs/design/
   m1-identity-audit-design.md
@@ -114,7 +120,8 @@ M1 可以修改的共享文件只有经过 M0 评审的 `core/error_codes.py`、
 | `roles` | `id`、`code`、`display_name`、`is_system` | 固定种子角色代码唯一；不允许 API 删除系统角色 |
 | `user_roles` | `user_id`、`role_id`、分配者、分配时间 | `(user_id, role_id)` 唯一；权限取并集，但职责分离规则优先 |
 | `auth_sessions` | `id`、`token_digest`、`user_id`、`auth_version`、`csrf_digest`、绝对/空闲过期、最近活动、撤销信息 | 仅保存令牌和 CSRF 摘要；每请求检查用户启用状态及 `auth_version`；撤销后不可复用 |
-| `login_throttles` | `subject_hmac`、`source_hmac`、失败计数、窗口、锁定时间 | 用户名/IP 不以明文存储；成功登录清除或重置失败计数 |
+| `login_throttle_buckets` | `bucket_type`、`bucket_hmac`、失败计数、窗口、锁定时间 | 账号主体桶和来源桶独立计数；用户名/IP 不以明文存储；成功登录只清理账号桶，避免替来源上的其他攻击者清零 |
+| `login_throttles` | 历史 `0003` 组合维度表 | 为保持历史迁移不可变暂时保留，新登录代码不再读写；是否清理须待在线升级与数据迁移评审后新建迁移 |
 | `audit_events` | `id`、`occurred_at`、`actor_user_id` 可空、`action`、`target_type/id`、`result`、`request_id`、`metadata` | 只追加；无 HTTP 更新/删除接口；迁移阻止 `UPDATE`、`DELETE` 和 `TRUNCATE`；用户采用逻辑删除，审计外键使用 `RESTRICT` 保留操作人引用 |
 
 角色种子及权限码：
@@ -157,7 +164,7 @@ APP_AUTH_LOCK_SECONDS=900
 - 会话令牌使用 `secrets.token_urlsafe()` 生成，数据库仅保存 HMAC/SHA-256 摘要；Cookie 必须 `HttpOnly`、`SameSite=Lax`、`Path=/`，生产使用 `Secure`。若采用 `__Host-` 前缀，则不得设置 `Domain`。
 - 对 Cookie 认证的所有状态变更接口要求 `X-CSRF-Token`。CSRF token 由服务器使用 `APP_AUTH_SECRET` 和当前原始会话令牌按独立 HMAC purpose 确定性派生，数据库只保存其摘要；因此 `GET /auth/csrf` 可在页面刷新后重新计算，而无需保存明文。比较必须使用常量时间函数。
 - M0 CORS 白名单只作为浏览器响应策略；M1 登录及所有 Cookie 写请求还必须在执行业务前验证 `Origin`/受控 `Referer` 与 `APP_TRUSTED_ORIGINS`。匿名登录没有既有 CSRF token，因此尤其不能只依赖 CORS。生产浏览器来源必须显式配置；无 Origin 的非浏览器客户端若有需求，应另行定义非 Cookie 认证方式，不得静默绕过来源检查。
-- 改密、账号禁用、角色变更和管理员重设密码递增 `auth_version`，撤销受影响会话；下一个请求立即失效。
+- 改密、账号禁用、角色变更和管理员重设密码递增 `auth_version`，撤销受影响会话；本人改密保留当前会话并推进其安全版本，同时撤销其他会话。`must_change_password` 为真时，服务端权限依赖只允许本人信息、CSRF、改密和登出，不能仅依赖前端限制。
 - 初始管理员通过本地 CLI 创建，要求空用户库、显式用户名和密码输入；不提供公共注册、默认密码或 HTTP bootstrap。
 
 ### 5.3 OIDC 扩展（M1.1）
@@ -174,7 +181,7 @@ APP_AUTH_LOCK_SECONDS=900
 | `POST /auth/logout` | 当前用户 + CSRF | 无正文；撤销当前会话并清 Cookie | 登出；不幂等 |
 | `GET /auth/me` | 当前用户 | 返回用户 ID、显示名、角色、权限、会话到期、是否需改密 | 无 |
 | `GET /auth/csrf` | 当前用户 | 返回当前会话 CSRF token | 无 |
-| `PUT /auth/password` | 当前用户 + CSRF | `{currentPassword,newPassword}`；改密后撤销旧会话 | `password.changed`；幂等 |
+| `PUT /auth/password` | 当前用户 + CSRF | `{currentPassword,newPassword}`；改密后保留当前会话并撤销其他会话 | `password.changed`；幂等 |
 | `GET /users?limit&cursor&status` | `iam:users:read` | `data.items`；不得返回密码哈希、令牌、限流明细 | 无 |
 | `POST /users` | `iam:users:write` + CSRF | `{username,displayName,initialPassword,roles}` | `user.created`；幂等 |
 | `PATCH /users/{id}` | `iam:users:write` + CSRF + `If-Match` | 仅展示名等非安全资料 | `user.updated`；不幂等 |
@@ -230,25 +237,25 @@ M2/M3 的关键写操作在一个事务中写入领域状态、调用 `AuditWrit
 | M0 公共错误码与 M1 语义 | 身份错误码已由 M0 登记并有契约测试 | 后续私自新增仍可能漂移 | G1 已关闭；新错误码继续走 M0 评审，不修改既有码含义。 |
 | 审计查看者权限文本 | SRS 与角色种子均为 `audit:read`、`ops:read` | 后续角色扩权可能意外读取知识 | G2 已关闭；业务阅读必须额外授予 `technician` 并审计。 |
 | 密码/OIDC 依赖状态 | `argon2-cffi==23.1.0` 已锁定并实测；OIDC SDK/接口尚未交付 | 配置 `oidc` 时不能建立身份 | M1.0 运行时显式返回 `AUTH_MODE_UNAVAILABLE`，不得回退本地或伪 OIDC；M1.1 另行设计迁移、依赖和路由。 |
-| 现有测试无 PostgreSQL 集成实例 | 当前多为 TestClient/原型 JSON 测试 | 不能验证唯一约束、触发器、会话失效和事务原子性 | M7 提供 PostgreSQL 16 CI 服务；M1 的 API/迁移集成测试不得用 SQLite 替代。 |
+| 当前环境无 PostgreSQL 集成实例 | 已新增要求 `M1_TEST_POSTGRES_URL` 且数据库名以 `_test` 结尾的在线测试，当前 3 项均跳过 | 不能验证唯一约束、触发器、锁、会话失效和事务原子性 | M7 提供 PostgreSQL 16 CI 服务；M1 的 API/迁移集成测试不得用 SQLite 替代，也不得把 skip 计为成功。 |
 | `auth_version` 与会话并发 | 账号禁用/角色调整时旧会话可能继续使用 | 权限变更不及时生效 | 每次 `get_current_user()` 联表检查用户活动状态和版本；安全修改同事务递增版本、撤销会话。 |
-| 身份依赖提交调用方 Session | 当前活动续期命中时直接 `session.commit()` | 未来其他依赖已写入幂等/审计状态时会提前提交业务事务 | 路由接入前删除共享 Session 提交；活动续期迁移到 `transactions.py` 独立短事务并增加“调用方 Session 零提交”测试。 |
-| 授权快照分步读取 | 当前先联表读取会话/用户，再单独查询角色 | 角色变更可能在两条查询间提交，形成新角色与旧 `auth_version` 的交叉快照 | Repository 改为单条聚合读取或显式一致性只读事务；PostgreSQL 并发测试覆盖角色替换和账号禁用。 |
-| 客户端地址边界未冻结 | 登录服务要求 `source_address`，但没有可信代理解析端口 | 路由若直接读取 `X-Forwarded-For` 可伪造/绕过限流 | M0/M7 先提供统一客户端地址解析与可信代理配置；登录路由只能注入该结果，默认使用直连地址。 |
-| 登录验证持有旧用户状态 | 当前先用请求 Session 读取 ORM User，再执行 Argon2，随后可基于旧对象创建会话 | 长事务占用连接；并发禁用、改密或版本变化后仍可能签发会话 | 用独立短读获取最小凭据快照，事务外执行 Argon2；成功后在签发事务内按用户 ID、凭据标识和 `auth_version` 重新校验。 |
-| 登录限流仅组合维度 | 当前唯一键和服务只更新 `(subject_hmac, source_hmac)` | 攻击者轮换账号或来源可分散计数，不满足完整登录速率限制 | 冻结账号桶和来源桶模型，必要时新增 `0004` 迁移；匿名响应仍统一，限流详情不回传。 |
-| 数据库依赖异常未映射 | 当前 `get_session()` 配置缺失会抛普通运行异常 | M1 路由可能返回非稳定 500，且错误处理口径分叉 | M0 提供统一 503 映射；M1 不自行捕获数据库连接异常。 |
+| 身份依赖提交调用方 Session | 已改为 `SessionIdentityResolver`/`SessionActivityRefresher` 各自使用 M0 `new_session()` | 真实连接池异常或隔离级别下仍可能出现差异 | 进程内“调用方 Session 零提交”已通过；保留 PostgreSQL 在线事务验证门槛。 |
+| 授权快照分步读取 | `resolve_session()` 已用单条聚合查询读取会话、用户和角色 | PostgreSQL 并发角色替换尚未实测 | SQL/单元证据已通过；M7 PostgreSQL 场景继续覆盖角色替换和账号禁用。 |
+| 客户端地址边界 | M0 `ClientAddressResolver` 与 `APP_TRUSTED_PROXY_CIDRS` 已提供，登录路由只消费解析结果 | 实际代理拓扑配置错误仍可能造成来源误判 | 进程内代理欺骗测试已通过；M7 必须用部署代理链验收。 |
+| 登录签发竞态 | 已拆为最小凭据短读、事务外 Argon2、写事务内账号/凭据/`auth_version`/限流快照复验 | 真实并发禁用/改密仍未实测 | 保留 PostgreSQL 并发测试门槛，失败不得签发会话。 |
+| 登录限流维度 | `0004` 新增独立账号/来源桶，登录失败同时更新两桶 | 锁等待、并发累计和窗口边界尚未在线验证 | 进程内 SQL/行为测试已通过；匿名响应继续统一，在线并发测试未通过前不标完成。 |
+| 数据库依赖异常映射 | M0 已统一映射为脱敏 `DEPENDENCY_UNAVAILABLE/503` | 真实数据库中断/连接池耗尽尚未验证 | M1 不自行捕获连接异常；M7 补在线中断与恢复测试。 |
 | 幂等 service 要求 HMAC 密钥 | M0 的 `request_fingerprint()` 要求 `APP_IDEMPOTENCY_SECRET` | 配置遗漏会在关键写操作时报 503 | M1 关键写路由调用前验证；M7 生产预检纳入发布门槛；测试显式注入测试密钥，不把密钥写入前端/日志。不得在 M0 全局装配阶段读取失败而阻断无 M1 路由的兼容进程。 |
 | 路由/模型相对发现 | M0 同时支持 `backend.app` 与 `app` 包路径 | 写死绝对包名会在另一启动方式失效 | M1 仅使用 M0 预留相对文件名和相对导入；新增路由/模型后分别从仓库根和 `backend/` 启动路径验证。 |
 
 ## 9. 实施顺序与验收
 
 1. 设计门槛已记录，配置契约、`argon2-cffi` 依赖和 `domains/` 骨架代码已搭建；这不代表身份功能完成。
-2. 模型、角色种子、迁移和审计触发器代码已搭建并可生成离线 SQL；真实 PostgreSQL 升降级、触发器和事务验证未完成。
-3. 密码、会话、CSRF、登录限流与 `CurrentUser` 已有单元层代码；身份依赖冲突和在线并发验证未关闭，功能未完成。
-4. 先关闭身份依赖共享事务、授权一致性快照、登录签发竞态、独立限流维度、数据库错误映射和可信客户端地址门槛；再实现本地登录与 `me/logout/password` API，验证匿名 allowlist 不扩大。
-5. 实现用户、角色与审计查询 API，接入 M0 分页、幂等、`If-Match` 和审计写入。
-6. 提供 bootstrap CLI、OpenAPI/契约测试和 M2/M3 使用示例；OIDC 单独进入 M1.1。
+2. 模型、角色种子、`0003/0004` 迁移和审计触发器代码已搭建，单一 head 和离线升级 SQL已验证；真实 PostgreSQL 升降级、触发器和事务验证未完成。
+3. 密码、会话、CSRF、独立限流、`CurrentUser`、短事务授权快照和签发前复验已有代码与进程内测试；在线并发验证未关闭，功能未完成。
+4. 本地登录、`me/logout/password` API 已搭建，匿名 allowlist、Cookie、可信来源、CSRF、泛化登录错误和 no-store 已有进程内 API 证据。
+5. 用户、角色与审计查询 API 已搭建并接入 M0 分页、幂等、`If-Match` 和审计写入；最后管理员与会话失效仍待 PostgreSQL 并发验证。
+6. bootstrap CLI、OpenAPI/契约测试已搭建；M2/M3 仍只能在 PostgreSQL 门槛关闭前使用身份契约 Mock，OIDC 单独进入 M1.1。
 
 最低验收：密码没有明文/可逆存储；登录失败不枚举用户；禁用/角色变更立即使会话失效；CSRF、CORS、限流、最后管理员保护、不得自审、审计追加写入和幂等回放均有 PostgreSQL 集成测试。每步完成后必须新建本地修改日志并更新索引。
 
@@ -258,16 +265,16 @@ M2/M3 的关键写操作在一个事务中写入领域状态、调用 `AuditWrit
 
 | 需求/设计能力 | 当前状态 | 已有证据 | 仍缺内容 |
 | --- | --- | --- | --- |
-| AUTH-07、密码安全基础 | 代码已搭建、单元已验证；功能未完成 | Argon2id 适配、密码策略、真实哈希单测 | 创建/改密/重置服务、HTTP 闭环和真实数据库事务验证 |
-| RBAC、AUTH-05/09 基础 | 代码已搭建；HTTP 依赖存在冲突 | 固定角色/权限、`CurrentUser`、服务器端角色计算、`get_current_user()`/`require_permissions()` 和禁止自审单测 | 同一授权快照、最后管理员与角色变更服务、路由级集成测试 |
-| 会话、AUTH-08 基础 | 代码已搭建；续期事务冲突未关闭 | 令牌/CSRF HMAC、会话 Repository、状态/`auth_version` 检查、活动续期和撤销方法 | 独立短事务续期、Cookie 响应帮助、登录/登出路由、即时失效集成测试 |
-| 登录限流、FR-IAM-05/NFR-SEC-07 | 组合维度代码已搭建；完整防护未实现 | `(账号, 来源)` HMAC、PostgreSQL upsert、成功清除、dummy Argon2 路径和 SQL/单元测试 | 独立账号/来源限流、可信地址端口、失败提交/脱敏审计及真实 PostgreSQL 并发测试 |
-| 审计、FR-IAM-04/OBS-03 | 表和写入代码已搭建；功能未完成 | `audit_events`、触发器迁移代码、脱敏 `AuditWriter` | 登录/登出/用户变更实际写入、查询 Repository/API、保留策略、真实 PostgreSQL 触发器测试 |
-| FR-IAM-01/02、AUTH-01/02/03 | 未完成 | 路由和模型发现接缝已预留 | 登录、本人信息、用户/角色管理接口及后端强制授权；旧写入口生产下线 |
-| API-01～04 | 公共契约代码已搭建；M1 接口未完成 | v1 路径、信封、错误码、cursor codec、强 ETag/`If-Match`、可信来源和幂等帮助代码 | M1 DTO/路由、数据库失败映射、幂等事务编排和 OpenAPI/集成测试 |
-| bootstrap CLI | 未完成 | 无 | 空用户库检查、交互式密码输入、首个系统管理员和审计事件 |
+| AUTH-07、密码安全基础 | 代码已搭建、进程内已验证；功能未完成 | Argon2id、密码策略、本人改密/管理员重置、幂等回放和 API 测试 | 真实数据库原子性、并发改密/禁用与恢复验证 |
+| RBAC、AUTH-05/09 基础 | 代码已搭建、进程内已验证；功能未完成 | 单查询授权快照、固定角色/权限、权限依赖、用户/角色路由、最后管理员逻辑和测试 | PostgreSQL 行锁/死锁恢复、并发角色变更及 M2/M3 真实消费验证 |
+| 会话、AUTH-08 基础 | 代码已搭建、进程内已验证；功能未完成 | 独立短事务身份解析/活动续期、Cookie 帮助、登录/登出/me/CSRF、`auth_version` 失效测试 | PostgreSQL 会话并发、连接中断与浏览器 E2E |
+| 登录限流、FR-IAM-05/NFR-SEC-07 | 独立双桶代码已搭建、进程内已验证；功能未完成 | `0004`、账号/来源 HMAC 双 upsert、可信地址、失败审计、dummy Argon2 与测试 | PostgreSQL 原子累计、锁定窗口和多进程并发验收 |
+| 审计、FR-IAM-04/OBS-03 | 代码已搭建、进程内已验证；功能未完成 | 登录/登出/用户变更写入、keyset 查询 API、脱敏 `AuditWriter`、触发器迁移代码 | 真实 PostgreSQL 不可变触发器/保留策略、运维导出验收 |
+| FR-IAM-01/02、AUTH-01/02/03 | M1 v1 代码已搭建；系统级功能未完成 | 登录、本人信息、用户/角色管理和后端权限路由及 OpenAPI 测试 | 旧匿名写入口/静态目录下线、前端接入、真实数据库验收 |
+| API-01～04 | M1 接口代码已搭建、进程内已验证；功能未完成 | v1 信封、DTO、cursor、ETag/`If-Match`、来源、幂等、no-store 和 OpenAPI 测试 | 在线 PostgreSQL API 集成、浏览器 E2E 和发布契约证据 |
+| bootstrap CLI | 代码已搭建、单元已验证；功能未完成 | 空库检查、交互密码、并发串行种子锁、管理员/角色/审计同事务 | PostgreSQL 在线首次创建、重复/并发执行和运维手册验证 |
 | OIDC（AUTH-06 SHOULD） | 未开始 | 配置枚举和显式不可用校验 | M1.1 独立设计、SDK、state/nonce/PKCE 表和回调 |
-| PostgreSQL 验收 | 未完成 | 单一迁移 head、离线升级/降级 SQL | PostgreSQL 16 在线迁移、约束/触发器、事务、并发、回滚和 API 集成测试 |
+| PostgreSQL 验收 | 未完成 | 单一迁移 head、离线升级 SQL、专用 `_test` 在线测试文件 | PostgreSQL 16 在线迁移、约束/触发器、事务、并发、回滚和 API 集成测试；当前 3 项因无实例跳过 |
 
 ### 10.2 后续搭建不得突破的边界
 
@@ -275,7 +282,7 @@ M2/M3 的关键写操作在一个事务中写入领域状态、调用 `AuditWrit
 2. Repository 只访问 M1 表；API 通过 Repository/Service，不得直接查询 ORM。M2/M3/M5 只能导入 `CurrentUser`、授权断言和 `AuditWriter` 等公开端口，不得导入 M1 ORM/Repository。
 3. `get_current_user()` 每次请求必须校验 Session 未撤销、绝对/空闲期限、用户启用/未删除和 `auth_version`，并从服务器端角色重新计算权限；不得信任 Cookie、请求体或前端传入角色。
 4. 登录失败需要同时持久化限流计数和脱敏审计后再返回 `INVALID_CREDENTIALS`。实现不得因抛出 `AppError` 让失败记录随事务回滚；推荐服务返回失败结果，端点提交独立登录尝试事务后再构造 401。
-5. 用户禁用、角色变更、本人改密和管理员重置必须在同一事务中递增 `auth_version`、撤销相关会话、追加审计并完成幂等记录；最后管理员判断和登录限流更新使用 PostgreSQL 行锁/等价原子语句，禁止“先查后改”的竞态。
+5. 用户禁用、角色变更、本人改密和管理员重置必须在同一事务中递增 `auth_version`、撤销相关会话、追加审计并完成幂等记录；本人改密可在同一事务内推进当前会话版本并只撤销其他会话。临时密码会话必须由服务端权限依赖限制到本人信息、CSRF、改密和登出。最后管理员判断和登录限流更新使用 PostgreSQL 行锁/等价原子语句，禁止“先查后改”的竞态。
 6. 登录/身份依赖入口首先调用 `validate_identity_runtime_settings()`；本地模式密钥少于 32 字节或 M1.0 配置 OIDC 时失败关闭。登录和 Cookie 写端点还必须复用 M0 可信来源配置执行服务端 Origin/Referer 校验，不能把 CORS 当作防 CSRF。`scripts/init-config.*`、Windows Service 和 Docker/CI 的认证配置属于 M7 协作项，在 M1 API 联调前补齐，但不得在脚本中生成或提交生产密钥。
 7. M1 路由只新增 `api/v1/auth.py`、`users.py`、`audit.py`，复用 M0 注册、CORS、错误信封、Session 和幂等服务；不得修改 `main.py` 或建立第二套路由/中间件/事务管理器。
 8. 旧 `/api` 与静态目录是兼容层，不因 M1 路由出现而自动受保护。M1 可以继续开发，但 1.0 生产验收前必须由 M2/M3/M7 完成 v1 迁移或在部署入口禁用旧写接口和静态暴露，否则 AUTH-01/02/03 仍判失败。
@@ -283,18 +290,20 @@ M2/M3 的关键写操作在一个事务中写入领域状态、调用 `AuditWrit
 10. 空闲会话活动时间不得在每个读请求上无条件写库；Repository 使用可配置或冻结的最小刷新间隔做条件更新，并保证并发请求不会把 `idle_expires_at` 缩短，以降低热点会话行争用。
 11. M0 已通过第 008 号变更冻结不透明 cursor codec、强 ETag/`If-Match` 和可信浏览器来源规则。M1 在实现 `/users`、`/audit-events` 和 Cookie 写路由时必须直接复用这些帮助函数，不得形成与 M2/M3 不同的第二套格式或来源判断。
 12. 身份相关响应（登录、`me`、CSRF、用户和审计数据）必须返回 `Cache-Control: no-store`；登录 Cookie 设置和清除统一由 M1 响应帮助函数生成，固定 `HttpOnly`、`SameSite=Lax`、`Path=/`、生产 `Secure` 且不设置 `Domain`，不得由各路由手写不同属性。
-13. 当前 `get_current_user()` 中的 `session.commit()` 必须在任何 M1/M2/M3 生产写路由接入前移除。会话活动续期使用 M1 独立短事务端口；认证依赖不能拥有或结束业务事务。
-14. `resolve_session()` 必须让会话、用户版本和角色处于同一一致性快照；修正前 M2/M3 只能依赖身份契约 Mock，不得直接接入该实验性依赖。
-15. 登录路由依赖 M0/M7 统一可信客户端地址端口；未交付该端口前可使用显式测试注入，但不得直接解析或信任 `X-Forwarded-For`。
+13. `get_current_user()` 已不再提交调用方 Session；后续重构必须保持会话活动续期使用 M1 独立短事务，认证依赖不能拥有或结束业务事务。
+14. `resolve_session()` 已以单条聚合查询让会话、用户版本和角色处于同一数据库语句快照；M2/M3 在在线并发验收前仍使用身份契约 Mock。
+15. 登录路由已依赖 M0/M7 统一可信客户端地址端口；后续不得直接解析或信任 `X-Forwarded-For`。
 16. 密码哈希验证在数据库事务外执行；签发会话前在写事务中重新校验用户活动状态、密码凭据标识和 `auth_version`。当前把 ORM User 跨验证阶段直接用于会话创建的流程不得进入路由。
-17. 登录限流至少具有独立账号桶和来源桶；现有 `(账号, 来源)` upsert 只能作为代码原型，不能单独满足 NFR-SEC-07。模式冻结后如需改表，新增迁移而不编辑 `20260813_0003`。
-18. M0 数据库请求依赖必须先提供稳定的 503 错误映射；M1 路由不得用通用 `try/except` 复制连接失败处理。
+17. 登录限流已使用 `0004` 的独立账号桶和来源桶；历史 `(账号, 来源)` 表只为迁移历史保留，不得重新作为认证数据源。
+18. M0 数据库请求依赖已提供稳定的 503 错误映射；M1 路由不得用通用 `try/except` 复制连接失败处理。
 
 ### 10.3 可继续开发的结论
 
-M1 的 Repository、组合维度登录限流和会话持久化代码已放入既定目录，未修改根路由、`main.py`、历史迁移或其他领域表；现有 FastAPI 身份依赖保留为实验实现，M1 功能未完成。后续搭建必须先完成独立续期事务、同一授权快照、登录签发前复验、独立账号/来源限流、数据库错误映射和可信客户端地址端口，再新增 M1 DTO、Cookie 响应帮助和本地认证 API；无需重构 M0 根路由或既有表。M2/M3 目前可使用 `CurrentUser`/身份依赖 Mock 开发纯领域逻辑，但不得把实验性依赖接入生产写路由，也不得导入 M1 Repository/ORM。M7 可并行准备 PostgreSQL 16、可信代理配置、认证配置预检和双平台测试。共享配置、错误码、迁移 head 或就绪检查的变化仍必须按 M0 契约单独评审并记录。
+M1 的本地认证、用户/角色、审计与 bootstrap 代码已位于既定领域目录，未修改根 router、历史迁移或其他领域表；`main.py` 的唯一协作变化是由 M0 安装敏感响应缓存中间件，未加入 M1 业务逻辑。P0～P2 的进程内门槛已通过，但 M1 功能仍未完成。M2/M3 可继续使用 `CurrentUser`/身份依赖 Mock 开发纯领域逻辑；在真实 PostgreSQL 在线迁移、触发器、锁/并发和 API 验收通过前，不得把 M1 作为生产写路由的完成依赖，也不得导入 M1 Repository/ORM。M7 应接续 PostgreSQL 16、代理配置、认证预检和双平台测试；M2/M3/M7 仍负责旧匿名 API 和静态目录退役。共享配置、错误码、迁移 head 或就绪检查变化继续按 M0 契约单独评审并记录。
 
-## 11. 后续搭建批次、接口与文件清单
+## 11. 搭建批次、接口与文件实施记录
+
+第 11 节保留原批次和完成条件供复核。第 011 号变更已搭建 P0～P2 所列代码并通过进程内测试；表中“完成条件”仍是后续真实 PostgreSQL/系统验收门槛，不表示需求已完成。
 
 ### 11.1 P0：关闭认证路由前门槛
 
@@ -309,7 +318,7 @@ M1 的 Repository、组合维度登录限流和会话持久化代码已放入既
 | M0 | `db/session.py` 或统一数据库依赖适配层 | 修改依赖错误映射 | 数据库未配置/不可连接时 v1 返回稳定 `DEPENDENCY_UNAVAILABLE/503`；不把连接串或驱动堆栈写入响应 |
 | M1/M7 | `tests/test_m1_identity_dependencies.py`、`test_m1_postgres_integration.py` | 修改/新增 | 证明调用方 Session 零提交、角色变更无交叉快照、并发续期不缩短期限 |
 
-P0 不新增路由、DTO、表或迁移；若实现时确认一条 PostgreSQL 聚合查询足够，不应为授权快照新增数据库字段。
+P0 的授权快照未新增字段；独立限流维度确需变更模型，因此新增 `20260813_0004`，没有编辑历史 `0003`。该迁移仅完成离线检查，尚未在线验收。
 
 ### 11.2 P1：本地认证最小闭环
 
@@ -337,6 +346,6 @@ P0 不新增路由、DTO、表或迁移；若实现时确认一条 PostgreSQL �
 ### 11.4 可并行开发条件
 
 - P0 中 M1 Repository/依赖修正与 M0/M7 客户端地址解析可以并行，双方只通过 `ClientAddressResolver` 返回标准化地址字符串的端口对接。
-- P1 DTO/Cookie 帮助和 API 测试骨架可与 P0 并行编写，但认证路由不得合并或注册为可用，直至 P0 测试全部通过。
+- P1 DTO/Cookie 帮助和 API 测试骨架曾与 P0 并行编写；P0 进程内测试通过后路由已由注册表发现，但真实数据库验收前不得标为生产可用。
 - P2 的审计只读 Repository 可与 P1 并行；用户安全写服务必须等待 P0 事务边界稳定，并复用 P1 审计事件构造规则。
 - M2/M3/M6 可继续使用契约 Mock；M2/M3 不导入 `identity.repository/models`，M6 不依赖 Cookie 的服务器内部格式。

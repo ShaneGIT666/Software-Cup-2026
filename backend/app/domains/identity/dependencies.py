@@ -4,18 +4,21 @@ from collections.abc import Callable
 from typing import Annotated
 
 from fastapi import Depends, Request
-from sqlalchemy.orm import Session
-
 from ...core.config import AppSettings, get_settings
 from ...core.error_codes import ErrorCode
 from ...core.errors import AppError
 from ...core.trusted_origins import require_trusted_browser_origin
-from ...db.session import get_session
 from .authorization import permissions_for_roles, require_permission_set
-from .contracts import CurrentUser, Permission
+from .contracts import CurrentUser, Permission, ResolvedIdentity
 from .repository import IdentityRepository, SessionIdentityRecord
 from .runtime import validate_identity_runtime_settings
 from .sessions import csrf_token_for_session, secret_digest, secrets_equal, session_is_active, utc_now
+from .transactions import (
+    SessionActivityRefresher,
+    SessionIdentityResolver,
+    get_session_activity_refresher,
+    get_session_identity_resolver,
+)
 
 
 _REQUEST_SESSION_STATE = "m1_identity_session"
@@ -30,21 +33,18 @@ def _authentication_error(code: str = ErrorCode.AUTHENTICATION_REQUIRED) -> AppE
     return AppError(401, code, "当前会话无效或已过期，请重新登录。")
 
 
-def get_current_user(
+def get_resolved_identity(
     request: Request,
-    session: Annotated[Session, Depends(get_session)],
     settings: Annotated[AppSettings, Depends(get_settings)],
-    repository: Annotated[IdentityRepository, Depends(get_identity_repository)],
-) -> CurrentUser:
+    identity_resolver: Annotated[SessionIdentityResolver, Depends(get_session_identity_resolver)],
+    activity_refresher: Annotated[SessionActivityRefresher, Depends(get_session_activity_refresher)],
+) -> ResolvedIdentity:
     validate_identity_runtime_settings(settings)
     raw_token = request.cookies.get(settings.session_cookie_name)
     if not raw_token:
         raise _authentication_error()
 
-    record = repository.resolve_session(
-        session,
-        secret_digest(raw_token, secret=settings.auth_secret),
-    )
+    record = identity_resolver.resolve(secret_digest(raw_token, secret=settings.auth_secret))
     now = utc_now()
     if (
         record is None
@@ -60,16 +60,11 @@ def get_current_user(
     ):
         raise _authentication_error(ErrorCode.SESSION_EXPIRED)
 
-    if repository.refresh_session_activity(
-        session,
+    activity_refresher.refresh(
         session_id=record.session_id,
         now=now,
         idle_timeout_minutes=settings.session_idle_timeout_minutes,
-    ):
-        # The refresh occurs before endpoint business work and only touches the
-        # current M1 session row. Commit it here so a later endpoint failure
-        # cannot roll back the independently valid session activity update.
-        session.commit()
+    )
 
     current_user = CurrentUser(
         id=record.user_id,
@@ -80,11 +75,32 @@ def get_current_user(
     setattr(request.state, _REQUEST_SESSION_STATE, record)
     setattr(request.state, _REQUEST_TOKEN_STATE, raw_token)
     request.state.current_user = current_user
-    return current_user
+    resolved = ResolvedIdentity(
+        current_user=current_user,
+        display_name=record.display_name,
+        must_change_password=record.must_change_password,
+        expires_at=record.expires_at,
+        idle_expires_at=record.idle_expires_at,
+        csrf_digest=record.csrf_digest,
+    )
+    request.state.resolved_identity = resolved
+    return resolved
+
+
+def get_current_user(
+    resolved: Annotated[ResolvedIdentity, Depends(get_resolved_identity)],
+) -> CurrentUser:
+    return resolved.current_user
 
 
 def require_permissions(*permissions: str | Permission) -> Callable[..., CurrentUser]:
-    def dependency(current_user: Annotated[CurrentUser, Depends(get_current_user)]) -> CurrentUser:
+    def dependency(
+        request: Request,
+        current_user: Annotated[CurrentUser, Depends(get_current_user)],
+    ) -> CurrentUser:
+        resolved = getattr(request.state, "resolved_identity", None)
+        if isinstance(resolved, ResolvedIdentity) and resolved.must_change_password:
+            raise AppError(403, ErrorCode.FORBIDDEN, "当前账户必须先修改临时密码。")
         require_permission_set(current_user, *permissions)
         return current_user
 
@@ -118,4 +134,3 @@ def require_trusted_write_origin(
 ) -> str:
     validate_identity_runtime_settings(settings)
     return require_trusted_browser_origin(request, settings)
-
