@@ -142,6 +142,7 @@ frontend/                Vue 前端
 data/examples/           开发样例数据
 docs/requirements/       产品需求和范围
 docs/design/             设计与接口草案
+docs/change-log/         可追溯的模块修改日志、索引和模板
 docs/deployment/         部署资料
 scripts/                 开发、验证和部署脚本
 tests/                   后端自动化测试
@@ -253,6 +254,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\run-local-verification.ps1
 - 领域服务不得依赖具体操作系统命令。
 - 修复缺陷时必须增加对应测试。
 - 文档中的“已实现”“规划中”“可选”必须与代码状态一致。
+- 每个逻辑变更单元完成后，必须在 `docs/change-log/` 新增日志并更新 `INDEX.md`；下一次修改前先读取索引及相关模块的最近记录。格式见 `docs/change-log/TEMPLATE.md`。
 
 ## 13. 许可证与使用说明
 
