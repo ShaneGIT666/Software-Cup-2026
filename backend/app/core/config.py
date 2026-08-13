@@ -12,6 +12,19 @@ def env_flag(name: str, default: bool = False) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def env_int(name: str, default: int, *, minimum: int = 1) -> int:
+    value = os.getenv(name)
+    if value is None or not value.strip():
+        return default
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise ValueError(f"{name} 必须是整数") from exc
+    if parsed < minimum:
+        raise ValueError(f"{name} 必须大于等于 {minimum}")
+    return parsed
+
+
 def parse_trusted_origins(value: str, *, environment: str) -> tuple[str, ...]:
     """Parse an explicit comma-separated browser-origin allowlist.
 
@@ -60,6 +73,15 @@ class AppSettings:
     application_name: str
     trusted_origins: tuple[str, ...]
     idempotency_secret: str
+    auth_mode: str
+    auth_secret: str
+    session_cookie_name: str
+    session_cookie_secure: bool
+    session_ttl_minutes: int
+    session_idle_timeout_minutes: int
+    auth_max_login_failures: int
+    auth_login_window_seconds: int
+    auth_lock_seconds: int
 
     @property
     def database_configured(self) -> bool:
@@ -73,6 +95,28 @@ class AppSettings:
 
 def get_settings() -> AppSettings:
     environment = os.getenv("APP_ENV", "development").strip().lower() or "development"
+    auth_mode = os.getenv("APP_AUTH_MODE", "local").strip().lower() or "local"
+    if auth_mode not in {"local", "oidc"}:
+        raise ValueError("APP_AUTH_MODE 只能是 local 或 oidc")
+
+    session_cookie_secure = env_flag("APP_SESSION_COOKIE_SECURE", default=environment == "production")
+    session_cookie_name = os.getenv(
+        "APP_SESSION_COOKIE_NAME",
+        "__Host-repair_session" if environment == "production" else "repair_session",
+    ).strip()
+    auth_secret = os.getenv("APP_AUTH_SECRET", "").strip()
+    if not session_cookie_name:
+        raise ValueError("APP_SESSION_COOKIE_NAME 不能为空")
+    if session_cookie_name.startswith("__Host-") and not session_cookie_secure:
+        raise ValueError("__Host- Cookie 必须启用 APP_SESSION_COOKIE_SECURE")
+    if environment == "production":
+        if not auth_secret:
+            raise ValueError("生产环境必须配置 APP_AUTH_SECRET")
+        if not session_cookie_secure:
+            raise ValueError("生产环境必须启用安全会话 Cookie")
+        if not session_cookie_name.startswith("__Host-"):
+            raise ValueError("生产环境会话 Cookie 必须使用 __Host- 前缀")
+
     return AppSettings(
         environment=environment,
         database_url=os.getenv("APP_DATABASE_URL", "").strip(),
@@ -84,4 +128,13 @@ def get_settings() -> AppSettings:
             environment=environment,
         ),
         idempotency_secret=os.getenv("APP_IDEMPOTENCY_SECRET", "").strip(),
+        auth_mode=auth_mode,
+        auth_secret=auth_secret,
+        session_cookie_name=session_cookie_name,
+        session_cookie_secure=session_cookie_secure,
+        session_ttl_minutes=env_int("APP_SESSION_TTL_MINUTES", 480),
+        session_idle_timeout_minutes=env_int("APP_SESSION_IDLE_TIMEOUT_MINUTES", 30),
+        auth_max_login_failures=env_int("APP_AUTH_MAX_LOGIN_FAILURES", 5),
+        auth_login_window_seconds=env_int("APP_AUTH_LOGIN_WINDOW_SECONDS", 900),
+        auth_lock_seconds=env_int("APP_AUTH_LOCK_SECONDS", 900),
     )

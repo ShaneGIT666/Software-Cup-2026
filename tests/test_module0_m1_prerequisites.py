@@ -57,6 +57,9 @@ def test_cors_middleware_accepts_only_the_configured_development_origin() -> Non
 def test_production_cors_fails_closed_when_not_configured(monkeypatch) -> None:
     monkeypatch.setenv("APP_ENV", "production")
     monkeypatch.delenv("APP_TRUSTED_ORIGINS", raising=False)
+    monkeypatch.setenv("APP_AUTH_SECRET", "test-production-auth-secret")
+    monkeypatch.setenv("APP_SESSION_COOKIE_NAME", "__Host-repair_session")
+    monkeypatch.setenv("APP_SESSION_COOKIE_SECURE", "true")
 
     assert get_settings().trusted_origins == ()
 
@@ -64,6 +67,9 @@ def test_production_cors_fails_closed_when_not_configured(monkeypatch) -> None:
 def test_trusted_origins_reject_wildcards_and_paths(monkeypatch) -> None:
     monkeypatch.setenv("APP_ENV", "production")
     monkeypatch.setenv("APP_TRUSTED_ORIGINS", "https://repair.example.com/*")
+    monkeypatch.setenv("APP_AUTH_SECRET", "test-production-auth-secret")
+    monkeypatch.setenv("APP_SESSION_COOKIE_NAME", "__Host-repair_session")
+    monkeypatch.setenv("APP_SESSION_COOKIE_SECURE", "true")
 
     with pytest.raises(ValueError, match="APP_TRUSTED_ORIGINS"):
         get_settings()
@@ -161,3 +167,35 @@ def test_invalid_idempotency_key_uses_frozen_error_code() -> None:
         validate_idempotency_key("short")
 
     assert exc_info.value.code == ErrorCode.IDEMPOTENCY_KEY_REQUIRED
+
+
+def test_m1_identity_error_codes_are_registered_by_m0() -> None:
+    assert {
+        ErrorCode.INVALID_CREDENTIALS,
+        ErrorCode.ACCOUNT_LOCKED,
+        ErrorCode.ACCOUNT_DISABLED,
+        ErrorCode.SESSION_EXPIRED,
+        ErrorCode.CSRF_INVALID,
+        ErrorCode.SELF_REVIEW_FORBIDDEN,
+        ErrorCode.LAST_ADMIN_PROTECTED,
+        ErrorCode.PASSWORD_POLICY_VIOLATION,
+        ErrorCode.AUTH_MODE_UNAVAILABLE,
+    } == {
+        "INVALID_CREDENTIALS",
+        "ACCOUNT_LOCKED",
+        "ACCOUNT_DISABLED",
+        "SESSION_EXPIRED",
+        "CSRF_INVALID",
+        "SELF_REVIEW_FORBIDDEN",
+        "LAST_ADMIN_PROTECTED",
+        "PASSWORD_POLICY_VIOLATION",
+        "AUTH_MODE_UNAVAILABLE",
+    }
+
+
+def test_srs_auditor_requires_an_explicit_business_role() -> None:
+    root = Path(__file__).resolve().parents[1]
+    srs = (root / "docs" / "requirements" / "software-requirements-spec.md").read_text(encoding="utf-8")
+
+    assert "默认禁止；需叠加检修人员角色" in srs
+    assert "基线权限只能读取脱敏后的审计事件和运行报告" in srs

@@ -1,8 +1,10 @@
 # M1 身份与审计模块设计方案
 
-> 状态：待实施；本地账户基线设计已冻结，OIDC 作为 M1.1 扩展。<br>
+> 状态：实施中；设计门槛 G1/G2 已关闭，本地账户基线设计已冻结，OIDC 作为 M1.1 扩展。<br>
 > 主责模块：M1；协作模块：M0、M7。<br>
 > 关联记录：`2026-08-13-002-auth-entry-exception`、`2026-08-13-003-m0-m1-prerequisites`、`2026-08-13-004-m1-design`。
+
+实施进度（`2026-08-13-006-m1-core-foundation`）：已完成配置约束、领域包、RBAC/`CurrentUser`、Argon2id 适配、会话/CSRF 密钥原语、身份与审计 ORM、角色种子、不可变审计迁移和 `AuditWriter`。第 6 节 HTTP 路由、Repository/业务服务、登录限流状态机、bootstrap CLI 与真实 PostgreSQL 集成测试仍待后续逻辑批次实现。
 
 ## 1. 目标与实施边界
 
@@ -38,14 +40,14 @@ M2、M3、M5 公开端口            IdentityService / AuditWriter
 | 幂等 | 关键写接口以同一事务调用 `IdempotencyService` | HMAC 指纹、冲突/回放语义已冻结 |
 | 请求 ID 与错误处理 | 抛出 `AppError`，让 M0 返回 v1 错误信封 | request ID 已由中间件注入 |
 
-### 2.2 编码前仍需冻结的两项契约
+### 2.2 已关闭的设计门槛
 
 | 门禁 | 问题 | 解决方案 | 所有者 |
 | --- | --- | --- | --- |
-| G1：身份专用错误码 | M0 当前仅登记公共错误码，M1 不能绕过登记自行发布新语义 | M1 提出清单，M0 在 `ErrorCode` 与公共契约中登记后再开始 API 实现 | M1 提案；M0 合并 |
-| G2：审计查看者业务读取范围 | 角色矩阵允许审计查看者“只读查看有效知识和流程”，AUTH-09 却限制其只能读取审计和运行报告 | 以 AUTH-09 的最小权限为准：基线 `auditor` 仅有 `audit:read`、`ops:read`，不授予知识/流程读取权限；如业务确需查看，必须叠加 `technician` 角色并记录审计 | 产品/SRS；M1 依赖 |
+| G1：身份专用错误码 | M0 当前仅登记公共错误码，M1 不能绕过登记自行发布新语义 | 已在 M0 `ErrorCode` 与公共契约登记身份错误码；匿名登录仍统一使用 `INVALID_CREDENTIALS` 防止账户枚举 | 已关闭；M1 主责、M0 协作 |
+| G2：审计查看者业务读取范围 | 角色矩阵允许审计查看者“只读查看有效知识和流程”，AUTH-09 却限制其只能读取审计和运行报告 | SRS 已以最小权限为准：基线 `auditor` 仅有 `audit:read`、`ops:read`；业务读取必须叠加 `technician` 并审计 | 已关闭；产品/SRS |
 
-G1 和 G2 不影响目录、模型、密码与服务层实现，但会影响公开 API 错误码和权限种子；在它们冻结前不得合并 M1 的可对外调用路由。
+G1 和 G2 已关闭，M1 可按本文实施公开 API。后续若改变错误码或角色基线，必须作为 M0 公共契约变更另行评审并增加日志，不得在 M1 私有实现中静默修改。
 
 ## 3. 新建文件与所有权
 
@@ -129,7 +131,7 @@ M1 增加以下 `APP_AUTH_*` 键；密钥只来自 Windows Service 环境、部�
 ```text
 APP_AUTH_MODE=local                     # local | oidc，一次部署只启用一种
 APP_AUTH_SECRET=<随机高熵密钥>             # 会话/CSRF HMAC，生产必填
-APP_SESSION_COOKIE_NAME=__Host-repair_session
+APP_SESSION_COOKIE_NAME=repair_session            # HTTP 开发默认；生产改为 __Host-repair_session
 APP_SESSION_TTL_MINUTES=480
 APP_SESSION_IDLE_TIMEOUT_MINUTES=30
 APP_SESSION_COOKIE_SECURE=true
@@ -138,7 +140,7 @@ APP_AUTH_LOGIN_WINDOW_SECONDS=900
 APP_AUTH_LOCK_SECONDS=900
 ```
 
-生产环境必须拒绝空 `APP_AUTH_SECRET`、非 HTTPS Cookie 和 `APP_AUTH_MODE` 非法值。开发环境允许明确设置 `APP_SESSION_COOKIE_SECURE=false`，但该值不得成为生产默认。
+生产环境必须拒绝空 `APP_AUTH_SECRET`、非 HTTPS Cookie 和 `APP_AUTH_MODE` 非法值，并要求 `APP_SESSION_COOKIE_NAME=__Host-repair_session`。开发环境允许明确设置 `APP_SESSION_COOKIE_SECURE=false`，此时 Cookie 名不得使用浏览器要求 `Secure` 的 `__Host-` 前缀；该值不得成为生产默认。
 
 ### 5.2 本地账户
 
@@ -173,7 +175,7 @@ APP_AUTH_LOCK_SECONDS=900
 | `GET /roles` | `iam:users:read` | 固定角色及权限说明，不返回内部配置 | 无 |
 | `GET /audit-events?limit&cursor&actorId&action&from&to` | `audit:read` | 脱敏 `data.items`；只允许白名单过滤与时间倒序 | 无 |
 
-M1 申请的错误码（待 G1 完成 M0 登记）：
+M1 已由 M0 登记的错误码：
 
 ```text
 INVALID_CREDENTIALS        ACCOUNT_LOCKED          ACCOUNT_DISABLED

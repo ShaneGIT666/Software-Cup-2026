@@ -11,7 +11,7 @@ FastAPI 后端正在从演示原型迁移为模块化单体。旧业务接口保
 - `/api/v1/health/live`：进程存活检查。
 - `/api/v1/health/ready`：数据库就绪检查。生产环境设置 `APP_DATABASE_REQUIRED=true` 后，数据库未配置或不可连接时返回 `503`。
 
-身份、知识、文件、审核、Worker 与检索业务迁移尚未开始，因此当前 `/api` 原型仍使用 JSON 存储；不要把这次数据库底座视为业务数据已经完成迁移。
+M1 身份与审计基础内核已经开始迁移；知识、文件、审核、Worker、检索以及 M1 的公开业务 API 仍未迁移，因此当前 `/api` 原型继续使用 JSON 存储。不要把数据库表和领域内核视为登录、用户管理或其他业务功能已经上线。
 
 M1 及后续领域模块只能新增自己的 `domains/<domain>/`、`api/v1/<domain>.py`、迁移和测试文件。v1 根路由会从 M0 的可选领域注册表加载 `auth`、`users`、`audit` 等模块；领域团队不得直接编辑 `main.py`、`api/v1/router.py`、`db/models.py` 或 `alembic/env.py`。
 
@@ -27,6 +27,8 @@ python -m venv backend\.venv
 powershell -ExecutionPolicy Bypass -File .\scripts\init-config.ps1 -Mode offline
 .\dev.bat start
 ```
+
+M1 本地账户基础依赖已包含 `argon2-cffi`。开发环境会话配置示例见仓库根目录 `.env.example`；生产环境必须提供独立的 `APP_AUTH_SECRET`，并使用 `Secure` 的 `__Host-` 会话 Cookie。M1 当前仅完成身份/审计基础内核和数据库迁移，登录与用户管理 HTTP API 尚未交付，不能将其标记为认证功能已上线。
 
 健康检查：
 
