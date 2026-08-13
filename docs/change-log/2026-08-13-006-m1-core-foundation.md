@@ -39,3 +39,8 @@
 
 - 下一批实现 Repository、登录限流状态机、Session 持久化与 FastAPI 身份依赖，再交付 `/api/v1/auth`；其后才实现用户/角色和审计查询 API。不得把旧 `/api` 的 `reviewer` 字段带入 v1，也不得让领域服务自行提交事务。
 - M2/M3 当前可以仅依赖已冻结的 `CurrentUser`、`ensure_not_self_review()` 与 `AuditWriter` 端口开发 Mock/契约测试，但在 M1 发布真实 `get_current_user()` 前不得把生产写路由标记为完成。
+
+## 状态更正（2026-08-13-010）
+
+- 本记录中的“已完成”仅表示第 006 号代码变更已经结束，不表示 M1 身份、会话、RBAC 或审计功能通过需求验收。
+- 后续复核发现当前身份依赖仍存在共享 Session 提交、授权快照分步读取、登录签发竞态、可信客户端地址缺失和限流维度不足；真实 PostgreSQL 与 HTTP 闭环也未验证。最新功能状态和门槛以 `2026-08-13-010-module-progress-audit`、SRS 第 1/14 节及 M1 设计第 10/11 节为准。
