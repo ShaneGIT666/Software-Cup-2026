@@ -2,9 +2,9 @@
 
 > 状态：代码已搭建、进程内单元/API 已验证、功能未完成；本地账户 HTTP/API、管理服务与 bootstrap 已实现，真实 PostgreSQL 在线/并发验收和前端接入未完成，OIDC 作为 M1.1 扩展。<br>
 > 主责模块：M1；协作模块：M0、M7。<br>
-> 关联记录：`2026-08-13-002-auth-entry-exception`、`2026-08-13-003-m0-m1-prerequisites`、`2026-08-13-004-m1-design`、`2026-08-13-005-m1-contract-gates`、`2026-08-13-006-m1-core-foundation`、`2026-08-13-007-m1-completion-audit`、`2026-08-13-008-m0-http-concurrency-contract`、`2026-08-13-009-m1-identity-persistence`、`2026-08-13-010-module-progress-audit`、`2026-08-13-011-m1-local-identity-http`。
+> 关联记录：`2026-08-13-002-auth-entry-exception`、`2026-08-13-003-m0-m1-prerequisites`、`2026-08-13-004-m1-design`、`2026-08-13-005-m1-contract-gates`、`2026-08-13-006-m1-core-foundation`、`2026-08-13-007-m1-completion-audit`、`2026-08-13-008-m0-http-concurrency-contract`、`2026-08-13-009-m1-identity-persistence`、`2026-08-13-010-module-progress-audit`、`2026-08-13-011-m1-local-identity-http`、`2026-08-14-013-m0-m1-public-integration-gates`。
 
-实施进度：P0 的独立短事务、单查询授权快照、签发前安全状态复验、独立账号/来源限流、数据库 503 和可信客户端地址已经搭建；P1/P2 的认证、用户、角色、审计 HTTP 路由、Cookie/no-store 帮助、管理服务与 bootstrap CLI 也已有代码。全量进程内回归为 `239 passed, 25 skipped`，M1 的 3 项真实 PostgreSQL 验收因未配置专用 `_test` 数据库而跳过。在线迁移、不可变触发器、行锁/并发、回滚、旧匿名入口下线及前端联调仍未验证，因此只能记录为“代码已搭建、进程内已验证，功能未完成”，详见第 10、11 节。
+实施进度：P0 的独立短事务、单查询授权快照、签发前安全状态复验、独立账号/来源限流、数据库 503 和可信客户端地址已经搭建；P1/P2 的认证、用户、角色、审计 HTTP 路由、Cookie/no-store 帮助、管理服务与 bootstrap CLI 也已有代码。M1 另提供只报告健康状态的 identity readiness，必需策略仍由 M0 掌握；`AuditWriter` 不再返回 ORM，OpenAPI 已声明 Cookie、CSRF、匿名面和权限。全量回归为 `250 passed, 25 skipped`，M1 的 3 项真实 PostgreSQL 验收因未配置专用 `_test` 数据库而跳过。在线迁移、不可变触发器、行锁/并发、回滚、旧表面物理退役及前端联调仍未验证，因此只能记录为“代码已搭建、进程内已验证，功能未完成”，详见第 10、11 节。
 
 ## 1. 目标与实施边界
 
@@ -215,12 +215,12 @@ def require_permissions(*permissions: str): ...
 def ensure_not_self_review(current_user: CurrentUser, submitter_user_id: str) -> None: ...
 
 class AuditWriter:
-    def append(self, session, event: AuditEventInput) -> None: ...
+    def append(self, session, event: AuditEventInput) -> AuditAppendResult: ...
 ```
 
 M2/M3 的关键写操作在一个事务中写入领域状态、调用 `AuditWriter.append()`、写 M0 outbox，再提交。操作者、审核者、提交者均由服务器端 ID 确定；不得接受客户端 `reviewer`、`actorId`、角色或权限字段。
 
-`AuditWriter` 的通用敏感键脱敏只是最后一道防线，不替代事件级白名单 DTO。M1 登录事件不得把原始用户名、IP、Cookie、令牌或密码放入 `target_id`/`metadata`，只允许通用目标标识及带独立 purpose 的 HMAC 主体/来源摘要；M2/M3 为每类安全事件定义允许的 metadata 字段，禁止把任意请求体直接传给 `AuditEventInput`。
+`AuditWriter.append()` 返回不可变 `AuditAppendResult(event_id)`，不返回 `AuditEvent` ORM；消费者不得根据 ORM 状态或私有字段建立业务逻辑。其通用敏感键脱敏只是最后一道防线，不替代事件级白名单 DTO。M1 登录事件不得把原始用户名、IP、Cookie、令牌或密码放入 `target_id`/`metadata`，只允许通用目标标识及带独立 purpose 的 HMAC 主体/来源摘要；M2/M3 为每类安全事件定义允许的 metadata 字段，禁止把任意请求体直接传给 `AuditEventInput`。
 
 ### 7.1 身份依赖事务与一致性端口
 
@@ -255,7 +255,7 @@ M2/M3 的关键写操作在一个事务中写入领域状态、调用 `AuditWrit
 3. 密码、会话、CSRF、独立限流、`CurrentUser`、短事务授权快照和签发前复验已有代码与进程内测试；在线并发验证未关闭，功能未完成。
 4. 本地登录、`me/logout/password` API 已搭建，匿名 allowlist、Cookie、可信来源、CSRF、泛化登录错误和 no-store 已有进程内 API 证据。
 5. 用户、角色与审计查询 API 已搭建并接入 M0 分页、幂等、`If-Match` 和审计写入；最后管理员与会话失效仍待 PostgreSQL 并发验证。
-6. bootstrap CLI、OpenAPI/契约测试已搭建；M2/M3 仍只能在 PostgreSQL 门槛关闭前使用身份契约 Mock，OIDC 单独进入 M1.1。
+6. bootstrap CLI、OpenAPI/契约测试已搭建；OpenAPI 可机器识别 Session Cookie、`X-CSRF-Token`、匿名登录和 `x-required-permissions`。M2/M3 仍只能在 PostgreSQL 门槛关闭前使用身份契约 Mock，OIDC 单独进入 M1.1。
 
 最低验收：密码没有明文/可逆存储；登录失败不枚举用户；禁用/角色变更立即使会话失效；CSRF、CORS、限流、最后管理员保护、不得自审、审计追加写入和幂等回放均有 PostgreSQL 集成测试。每步完成后必须新建本地修改日志并更新索引。
 
@@ -269,9 +269,9 @@ M2/M3 的关键写操作在一个事务中写入领域状态、调用 `AuditWrit
 | RBAC、AUTH-05/09 基础 | 代码已搭建、进程内已验证；功能未完成 | 单查询授权快照、固定角色/权限、权限依赖、用户/角色路由、最后管理员逻辑和测试 | PostgreSQL 行锁/死锁恢复、并发角色变更及 M2/M3 真实消费验证 |
 | 会话、AUTH-08 基础 | 代码已搭建、进程内已验证；功能未完成 | 独立短事务身份解析/活动续期、Cookie 帮助、登录/登出/me/CSRF、`auth_version` 失效测试 | PostgreSQL 会话并发、连接中断与浏览器 E2E |
 | 登录限流、FR-IAM-05/NFR-SEC-07 | 独立双桶代码已搭建、进程内已验证；功能未完成 | `0004`、账号/来源 HMAC 双 upsert、可信地址、失败审计、dummy Argon2 与测试 | PostgreSQL 原子累计、锁定窗口和多进程并发验收 |
-| 审计、FR-IAM-04/OBS-03 | 代码已搭建、进程内已验证；功能未完成 | 登录/登出/用户变更写入、keyset 查询 API、脱敏 `AuditWriter`、触发器迁移代码 | 真实 PostgreSQL 不可变触发器/保留策略、运维导出验收 |
+| 审计、FR-IAM-04/OBS-03 | 代码已搭建、进程内已验证；功能未完成 | 登录/登出/用户变更写入、keyset 查询 API、脱敏 `AuditWriter`、不可变结果 DTO、触发器迁移代码 | 真实 PostgreSQL 不可变触发器/保留策略、运维导出验收 |
 | FR-IAM-01/02、AUTH-01/02/03 | M1 v1 代码已搭建；系统级功能未完成 | 登录、本人信息、用户/角色管理和后端权限路由及 OpenAPI 测试 | 旧匿名写入口/静态目录下线、前端接入、真实数据库验收 |
-| API-01～04 | M1 接口代码已搭建、进程内已验证；功能未完成 | v1 信封、DTO、cursor、ETag/`If-Match`、来源、幂等、no-store 和 OpenAPI 测试 | 在线 PostgreSQL API 集成、浏览器 E2E 和发布契约证据 |
+| API-01～04 | M1 接口代码已搭建、进程内已验证；功能未完成 | v1 信封、DTO、cursor、ETag/`If-Match`、来源、幂等、no-store，以及 Cookie/CSRF/权限 OpenAPI 测试 | 在线 PostgreSQL API 集成、浏览器 E2E 和发布契约证据 |
 | bootstrap CLI | 代码已搭建、单元已验证；功能未完成 | 空库检查、交互密码、并发串行种子锁、管理员/角色/审计同事务 | PostgreSQL 在线首次创建、重复/并发执行和运维手册验证 |
 | OIDC（AUTH-06 SHOULD） | 未开始 | 配置枚举和显式不可用校验 | M1.1 独立设计、SDK、state/nonce/PKCE 表和回调 |
 | PostgreSQL 验收 | 未完成 | 单一迁移 head、离线升级 SQL、专用 `_test` 在线测试文件 | PostgreSQL 16 在线迁移、约束/触发器、事务、并发、回滚和 API 集成测试；当前 3 项因无实例跳过 |

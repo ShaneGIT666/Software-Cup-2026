@@ -19,6 +19,7 @@ from backend.app.core.trusted_origins import require_trusted_browser_origin
 from backend.app.db.domain_models import load_domain_models
 from backend.app.db.idempotency import request_fingerprint, validate_idempotency_key
 from backend.app.main import app
+from backend.app.core.legacy_surface import is_legacy_surface_path
 
 
 def _request_with_id(request_id: str) -> Request:
@@ -341,4 +342,33 @@ def test_invalid_trusted_proxy_cidr_fails_configuration(monkeypatch) -> None:
     monkeypatch.setenv("APP_TRUSTED_PROXY_CIDRS", "not-a-network")
 
     with pytest.raises(ValueError, match="APP_TRUSTED_PROXY_CIDRS"):
+        get_settings()
+
+
+def test_legacy_surface_path_classifier_never_blocks_v1() -> None:
+    assert is_legacy_surface_path("/api/search") is True
+    assert is_legacy_surface_path("/uploads/manual.pdf") is True
+    assert is_legacy_surface_path("/knowledge/documents.json") is True
+    assert is_legacy_surface_path("/api/v1/health/live") is False
+    assert is_legacy_surface_path("/api/v10/search") is True
+
+
+def test_legacy_surface_can_be_disabled_without_touching_domain_routes(monkeypatch) -> None:
+    monkeypatch.setenv("APP_ENV", "test")
+    monkeypatch.setenv("APP_LEGACY_SURFACE_MODE", "disabled")
+    client = TestClient(app)
+
+    assert client.get("/api/health").status_code == 404
+    assert client.get("/api/knowledge/documents").status_code == 404
+    assert client.get("/uploads/.gitkeep").status_code == 404
+    assert client.get("/api/v1/health/live").status_code == 200
+
+
+def test_production_rejects_enabling_the_legacy_surface(monkeypatch) -> None:
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("APP_LEGACY_SURFACE_MODE", "enabled")
+    monkeypatch.setenv("APP_SESSION_COOKIE_NAME", "__Host-repair_session")
+    monkeypatch.setenv("APP_SESSION_COOKIE_SECURE", "true")
+
+    with pytest.raises(ValueError, match="禁用旧版"):
         get_settings()

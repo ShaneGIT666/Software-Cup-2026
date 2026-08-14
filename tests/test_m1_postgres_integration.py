@@ -54,6 +54,7 @@ def test_m1_online_migration_has_identity_audit_and_independent_throttle_tables(
     tables = set(inspect(migrated_postgres).get_table_names())
 
     assert {
+        "outbox_events",
         "users",
         "roles",
         "user_roles",
@@ -61,6 +62,8 @@ def test_m1_online_migration_has_identity_audit_and_independent_throttle_tables(
         "login_throttle_buckets",
         "audit_events",
     }.issubset(tables)
+    outbox_columns = {column["name"] for column in inspect(migrated_postgres).get_columns("outbox_events")}
+    assert {"version_id", "request_id", "occurred_at"}.issubset(outbox_columns)
     with migrated_postgres.connect() as connection:
         roles = set(connection.execute(text("SELECT code FROM roles")).scalars())
     assert roles == {"technician", "reviewer", "knowledge_manager", "system_admin", "auditor"}

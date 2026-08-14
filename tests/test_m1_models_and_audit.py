@@ -4,8 +4,8 @@ from unittest.mock import Mock
 
 from backend.app.db.base import Base
 from backend.app.db.domain_models import load_domain_models
-from backend.app.domains.audit.contracts import AuditEventInput
-from backend.app.domains.audit.writer import AuditWriter
+from backend.app.domains.audit import AuditAppendResult, AuditEventInput, AuditWriter
+from backend.app.domains.audit.models import AuditEvent
 
 
 def test_m1_domain_models_are_discovered_by_m0() -> None:
@@ -36,9 +36,13 @@ def test_audit_writer_appends_to_the_callers_transaction() -> None:
         metadata={"roles": ["technician"], "temporaryPassword": "NeverPersistThis!"},
     )
 
-    record = AuditWriter().append(session, event)
+    result = AuditWriter().append(session, event)
 
-    session.add.assert_called_once_with(record)
+    assert isinstance(result, AuditAppendResult)
+    assert not isinstance(result, AuditEvent)
+    record = session.add.call_args.args[0]
+    assert isinstance(record, AuditEvent)
+    assert record.id == result.event_id
     session.commit.assert_not_called()
     assert record.event_metadata == {"roles": ["technician"], "temporaryPassword": "[REDACTED]"}
     assert not hasattr(record, "password_hash")

@@ -14,3 +14,7 @@ class AuditEventInput:
     actor_user_id: str | None = None
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
+
+@dataclass(frozen=True)
+class AuditAppendResult:
+    event_id: str

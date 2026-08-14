@@ -25,6 +25,7 @@ router = APIRouter(tags=["audit"], route_class=IdentityNoStoreRoute)
     "/audit-events",
     response_model=V1PageResponse,
     dependencies=[Depends(require_permissions(Permission.AUDIT_READ))],
+    openapi_extra={"x-required-permissions": [Permission.AUDIT_READ.value]},
 )
 def list_audit_events(
     request: Request,

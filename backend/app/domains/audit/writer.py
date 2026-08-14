@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from sqlalchemy.orm import Session
+from uuid import uuid4
 
-from .contracts import AuditEventInput
+from .contracts import AuditAppendResult, AuditEventInput
 from .models import AuditEvent
 
 
@@ -25,8 +26,10 @@ def _sanitize_metadata(value: object) -> object:
 class AuditWriter:
     """Append an audit event to the caller-owned database transaction."""
 
-    def append(self, session: Session, event: AuditEventInput) -> AuditEvent:
+    def append(self, session: Session, event: AuditEventInput) -> AuditAppendResult:
+        event_id = str(uuid4())
         record = AuditEvent(
+            id=event_id,
             actor_user_id=event.actor_user_id,
             action=event.action,
             target_type=event.target_type,
@@ -36,4 +39,4 @@ class AuditWriter:
             event_metadata=_sanitize_metadata(dict(event.metadata)),
         )
         session.add(record)
-        return record
+        return AuditAppendResult(event_id=event_id)

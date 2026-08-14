@@ -61,6 +61,7 @@ def _etag_response(request: Request, data: object, *, version: int | None, statu
     "/users",
     response_model=V1PageResponse,
     dependencies=[Depends(require_permissions(Permission.IAM_USERS_READ))],
+    openapi_extra={"x-required-permissions": [Permission.IAM_USERS_READ.value]},
 )
 def list_users(
     request: Request,
@@ -104,6 +105,11 @@ def list_users(
     response_model=V1Response,
     status_code=201,
     dependencies=[Depends(require_trusted_write_origin)],
+    openapi_extra={
+        "x-required-permissions": [Permission.IAM_USERS_WRITE.value],
+        "x-csrf-required": True,
+        "x-trusted-origin-required": True,
+    },
 )
 def create_user(
     request: Request,
@@ -133,6 +139,11 @@ def create_user(
     "/users/{user_id}",
     response_model=V1Response,
     dependencies=[Depends(require_trusted_write_origin)],
+    openapi_extra={
+        "x-required-permissions": [Permission.IAM_USERS_WRITE.value],
+        "x-csrf-required": True,
+        "x-trusted-origin-required": True,
+    },
 )
 def update_user(
     user_id: str,
@@ -157,6 +168,11 @@ def update_user(
     "/users/{user_id}/status",
     response_model=V1Response,
     dependencies=[Depends(require_trusted_write_origin)],
+    openapi_extra={
+        "x-required-permissions": [Permission.IAM_USERS_WRITE.value],
+        "x-csrf-required": True,
+        "x-trusted-origin-required": True,
+    },
 )
 def set_user_status(
     user_id: str,
@@ -190,6 +206,11 @@ def set_user_status(
     "/users/{user_id}/roles",
     response_model=V1Response,
     dependencies=[Depends(require_trusted_write_origin)],
+    openapi_extra={
+        "x-required-permissions": [Permission.IAM_ROLES_WRITE.value],
+        "x-csrf-required": True,
+        "x-trusted-origin-required": True,
+    },
 )
 def set_user_roles(
     user_id: str,
@@ -223,6 +244,11 @@ def set_user_roles(
     "/users/{user_id}/password",
     response_model=V1Response,
     dependencies=[Depends(require_trusted_write_origin)],
+    openapi_extra={
+        "x-required-permissions": [Permission.IAM_USERS_WRITE.value],
+        "x-csrf-required": True,
+        "x-trusted-origin-required": True,
+    },
 )
 def reset_user_password(
     user_id: str,
@@ -256,6 +282,7 @@ def reset_user_password(
     "/roles",
     response_model=V1Response,
     dependencies=[Depends(require_permissions(Permission.IAM_USERS_READ))],
+    openapi_extra={"x-required-permissions": [Permission.IAM_USERS_READ.value]},
 )
 def list_roles(request: Request):  # type: ignore[no-untyped-def]
     return identity_json_response(request, role_views())

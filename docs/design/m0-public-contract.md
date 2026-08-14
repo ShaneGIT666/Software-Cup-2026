@@ -1,6 +1,6 @@
 # M0 公共 HTTP、数据与装配契约
 
-> 状态：第 1～5 节契约已冻结；第 6 节协作端口代码已搭建并通过进程内测试，但尚无真实 PostgreSQL/代理环境验收，不表示 M0 或 M1 已完成。<br>
+> 状态：公共契约代码已搭建并通过进程内/离线验证；真实 PostgreSQL、代理和生产部署尚未验收，不表示 M0 或 M1 已完成。<br>
 > 主责模块：M0；首次记录：`2026-08-13-003-m0-m1-prerequisites`。
 
 本文件定义模块化单体的公共接缝。领域模块可以依赖本文件中的接口，但不得直接修改 M0 所有的 `core/`、`db/`、`api/v1/router.py`、`main.py` 或 Alembic 环境文件。
@@ -96,7 +96,7 @@ workers.models           M4
 indexing.models          M4
 ```
 
-每个领域模型继承 `app.db.base.Base`，领域迁移使用独立 revision，并在合并前以最新迁移头为 `down_revision`。M1 的首个迁移 `20260813_0003` 已依赖 `20260813_0002`，后续 `0004` 依赖 `0003`；新领域创建迁移前仍必须再次检查 head。领域模块不得修改 `app.db.models` 或 `alembic/env.py`。
+每个领域模型继承 `app.db.base.Base`，领域迁移使用独立 revision，并在合并前以最新迁移头为 `down_revision`。M1 的 `20260813_0003/0004` 后，M0 以 `20260814_0005` 补齐共享 outbox 事件字段；当前单一 head 为 `20260814_0005`。新领域创建迁移前仍必须再次检查 head。领域模块不得修改 `app.db.models`、历史 revision 或 `alembic/env.py`。
 
 ## 6. M1 公共协作端口及实现记录
 
@@ -113,3 +113,34 @@ M0 已将数据库未配置、初始化失败、连接失败或连接池不可�
 ### 6.3 可信客户端地址
 
 M0 已新增 `core/client_address.py` 的 `ClientAddressResolver` 和 `APP_TRUSTED_PROXY_CIDRS`。它默认使用 `request.client.host`，只有直接上游位于显式可信代理 CIDR 时才从右向左剥离可信代理链；非法、过长或未受信代理提供的头不能覆盖直连地址。M1 登录限流和审计只消费解析结果，不直接读取 `X-Forwarded-For`。代理欺骗进程内测试已通过；实际 IIS/Caddy/Nginx 拓扑仍由 M7 验收。
+
+## 7. 部署就绪与旧兼容表面
+
+### 7.1 Readiness contributor
+
+`core/readiness.py` 由 M0 统一聚合数据库、基础配置和可选领域检查。领域 contributor 只能返回 `ReadinessProbe(healthy, reason, details)`，不得声明自身是否为必需依赖；`required` 策略只由 M0 的 `ReadinessRegistration` 决定，避免领域模块通过返回 `required=false` 降低生产门槛。
+
+后续模块只新增预留位置中的 `readiness.py`，不得修改 `api/v1/system.py`。未交付的可选模块在开发环境安全跳过；已存在模块的内部导入错误必须暴露。生产环境中数据库及已登记的目标产品关键模块不可被配置降为可选，任一必需检查失败时 `/api/v1/health/ready` 返回脱敏的 `DEPENDENCY_UNAVAILABLE/503`。
+
+### 7.2 旧表面保护
+
+`APP_LEGACY_SURFACE_MODE` 取值为 `enabled|loopback|disabled`。开发默认 `enabled`；生产默认且只允许 `disabled`。M0 中间件统一拦截旧 `/api`（不含 `/api/v1`）、`/uploads` 和 `/knowledge`，因此 M1～M3 不得逐路由复制阻断逻辑。`loopback` 只判断直连客户端地址，不信任转发头。旧静态挂载尚未从代码删除，M2 受控下载迁移后仍需移除挂载；当前只证明生产配置可在应用层拒绝访问。
+
+## 8. 事务 Outbox 公共写端口
+
+M0 公开以下不可变契约：
+
+```python
+OutboxEventInput(
+    event_type: str,
+    aggregate_type: str,
+    aggregate_id: str,
+    version_id: str,
+    request_id: str,
+    occurred_at: datetime,
+    payload: Mapping[str, Any],
+)
+OutboxWriter.append(session, event) -> OutboxAppendResult(event_id: str)
+```
+
+`OutboxWriter` 只向调用方拥有的事务追加记录，不 commit/rollback，也不返回 ORM 实体。迁移 `20260814_0005` 为共享表增加 `version_id`、`request_id`、`occurred_at`；历史原型行使用明确的 `legacy:<id>` 回填，不能伪装成真实业务版本或请求。M2/M3 只从 `app.db` 公共导出导入写端口；M4 的 claim/lease 端口尚未搭建，不得通过导入 `db.models.OutboxEvent` 提前实现消费者。

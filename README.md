@@ -22,7 +22,8 @@
 - 原型代码存在：资料上传、解析、知识切片、维修案例、回答修正和审核记录。
 - 原型代码存在：原型级 OCR/多模态线索、RAG 建议、Evidence Pack、规则评估及演示降级。
 - 原型代码存在：Windows 开发启动脚本和历史 Linux/Docker 部署资料。
-- 待改造：PostgreSQL 业务存储、登录与角色权限、受控文件下载、可靠后台任务和知识版本审核。
+- 代码已搭建、未完成真实依赖验收：PostgreSQL 公共底座、本地登录/RBAC/审计 v1 接口、生产 readiness/旧表面保护和事务 outbox 写端口。
+- 待改造：受控文件下载、可靠后台任务、知识版本审核，以及上述底座的真实 PostgreSQL/生产部署验收。
 - 待改造：RAG 最终答案一致性、生产安全降级、作业流程准确匹配、派生缓存失效和索引一致性。
 - 待改造：Windows Service 安装、备份恢复、结构化日志、生产监控和 Windows/Linux CI。
 
@@ -129,7 +130,7 @@
 | 部署 | Windows Service 为默认；Linux systemd 和容器为可选 |
 | 可观测性 | 结构化日志、请求 ID、健康检查、指标和告警 |
 
-当前代码已搭建“模块 0：契约与数据底座”的公共短事务、数据库 503、可信客户端地址和敏感响应缓存控制，并已搭建 M1 本地身份与审计 HTTP 层。进程内可发现 `/api/v1/auth`、`/users`、`/roles`、`/audit-events` 路由，已有登录、会话、本人改密、用户/角色管理、审计查询和初始管理员 CLI 的单元及 `TestClient` 证据。当前仍未在真实 PostgreSQL 16 上验证在线迁移、触发器、锁和并发事务，也未完成前端接入；旧 `/api` 匿名写接口、静态 `/uploads`/`/knowledge` 和 JSON 原型链路仍保留。因此 M1 只能标记为“代码已搭建、进程内已验证，功能未完成”，不能视为生产认证已上线。具体状态见 [后端说明](backend/README.md)。
+当前代码已搭建“模块 0：契约与数据底座”的公共短事务、M0-owned readiness、生产旧表面 guard、版本化 outbox 写端口、数据库 503、可信客户端地址和敏感响应缓存控制，并已搭建 M1 本地身份与审计 HTTP 层。进程内可发现 `/api/v1/auth`、`/users`、`/roles`、`/audit-events` 路由；OpenAPI 已声明会话 Cookie、CSRF 和权限要求。当前仍未在真实 PostgreSQL 16 上验证在线迁移、触发器、锁和并发事务，也未完成前端接入；旧 `/api`、静态 `/uploads`/`/knowledge` 和 JSON 原型链路仍物理保留，生产配置只能由集中 guard 拒绝访问。因此 M0/M1 只能标记为“代码已搭建、进程内已验证，功能未完成”，不能视为生产认证已上线。具体状态见 [后端说明](backend/README.md)。
 
 ## 6. 目录结构
 
@@ -213,6 +214,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\run-local-verification.ps1
 - 日志：级别、输出位置、保留周期和脱敏规则。
 
 复制 `.env.example` 后必须审阅全部默认值。生产环境触发模型或视觉降级时，只能返回已审核的检索结果、确定性证据模板或明确的不可用提示；不得使用 mock Provider 生成的固定诊断、OCR 或视觉内容，也不得把这类内容写入查询、证据、索引或审核对象。
+
+迁移期可使用 `APP_LEGACY_SURFACE_MODE=enabled` 运行旧前端；`loopback` 只允许直连回环客户端；生产环境默认且只接受 `disabled`，统一拒绝旧 `/api`、`/uploads` 和 `/knowledge`。该配置是迁移保护，不替代后续受控下载、旧挂载删除和反向代理拒绝规则。
 
 ## 9. 安全边界
 

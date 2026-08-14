@@ -126,6 +126,55 @@ def test_ready_fails_closed_for_required_identity_configuration(monkeypatch) -> 
     }
 
 
+def test_production_database_cannot_be_downgraded_to_optional(monkeypatch) -> None:
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("APP_DATABASE_REQUIRED", "false")
+    monkeypatch.delenv("APP_DATABASE_URL", raising=False)
+    monkeypatch.setenv("APP_AUTH_SECRET", "a" * 32)
+    monkeypatch.setenv("APP_IDEMPOTENCY_SECRET", "i" * 32)
+    monkeypatch.setenv("APP_SESSION_COOKIE_NAME", "__Host-repair_session")
+    monkeypatch.setenv("APP_SESSION_COOKIE_SECURE", "true")
+    monkeypatch.setenv("APP_TRUSTED_ORIGINS", "https://repair.example.com")
+    monkeypatch.setenv("APP_LEGACY_SURFACE_MODE", "disabled")
+    dispose_engine()
+
+    response = TestClient(app).get("/api/v1/health/ready")
+
+    assert response.status_code == 503
+    database = response.json()["error"]["details"]["database"]
+    assert database["required"] is True
+    assert database["healthy"] is False
+
+
+def test_production_foundation_requires_idempotency_secret_and_https_origin(monkeypatch) -> None:
+    import backend.app.core.readiness as readiness_module
+
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("APP_DATABASE_REQUIRED", "false")
+    monkeypatch.delenv("APP_DATABASE_URL", raising=False)
+    monkeypatch.setenv("APP_AUTH_SECRET", "a" * 32)
+    monkeypatch.delenv("APP_IDEMPOTENCY_SECRET", raising=False)
+    monkeypatch.setenv("APP_SESSION_COOKIE_NAME", "__Host-repair_session")
+    monkeypatch.setenv("APP_SESSION_COOKIE_SECURE", "true")
+    monkeypatch.delenv("APP_TRUSTED_ORIGINS", raising=False)
+    monkeypatch.setenv("APP_LEGACY_SURFACE_MODE", "disabled")
+    monkeypatch.setattr(readiness_module, "database_status", lambda settings: type("Status", (), {
+        "healthy": True,
+        "reason": "",
+        "configured": True,
+        "dialect": "postgresql",
+    })())
+    dispose_engine()
+
+    response = TestClient(app).get("/api/v1/health/ready")
+
+    assert response.status_code == 503
+    foundation = response.json()["error"]["details"]["foundation"]
+    assert foundation["required"] is True
+    assert foundation["healthy"] is False
+    assert set(foundation["violations"]) == {"idempotency_secret", "trusted_https_origins"}
+
+
 def test_database_contract_only_accepts_postgres(monkeypatch) -> None:
     monkeypatch.setenv("APP_DATABASE_URL", "sqlite:///not-supported.db")
     monkeypatch.setenv("APP_DATABASE_REQUIRED", "true")

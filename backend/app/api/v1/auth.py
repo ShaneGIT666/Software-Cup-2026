@@ -55,7 +55,12 @@ def _identity_data(resolved: ResolvedIdentity) -> dict[str, object]:
     }
 
 
-@router.post("/login", response_model=V1Response, dependencies=[Depends(require_trusted_write_origin)])
+@router.post(
+    "/login",
+    response_model=V1Response,
+    dependencies=[Depends(require_trusted_write_origin)],
+    openapi_extra={"x-anonymous": True, "x-trusted-origin-required": True},
+)
 def login(
     request: Request,
     payload: LoginRequest,
@@ -107,7 +112,12 @@ def login(
     return response
 
 
-@router.post("/logout", response_model=V1Response, dependencies=[Depends(require_trusted_write_origin)])
+@router.post(
+    "/logout",
+    response_model=V1Response,
+    dependencies=[Depends(require_trusted_write_origin)],
+    openapi_extra={"x-authenticated": True, "x-csrf-required": True, "x-trusted-origin-required": True},
+)
 def logout(
     request: Request,
     current_user: Annotated[CurrentUser, Depends(require_csrf)],
@@ -120,7 +130,7 @@ def logout(
     return response
 
 
-@router.get("/me", response_model=V1Response)
+@router.get("/me", response_model=V1Response, openapi_extra={"x-authenticated": True})
 def me(
     request: Request,
     resolved: Annotated[ResolvedIdentity, Depends(get_resolved_identity)],
@@ -128,7 +138,7 @@ def me(
     return identity_json_response(request, _identity_data(resolved))
 
 
-@router.get("/csrf", response_model=V1Response)
+@router.get("/csrf", response_model=V1Response, openapi_extra={"x-authenticated": True})
 def csrf(
     request: Request,
     resolved: Annotated[ResolvedIdentity, Depends(get_resolved_identity)],
@@ -141,7 +151,12 @@ def csrf(
     return identity_json_response(request, {"csrfToken": csrf_token_for_session(raw_token, secret=settings.auth_secret)})
 
 
-@router.put("/password", response_model=V1Response, dependencies=[Depends(require_trusted_write_origin)])
+@router.put(
+    "/password",
+    response_model=V1Response,
+    dependencies=[Depends(require_trusted_write_origin)],
+    openapi_extra={"x-authenticated": True, "x-csrf-required": True, "x-trusted-origin-required": True},
+)
 def change_password(
     request: Request,
     payload: PasswordChangeRequest,

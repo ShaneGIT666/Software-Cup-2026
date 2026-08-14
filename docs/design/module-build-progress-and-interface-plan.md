@@ -1,9 +1,9 @@
 # 模块代码搭建进度与待建接口计划
 
-> 审查日期：2026-08-13<br>
+> 审查日期：2026-08-14<br>
 > 状态：当前代码审查基线；不构成功能完成或发布结论。<br>
 > 主责：M7 状态与验证治理；协作：M0～M6。<br>
-> 依据：SRS 第 1、14 节，M0 公共契约，M1 设计方案、M0/M1 部署接入方案及修改日志 001～012。
+> 依据：SRS 第 1、14 节，M0 公共契约，M1 设计方案、M0/M1 部署接入方案及修改日志 001～013。
 
 ## 1. 状态判定规则
 
@@ -13,11 +13,11 @@
 
 | 模块 | 代码证据 | 当前判定 | 未关闭问题 |
 | --- | --- | --- | --- |
-| M0 | `core/`、`db/`、`api/v1/`、迁移 `0001/0002`；短事务、DB 503、可信客户端地址和健康/契约测试 | 公共代码已搭建，进程内 HTTP/异常路径已验证；模块未完成 | 无真实 PostgreSQL 在线升降级/中断恢复、真实代理链和生产部署验收 |
-| M1 | `domains/identity/`、`domains/audit/`、三个 v1 路由、迁移 `0003/0004`、`test_m1_*` | 本地身份/用户/审计代码已搭建，进程内单元/API 已验证；功能未完成 | 无真实 PostgreSQL 在线迁移、触发器、锁/并发/API 集成；前端未接入；旧匿名 `/api` 与静态目录未退役 |
+| M0 | `core/`、`db/`、`api/v1/`、迁移 `0001/0002/0005`；readiness、旧表面 guard、短事务、DB 503、可信客户端地址、outbox 和契约测试 | 公共代码已搭建，进程内 HTTP/异常路径及离线迁移已验证；模块未完成 | 无真实 PostgreSQL 在线升降级/中断恢复、真实代理链和生产部署验收；M4 claim 端口未搭建 |
+| M1 | `domains/identity/`、`domains/audit/`、三个 v1 路由、迁移 `0003/0004`、identity readiness、OpenAPI 安全扩展、`test_m1_*` | 本地身份/用户/审计代码已搭建，进程内单元/API 已验证；功能未完成 | 无真实 PostgreSQL 在线迁移、触发器、锁/并发/API 集成；前端未接入；旧表面仅由生产 guard 隔离、尚未物理退役 |
 | M2 | 旧 `knowledge.py`/JSON 数据和旧 `/api` 路由 | 仅原型存在；目标模块未开始 | 无目标领域表/Repository/v1 路由；修订、审核、受控下载和 Worker 均不满足目标规则 |
 | M3 | 旧种子流程及关联展示 | 仅原型存在；目标模块未开始 | 无设备/流程领域表、版本审核、CSV 导入或可靠匹配端口 |
-| M4 | M0 `outbox_events` 表 | 仅共享表代码存在；Worker/索引模块未开始 | 无 claim/lease/retry/恢复、索引世代、缓存/图谱失效；M4 不能直接操作 M0 私有 ORM |
+| M4 | M0 `outbox_events` 表、`OutboxEventInput/Writer` 和 `0005` | 生产者写端口代码存在；Worker/索引模块未开始 | 无 claim/lease/retry/恢复、索引世代、缓存/图谱失效；M4 不能直接操作 M0 私有 ORM |
 | M5 | 旧 `retrieval/`、`rag.py` 和旧 `/api` | 原型部分可运行；目标模块未开始 | 无授权只读端口、effective-only 数据源、v1 API、可靠证据约束和生产安全降级闭环 |
 | M6 | 单页 Vue `App.vue`、旧 `api.ts` | 原型可构建路径存在；目标重构未开始 | 无 router/store/login/权限守卫/v1 客户端；仍传入 reviewer；E2E 很薄 |
 | M7 | 本地 PowerShell/容器/历史验证脚本和原型测试 | 工具零散存在；生产交付未完成 | 无 Windows Service 工件、备份恢复闭环、双平台 CI、锁定 E2E、真实 PostgreSQL/Provider 验收 |
@@ -30,8 +30,9 @@
 | --- | --- | --- | --- |
 | `backend/app/db/session.py` | 已搭建 `new_session()` 独立短事务上下文和统一 DB 请求错误映射 | M1、后续基础设施 | M1 未读取 `_session_factory`/重建 Engine；进程内测试已过，在线 PostgreSQL 待验收 |
 | `backend/app/core/client_address.py` | 已搭建 `ClientAddressResolver.resolve(request, settings) -> str` | M1 登录审计/限流、M7 代理部署 | 默认直连地址；只有显式可信代理解释代理头；M1 未直接读取 `X-Forwarded-For`；真实代理链待验收 |
-| `backend/app/db/outbox.py` | `OutboxWriter` 与后续 `OutboxClaimPort` | M2/M3 写事务、M4 消费者 | outbox 表仍归 M0；M4 不直接导入/更新 `db.models.OutboxEvent` |
-| `tests/test_module0_foundation.py`、`test_module0_m1_prerequisites.py` | 已覆盖错误映射、事务所有权、代理欺骗测试 | 全模块 | 使用 M0 测试文件，未与 `test_m1_*` 重复实现 |
+| `backend/app/core/readiness.py`、`legacy_surface.py` | 已搭建 M0-owned 必需策略、可选 contributor 聚合和旧表面集中保护 | M1/M2/M4/M5、M7 | 领域只新增 `readiness.py` 且无权降低 required；不逐路由复制 guard |
+| `backend/app/db/outbox.py`、迁移 `20260814_0005` | 已搭建版本化 `OutboxWriter`；`OutboxClaimPort` 待建 | M2/M3 写事务、M4 消费者 | Writer 不 commit/返回 ORM；M4 不直接导入/更新 `db.models.OutboxEvent` |
+| `tests/test_module0_foundation.py`、`test_module0_m1_prerequisites.py`、`test_module0_readiness.py`、`test_module0_outbox.py` | 已覆盖错误映射、事务所有权、代理欺骗、生产不变量、发现策略、旧表面和 Writer 契约 | 全模块 | 使用 M0 测试文件，未与 `test_m1_*` 重复实现 |
 
 ### 3.2 M1：身份与审计
 
@@ -43,7 +44,7 @@
 4. 账号桶与来源桶限流模型；若现有表不能表达则新建最新 head 的迁移。
 5. `http_contracts.py`、`http_responses.py` 和预留路由 `auth.py`、`users.py`、`audit.py` 已新增并通过进程内测试。
 
-公开给 M2/M3/M5 的端口仍仅限 `CurrentUser`、`require_permissions()`、`ensure_not_self_review()` 和 `AuditWriter`；Repository、ORM、Cookie、节流实现均为 M1 私有。
+公开给 M2/M3/M5 的端口仍仅限 `CurrentUser`、`require_permissions()`、`ensure_not_self_review()` 和 `AuditWriter`；`AuditWriter.append()` 只返回不可变 `AuditAppendResult(event_id)`，不泄露 ORM。Repository、ORM、Cookie、节流实现均为 M1 私有。OpenAPI 已显式声明 Session Cookie、CSRF header、匿名登录面和权限扩展，M6 不需要读取后端实现猜测安全要求。
 
 ### 3.3 M2：文档与知识版本
 
@@ -102,14 +103,14 @@
 - M4 在事件 DTO 冻结前只写消费者契约测试；不得轮询 M2/M3 表。
 - M5/M6 在真实端口交付前使用版本化 Mock；Mock 不进入生产 Provider、索引或审核数据。
 - M7 只提供环境、脚本和共享夹具，不在测试夹具中复制领域业务实现。
-- 当前 M1 的进程内身份事务/快照冲突已关闭，但真实 PostgreSQL 并发与系统级旧入口冲突未关闭；M2/M3 生产写路由仍不得把它标为已验收依赖。
+- 当前 M1 的进程内身份事务/快照冲突已关闭，旧入口已有生产 guard 但未物理退役；真实 PostgreSQL 并发仍未关闭，M2/M3 生产写路由仍不得把 M1 标为已验收依赖。
 
 ## 5. 下一步顺序
 
-1. M0 独立 Session、稳定 DB 503 和可信客户端地址端口的代码已搭建；M7 补真实 PostgreSQL/代理验收。
+1. M0 独立 Session、稳定 DB 503、可信客户端地址、readiness、旧表面 guard 和 outbox 写端口代码已搭建；M7 补真实 PostgreSQL/代理验收，M0 后续另行冻结 M4 claim 端口。
 2. M1 共享事务、授权快照、登录签发竞态和独立限流维度已在代码层修正；下一步用 PostgreSQL 16 验证迁移、触发器、锁和并发。
 3. M1 认证最小 HTTP 闭环已搭建；M2/M3 在真实 PostgreSQL 门槛通过前继续 Mock 并行，通过后再接入真实身份依赖。
 4. M2/M3 冻结事件与只读端口后，M4/M5 切换真实依赖。
 5. M6 联调，M7 执行 Windows/Ubuntu、恢复、安全和完整 E2E 验收。
 
-M0/M1 的实际部署检查、readiness 扩展、旧表面隔离、Windows 工件和后续模块接入门槛详见 `docs/design/m0-m1-deployment-readiness-plan.md`。该方案状态为“已设计、未实施”，不得据此提升 M0/M1 完成状态。
+M0/M1 的实际部署检查、readiness 扩展、旧表面隔离、Windows 工件和后续模块接入门槛详见 `docs/design/m0-m1-deployment-readiness-plan.md`。其中 D1 公共端口已达到代码级验证，D2～D4 未实施或未验收；不得据此提升 M0/M1 为“已完成”。

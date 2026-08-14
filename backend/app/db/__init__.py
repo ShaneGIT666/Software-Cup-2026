@@ -2,6 +2,7 @@
 
 from .base import Base
 from .idempotency import IdempotencyReplay, IdempotencyReservation, IdempotencyService, request_fingerprint, validate_idempotency_key
+from .outbox import OutboxAppendResult, OutboxEventInput, OutboxWriter
 from .session import DatabaseStatus, database_status, get_engine, get_session, new_session
 
 __all__ = [
@@ -10,6 +11,9 @@ __all__ = [
     "IdempotencyReplay",
     "IdempotencyReservation",
     "IdempotencyService",
+    "OutboxAppendResult",
+    "OutboxEventInput",
+    "OutboxWriter",
     "database_status",
     "get_engine",
     "get_session",

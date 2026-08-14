@@ -202,3 +202,14 @@ def test_m1_openapi_routes_use_the_v1_response_contract() -> None:
     ):
         assert path in schema["paths"]
         assert "200" in schema["paths"][path][method]["responses"] or "201" in schema["paths"][path][method]["responses"]
+
+    schemes = schema["components"]["securitySchemes"]
+    assert schemes["SessionCookie"]["type"] == "apiKey"
+    assert schemes["SessionCookie"]["in"] == "cookie"
+    assert schema["paths"]["/api/v1/auth/login"]["post"]["x-anonymous"] is True
+    assert schema["paths"]["/api/v1/users"]["get"]["x-required-permissions"] == ["iam:users:read"]
+    create_user = schema["paths"]["/api/v1/users"]["post"]
+    assert create_user["x-required-permissions"] == ["iam:users:write"]
+    assert create_user["x-csrf-required"] is True
+    assert create_user["x-trusted-origin-required"] is True
+    assert any(parameter["name"] == "X-CSRF-Token" for parameter in create_user["parameters"])

@@ -3,7 +3,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Annotated
 
-from fastapi import Depends, Request
+from fastapi import Depends, Header, Request, Security
+from fastapi.security import APIKeyCookie
 from ...core.config import AppSettings, get_settings
 from ...core.error_codes import ErrorCode
 from ...core.errors import AppError
@@ -23,6 +24,15 @@ from .transactions import (
 
 _REQUEST_SESSION_STATE = "m1_identity_session"
 _REQUEST_TOKEN_STATE = "m1_identity_token"
+SESSION_COOKIE_SECURITY = APIKeyCookie(
+    name=get_settings().session_cookie_name,
+    scheme_name="SessionCookie",
+    description=(
+        "HttpOnly 会话 Cookie。开发默认名为 repair_session；生产名称由 "
+        "APP_SESSION_COOKIE_NAME 配置为 __Host- 前缀，浏览器自动携带。"
+    ),
+    auto_error=False,
+)
 
 
 def get_identity_repository() -> IdentityRepository:
@@ -38,6 +48,7 @@ def get_resolved_identity(
     settings: Annotated[AppSettings, Depends(get_settings)],
     identity_resolver: Annotated[SessionIdentityResolver, Depends(get_session_identity_resolver)],
     activity_refresher: Annotated[SessionActivityRefresher, Depends(get_session_activity_refresher)],
+    _documented_session_cookie: Annotated[str | None, Security(SESSION_COOKIE_SECURITY)] = None,
 ) -> ResolvedIdentity:
     validate_identity_runtime_settings(settings)
     raw_token = request.cookies.get(settings.session_cookie_name)
@@ -111,11 +122,18 @@ def require_csrf(
     request: Request,
     current_user: Annotated[CurrentUser, Depends(get_current_user)],
     settings: Annotated[AppSettings, Depends(get_settings)],
+    csrf_header: Annotated[
+        str | None,
+        Header(
+            alias="X-CSRF-Token",
+            description="由 /api/v1/auth/login 或 /api/v1/auth/csrf 返回，并与当前会话绑定。",
+        ),
+    ] = None,
 ) -> CurrentUser:
     del current_user  # identity was validated by the dependency above
     record = getattr(request.state, _REQUEST_SESSION_STATE, None)
     raw_token = getattr(request.state, _REQUEST_TOKEN_STATE, "")
-    provided = request.headers.get("X-CSRF-Token", "")
+    provided = csrf_header or request.headers.get("X-CSRF-Token", "")
     if not isinstance(record, SessionIdentityRecord) or not raw_token or not provided:
         raise AppError(403, ErrorCode.CSRF_INVALID, "CSRF 校验失败。")
     expected_token = csrf_token_for_session(raw_token, secret=settings.auth_secret)

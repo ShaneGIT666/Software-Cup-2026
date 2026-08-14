@@ -123,12 +123,12 @@ def test_csrf_header_is_bound_to_the_current_session(monkeypatch: pytest.MonkeyP
     monkeypatch.setattr("backend.app.domains.identity.dependencies.utc_now", lambda: NOW)
     current_user = get_current_user(get_resolved_identity(request, settings, identity_resolver, activity_refresher))
 
-    assert require_csrf(request, current_user, settings) == current_user
+    assert require_csrf(request, current_user, settings, None) == current_user
 
     bad_request = _request(csrf="wrong-token")
     bad_user = get_current_user(get_resolved_identity(bad_request, settings, identity_resolver, activity_refresher))
     with pytest.raises(AppError) as exc_info:
-        require_csrf(bad_request, bad_user, settings)
+        require_csrf(bad_request, bad_user, settings, None)
     assert exc_info.value.code == "CSRF_INVALID"
 
 

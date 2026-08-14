@@ -11,6 +11,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     APP_ENV=production \
     APP_PORT=8000 \
+    APP_LEGACY_SURFACE_MODE=disabled \
     SERVE_FRONTEND=auto \
     FRONTEND_DIST_DIR=/app/frontend/dist \
     APP_EXAMPLES_DIR=/app/data/examples \

@@ -111,10 +111,11 @@ def get_session() -> Iterator[Session]:
 
 def database_status(settings: AppSettings | None = None) -> DatabaseStatus:
     resolved = settings or get_settings()
+    required = resolved.database_is_required
     if not resolved.database_configured:
         return DatabaseStatus(
             configured=False,
-            required=resolved.database_required,
+            required=required,
             healthy=False,
             dialect=None,
             reason="APP_DATABASE_URL 未配置",
@@ -122,7 +123,7 @@ def database_status(settings: AppSettings | None = None) -> DatabaseStatus:
     if not resolved.is_postgres_database:
         return DatabaseStatus(
             configured=True,
-            required=resolved.database_required,
+            required=required,
             healthy=False,
             dialect=None,
             reason="APP_DATABASE_URL 必须使用 PostgreSQL 连接串",
@@ -133,14 +134,14 @@ def database_status(settings: AppSettings | None = None) -> DatabaseStatus:
             connection.execute(text("SELECT 1"))
         return DatabaseStatus(
             configured=True,
-            required=resolved.database_required,
+            required=required,
             healthy=True,
             dialect=engine.dialect.name,
         )
     except Exception as exc:  # connection drivers can raise DBAPI-specific errors
         return DatabaseStatus(
             configured=True,
-            required=resolved.database_required,
+            required=required,
             healthy=False,
             dialect="postgresql",
             reason="数据库连接失败",

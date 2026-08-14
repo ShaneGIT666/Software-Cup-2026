@@ -19,6 +19,7 @@ from .core.config import get_settings
 from .core.cache_control import SensitiveResponseCacheMiddleware
 from .core.cors import cors_middleware_options
 from .core.errors import AppError
+from .core.legacy_surface import LegacySurfaceMiddleware
 from .core.request_context import RequestContextMiddleware, request_id_from_request
 from .data_store import PROJECT_ROOT, knowledge_dir, upload_dir
 from .knowledge import (
@@ -89,6 +90,7 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="设备检修知识检索与作业辅助系统", version="0.1.0")
 
+app.add_middleware(LegacySurfaceMiddleware)
 app.add_middleware(RequestContextMiddleware)
 app.add_middleware(SensitiveResponseCacheMiddleware)
 app.add_middleware(CORSMiddleware, **cors_middleware_options(get_settings()))

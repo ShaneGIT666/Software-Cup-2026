@@ -105,6 +105,7 @@ class AppSettings:
     auth_login_window_seconds: int
     auth_lock_seconds: int
     trusted_proxy_cidrs: tuple[str, ...] = ()
+    legacy_surface_mode: str = "enabled"
 
     @property
     def database_configured(self) -> bool:
@@ -114,6 +115,12 @@ class AppSettings:
     def is_postgres_database(self) -> bool:
         scheme = urlparse(self.database_url).scheme
         return scheme in {"postgresql", "postgresql+psycopg", "postgresql+psycopg2"}
+
+    @property
+    def database_is_required(self) -> bool:
+        """Production cannot downgrade PostgreSQL to an optional dependency."""
+
+        return self.environment == "production" or self.database_required
 
 
 def get_settings() -> AppSettings:
@@ -128,6 +135,14 @@ def get_settings() -> AppSettings:
         "__Host-repair_session" if environment == "production" else "repair_session",
     ).strip()
     auth_secret = os.getenv("APP_AUTH_SECRET", "").strip()
+    legacy_surface_mode = os.getenv(
+        "APP_LEGACY_SURFACE_MODE",
+        "disabled" if environment == "production" else "enabled",
+    ).strip().lower()
+    if legacy_surface_mode not in {"enabled", "loopback", "disabled"}:
+        raise ValueError("APP_LEGACY_SURFACE_MODE 只能是 enabled、loopback 或 disabled")
+    if environment == "production" and legacy_surface_mode != "disabled":
+        raise ValueError("生产环境必须禁用旧版 API 与静态文件表面")
     if not session_cookie_name:
         raise ValueError("APP_SESSION_COOKIE_NAME 不能为空")
     if session_cookie_name.startswith("__Host-") and not session_cookie_secure:
@@ -159,4 +174,5 @@ def get_settings() -> AppSettings:
         auth_login_window_seconds=env_int("APP_AUTH_LOGIN_WINDOW_SECONDS", 900),
         auth_lock_seconds=env_int("APP_AUTH_LOCK_SECONDS", 900),
         trusted_proxy_cidrs=parse_trusted_proxy_cidrs(os.getenv("APP_TRUSTED_PROXY_CIDRS", "")),
+        legacy_surface_mode=legacy_surface_mode,
     )
