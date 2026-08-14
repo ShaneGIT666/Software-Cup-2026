@@ -1,9 +1,12 @@
 # 当前开发交接说明
 
+> [!WARNING]
+> **历史快照（非现行基线）**：本文记录 2026 年前期竞赛原型、阶段调研、验证或交付准备，仅用于追溯当时事实。文内“当前”“最终”“正式”“已完成”“必须”“一键部署”等表述均限定于当时范围，不构成现行产品状态、开发顺序、生产要求或交付承诺。现行口径以[根 README](../../README.md)、[软件需求规格说明书](../requirements/software-requirements-spec.md)和[修改日志索引](../change-log/INDEX.md)为准；发生冲突时，以这些现行文件及相关模块最新记录为准。本文中的命令、测试数量和部署结论未经当前版本复验，不得作为当前验收证据。
+
 更新时间：2026-06-27
-适用对象：后续 Coding Agent、协作者、人工复审人员。
-优先级：任何后续开发前先读本文，再读 `docs/requirements/official-problem-baseline.md`。
-文档规范：本文和后续所有项目文档必须上下文自包含，确保只 clone 仓库的 agent 或开发者也能理解开发进度、软件功能、验证状态、风险边界和下一步任务；不得依赖聊天记录补全含义。
+历史适用对象：当时的 Coding Agent、协作者和人工复审人员。
+现行优先级：本文不再是开发入口；后续修改必须先读根 README、`docs/change-log/INDEX.md` 及相关模块最新记录。
+历史文档规范：以下内容按当时交接语境保留，不得用于覆盖当前状态、需求或开发流程。
 
 ## 1. 当前状态
 
@@ -165,11 +168,11 @@ OCR_LANG=ch
 
 1. 开始前执行 `git status --short --branch`。
 2. 不使用 `git reset --hard` 或 `git checkout --` 回滚协作者改动。
-3. 任何 API、数据状态、演示路径、风险边界变化，都必须同步更新本文。
+3. 当时曾要求 API、数据状态、演示路径和风险边界变化同步更新本文；现行变更改为记录到 `docs/change-log/` 并更新 `INDEX.md`。
 4. 新增重依赖前先说明 LoongArch 风险，并保留 mock/offline 兜底。
 # Docker 部署入口（2026-06-06 最新）
 
-Docker 方案已经作为 LoongArch / Kylin V11 国产化部署验证的辅助路径补充进项目。后续 agent 接手时必须优先阅读 `docs/deployment/docker-loongarch-deployment.md`，再运行相关脚本。
+Docker 方案当时作为 LoongArch / Kylin V11 验证辅助路径。该阅读优先级已经失效；如需复用相关脚本，应先按现行 README 核对 Docker 状态并重新验证。
 
 当前 Docker 路线的边界如下：
 
@@ -180,7 +183,7 @@ Docker 方案已经作为 LoongArch / Kylin V11 国产化部署验证的辅助�
 5. Docker 是比赛演示和部署验证辅助方案，不替代原生 LoongArch/Kylin 运行验证要求。
 # 最新交接补充：Docker 验证已完成（2026-06-06）
 
-LoongArch / Kylin V11 Docker 一体化部署已完成真实验证。后续 agent 不应再把 Docker 部署描述为“待验证”。
+LoongArch / Kylin V11 Docker 一体化部署在 2026-06-06 的原型版本上曾完成验证。该结论不覆盖后续 Dockerfile、配置和 API 变更；当前 Docker 路径仍按 README 标记为历史资料和待重新验收项。
 
 已确认：
 

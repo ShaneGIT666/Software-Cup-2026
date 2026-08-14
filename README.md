@@ -18,7 +18,9 @@
 3. 公共 API、分页、并发、幂等和数据库接入契约以 [`docs/design/m0-public-contract.md`](docs/design/m0-public-contract.md) 为准。
 4. 后端运行与 M0/M1 状态参考 [`backend/README.md`](backend/README.md)。
 5. 本地变更历史和未关闭事项以 [`docs/change-log/INDEX.md`](docs/change-log/INDEX.md) 及相关模块的最新记录为准。
-6. `docs/submission/`、`docs/testing/`、`docs/project-management/` 及早期 Linux/Docker 文档属于历史材料，不代表当前产品状态或交付承诺。
+6. `docs/architecture/`、`docs/deployment/`、`docs/ppt-assets/`、`docs/product/`、`docs/project-management/`、`docs/research/`、`docs/submission/`、`docs/testing/` 和 `docs/superpowers/specs/` 当前均作为历史材料保存，不代表现行产品状态、开发顺序或交付承诺。
+7. `docs/design/api-contract-draft.md`、`docs/design/data-model-draft.md`、`docs/design/software-design-doc.md`，SRS 以外的早期 `docs/requirements/` 材料，以及根目录 `PRODUCT.md`、`findings.md`、`progress.md`、`task_plan.md` 同样属于历史快照。
+8. 标有“历史快照（非现行基线）”的文件只用于追溯当时事实；其中的“当前”“最终”“正式”“已完成”“必须”“一键部署”等词不具有现行效力，命令、测试数量和部署结论必须重新验证后才能引用。
 
 当文档内容发生冲突时，应先核对文档日期、适用范围、需求编号、模块归属和修改日志。不得在没有验证证据的情况下，以较早文档覆盖当前基线。
 
