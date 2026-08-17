@@ -2,7 +2,7 @@
 
 > 文档性质：当前实现状态、验证证据和未关闭问题的唯一动态事实源<br>
 > 审计日期：2026-08-17<br>
-> 被审计运行时代码证据基线：`11bd05b`；其后的文档治理、旧工具边界提示及本轮未提交文档均不作为功能实现证据<br>
+> 被审计代码提交：`11bd05b`；本轮未提交的文档修改不作为实现证据<br>
 > 数据库迁移基线：单一 head `20260817_0006`；仅有离线 SQL 证据，尚无专用 PostgreSQL 16 在线证据<br>
 > 需求语义来源：[软件需求规格说明书](software-requirements-spec.md)<br>
 > 历史证据入口：[变更日志索引](../change-log/INDEX.md)
@@ -25,7 +25,7 @@
 - `AuthenticatedActor` 已存在，但 `AuditEventInput` 仍接受裸 `actor_user_id`/`initiator_user_id` 和任意 `Mapping` metadata，尚未形成由类型化 actor 到事件级白名单审计输入的生产门面。
 - M1 identity readiness 目前主要校验配置与实例生命周期，尚未验证三类固定服务账户的稳定 ID/service key、`auth_source=service`、启用/未删除和无密码凭据等不变量。
 - 当前权限枚举/角色种子缺少目标设备维护和运维写入所需的稳定权限（至少 `device:write`、`ops:write`）；也没有可供 M2/M3/M5 上线前检查“两名合格审核人”的 reviewer eligibility/capacity 公共端口。
-- M0 已有 outbox append 写端口，但 claim/lease/retry 端口尚未冻结或实现；当前事件目录只有“提议”事件，没有满足事件目录“生产启用门禁”的事件。
+- M0 已有 outbox append 写端口，但 claim/lease/retry 端口尚未冻结或实现；当前事件目录只有“提议”事件，没有同时满足“生命周期已冻结且登记实际消费者”的生产事件。
 - 实例激活的合格主体是任一启用、未删除、`auth_source=local`、已完成临时密码更换且仍具 `system_admin` 的本地用户；不得把首次管理员写成唯一可激活主体。`bootstrapped` 阶段的受限 provisioning 暴露规则以 [SRS 10.1](software-requirements-spec.md#101-windows-默认部署)为准，目前尚无部署/代理实现证据。
 
 ## 3. 模块状态摘要
@@ -89,7 +89,7 @@
 | `DATA-01` | M2～M5 | 目标领域数据库事实源 | 已设计 | 目标模型设计 | 无 | 领域表、Repository、迁移和派生索引重建尚未实现 |
 | `DATA-02` | M0 | `OutboxEventInput` append 写端口 | 单元已验证 | `OutboxWriter`、迁移 `0005` 与写端口测试 | 无生产者/消费者证据 | append input 不含 `event_id`；Writer 持久化时生成 ID。不得把持久化/投递 envelope 误写成调用输入 |
 | `DATA-02`、`NFR-REL-02` | M0、M4 | outbox claim/lease/retry/replay | 未开始 | 只有需求与边界设计 | 无 | ClaimPort 尚未冻结/实现；M4 不得直接导入或更新 M0 ORM |
-| `DATA-02` | M2～M5 | 实际生产者与消费者闭环 | 已设计 | 事件目录只有“提议”事件 | 无 | 仅当事件满足目录“生产启用门禁”时才允许对应环境发布；预期消费者、Mock 或只有冻结契约均不满足条件 |
+| `DATA-02` | M2～M5 | 实际生产者与消费者闭环 | 已设计 | 事件目录只有“提议”事件 | 无 | 仅当事件“已冻结”且登记实际消费者时才允许生产发布；预期消费者或 Mock 不满足条件 |
 | `DATA-03` | M0、M1 | 稳定 ID 基础 | 单元已验证 | UUID/稳定服务账户 ID 与约束测试 | 无跨模块证据 | M2～M5 仍须采用节点/操作系统无关 ID |
 | `DATA-03` | M2～M5 | 目标领域稳定 ID | 已设计 | 目标实体与事件聚合设计 | 无 | 领域模型/迁移尚未实现，禁止使用路径、显示名、节点 ID 或时间伪造主键/版本 |
 | `DATA-04` | M1 | UTC 持久化基础 | 单元已验证 | M1 带时区模型与 Repository 测试 | 无真实 PostgreSQL 证据 | 数据库会话时区及在线升级待验证 |
@@ -143,7 +143,7 @@
 | `NFR-UX-01`～`NFR-UX-05` | M6 | 五步主流程、真实长任务状态、可访问性 | 已设计 | 旧单页原型可构建 | 无目标 E2E/可访问性证据 | v1 前端、降级语义、request ID 恢复建议、键盘/颜色测试未实现 |
 | `NFR-MNT-01`～`NFR-MNT-02` | M0、M1 | 模块端口与 OS 无关领域层基础 | 代码已搭建 | M0/M1 分层和局部静态检查 | 无全产品证据 | M2～M7 尚未实现；后续领域服务不得依赖具体 OS 命令或私有 ORM |
 | `NFR-MNT-01`～`NFR-MNT-02` | M2～M7 | 全产品模块边界 | 已设计 | 所有权与公共端口设计 | 无 | 必须按模块端口实现并持续依赖方向检查 |
-| `NFR-MNT-03`（依赖） | 全局 | 生产依赖锁定与供应链可复现 | 代码已搭建 | `package-lock.json` 和局部依赖文件存在；迁移治理另见 DATA-07 行 | 无发布门禁证据 | Python 生产/测试依赖未分层且仍有宽版本范围，OCR/RAG 可选依赖未锁定，Playwright 未进 manifest/lock，容器基础镜像未按 digest 固定，亦无发行 wheelhouse/SBOM 门禁 |
+| `NFR-MNT-03` | 全局 | 依赖锁定、迁移与回滚治理 | 代码已搭建 | Alembic、`package-lock.json` 和局部依赖文件存在 | 无发布门禁证据 | Python 生产/测试依赖未分层且仍有宽版本范围，OCR/RAG 可选依赖未锁定，Playwright 未进 manifest/lock，容器基础镜像未按 digest 固定，亦无发行 wheelhouse/SBOM 门禁；每次结构变更必须附新迁移和回滚说明 |
 | `NFR-MNT-04` | M0、M1 | 已实现缺陷与关键规则测试门禁 | 代码已搭建 | 现有自动化测试资产 | 无完整 CI/集成证据 | 显式 5xx、日志脱敏、actor 桥接、服务 readiness、权限和审核容量缺口均须先补对应回归测试；修复缺陷必须加测试 |
 | `NFR-MNT-04` | M2～M7 | 后续模块自动化覆盖 | 已设计 | 测试计划 | 无 | 单元、PostgreSQL 集成、浏览器 E2E、双平台与故障测试尚未实现 |
 | `NFR-MNT-05`～`NFR-MNT-06` | 全局 | 当前/目标区分与追踪治理 | 已设计 | SRS、现行矩阵、事件目录、日志模板/索引 | 本轮仅进行文档静态自检 | 文档治理不是运行时代码能力，不得以“代码已搭建”提升状态；后续每个逻辑变更须先读索引及相关最近记录，完成后新增日志并更新 `INDEX.md` |
@@ -167,7 +167,7 @@
 ### 5.3 异步与后续模块门禁
 
 1. `OutboxEventInput` 是 append 调用输入，不含 `event_id`；持久化/投递 envelope 才包含 Writer 生成的 `event_id`。
-2. 事件只有满足目录“生产启用门禁”时才能在对应环境进入生产写事务。预期消费者、Mock、仅冻结契约或尚未完成集成验证的 M4 不满足此条件；依赖该事件保持一致性的生产能力也必须继续关闭，不能省略 outbox 后先开放写入口。
+2. 事件只有在目录生命周期为“已冻结”且登记了实际消费者时才能进入生产写事务。预期消费者、Mock 或尚未交付的 M4 不满足此条件。
 3. M0 先冻结 ClaimPort 的 claim/lease/retry/replay 与并发语义，M4 再通过该端口实现消费者；M4 不得直接依赖 M0 ORM。`api/v1/operations.py` 归 M4，M7 只负责部署和验收。
 
 ### 5.4 状态升级规则

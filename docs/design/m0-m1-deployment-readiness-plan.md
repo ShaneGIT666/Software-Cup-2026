@@ -70,7 +70,7 @@
 | P1 | 旧 `init-config.ps1` 只生成 Provider/mock 配置，并覆盖 `.env` | 部署人员可能误以为已经生成 M0/M1 安全配置 | 保留为旧演示脚本；产品配置使用 `deploy/windows/config/application.env.example`、外部密钥注入和 `preflight.ps1`，不承诺自动生成密钥的 `configure.ps1` |
 | P1 | `start-backend.ps1` 使用 `--reload`，缺环境时调用含机器路径假设的旧 Anaconda 脚本 | 不能作为 Windows Service 或可移植安装入口 | M7 创建无 reload、固定 3.11 运行时、显式配置文件的 Service 启动工件 |
 | P1 | 当前 Dockerfile 设置 production、mock Provider 和 `APP_LEGACY_SURFACE_MODE=disabled`，却不提供 PostgreSQL、认证/幂等密钥或可信来源；旧前端仍依赖被关闭的 `/api` | 容器不会形成可用整链，readiness 应失败；不能把“旧入口已关闭”误写成容器可交付 | 标为历史/开发容器；产品容器必须接入 PostgreSQL、v1 前端和同一 preflight/配置契约后另行验收 |
-| P1（写端口子范围已关闭） | M0 原有 outbox 表缺公共 Writer 和版本/请求字段 | M2/M3/M5 直接写 M0 ORM，M4 复制消费者实现 | `OutboxWriter`、不可变结果和 `0005` 已搭建；只有满足事件目录“生产启用门禁”的事件才可在对应环境使用，当前没有；M4 claim/lease 仍须单独设计 |
+| P1（写端口子范围已关闭） | M0 原有 outbox 表缺公共 Writer 和版本/请求字段 | M2/M3/M5 直接写 M0 ORM，M4 复制消费者实现 | `OutboxWriter`、不可变结果和 `0005` 已搭建；只有事件目录中已冻结且登记实际消费者的事件可以使用，当前没有；M4 claim/lease 仍须单独设计 |
 | P1 | M2、M3 若并行创建相同后继迁移会形成 Alembic 多头 | 合并时修改历史迁移或产生不可预测升级顺序 | 领域模型可并行；正式迁移前执行 `alembic heads`，revision 由 M0 集成人员基于当次最新 head 串行编号/重定向 |
 | P2 | 前端尚无 M1 登录与 CSRF 客户端 | 不能执行真实浏览器认证验收 | M6 依据冻结 OpenAPI/DTO 开发，不解析 Cookie 内部格式 |
 
@@ -136,7 +136,7 @@ app.api.v1.domain_registry      fixed optional route discovery
 app.db.domain_models            fixed optional ORM discovery
 ```
 
-M0 写端口本身已经搭建；提议或仅冻结阶段可依赖它编写生产者契约测试，但只有满足事件目录“生产启用门禁”的领域事件，才允许对应环境的生产路径实际调用该端口。记录 019 时点尚无此类目标领域事件：
+M0 写端口本身已经搭建；提议阶段可依赖它编写生产者契约测试，但只有事件目录状态为“已冻结”且已经登记实际消费者的领域事件，才允许生产路径实际调用该端口。记录 019 时点尚无此类目标领域事件：
 
 ```python
 @dataclass(frozen=True)
@@ -161,7 +161,7 @@ class OutboxWriter:
     ) -> OutboxAppendResult: ...
 ```
 
-`OutboxWriter` 只追加到调用方事务，不 commit；返回值只暴露不可变事件 ID，不返回 ORM 实体。未满足事件目录生产启用门禁的事件不得进入对应环境的生产 outbox。M2/M3/M5 不导入 `db.models.OutboxEvent`，M4 通过单独的 `OutboxClaimPort` 领取，不复用写端口修改领域状态。
+`OutboxWriter` 只追加到调用方事务，不 commit；返回值只暴露不可变事件 ID，不返回 ORM 实体。提议事件和只有预期消费者的事件均不得进入生产 outbox。M2/M3/M5 不导入 `db.models.OutboxEvent`，M4 通过单独的 `OutboxClaimPort` 领取，不复用写端口修改领域状态。
 
 ### 5.2 M1 公共接口
 
@@ -178,7 +178,7 @@ app.domains.audit.AuditWriter（低层追加端口；跨模块强类型输入尚
 ```
 
 - Route 层使用 `get_current_user()`/`require_permissions()`；Service 层显式接收 `CurrentUser`，不依赖 FastAPI Request。
-- `AuditWriter` 与领域状态和必要幂等记录在同一 `new_session()` 事务中写入；只有满足事件目录生产启用门禁的操作才在启用环境的该事务追加 outbox。
+- `AuditWriter` 与领域状态和必要幂等记录在同一 `new_session()` 事务中写入；只有事件目录中已经冻结且登记实际消费者的操作才在该事务追加 outbox。
 - M2～M5 不导入 M1 `models.py`、`repository.py`、Cookie、会话令牌、节流或密码实现。
 - 普通业务的用户 ID、审核人、角色和权限只来自服务端 `CurrentUser`；请求 DTO 不再接受 `reviewer`、`actorId` 或角色声明决定授权。内部任务使用 M1 创建的 `AuthenticatedActor` 表示受管服务用户，并在异步延续时保留 `initiator_user_id`；M2/M3/M5 不得另造主体类型或固定 UUID。
 - 当前 `AuditEventInput` 仍接受裸 `actor_user_id`、`initiator_user_id` 和任意 metadata。M2/M3/M5 接入真实生产写事务前，M1 必须冻结从 `AuthenticatedActor` 生成审计输入的强类型桥接，并为每类事件提供 metadata 白名单 DTO/构造器；通用按键名脱敏只能作为最后防线，不能替代该门槛。
@@ -382,7 +382,7 @@ D0 2026-08-17 / 7016029 历史代码里程碑
 
 ### D2A/D4：领域接入与全产品发布
 
-- P0审计桥接和D2均通过后，M2/M3/M5后端写路由才可从身份Mock切换到真实`CurrentUser`/`AuthenticatedActor`/`AuditWriter`；只有满足事件目录生产启用门禁的事件才在对应环境使用`OutboxWriter`，当前提议事件不能发布。后端领域接入不错误等待Windows Service或M6页面，但仍等待自己的上游契约。
+- P0审计桥接和D2均通过后，M2/M3/M5后端写路由才可从身份Mock切换到真实`CurrentUser`/`AuthenticatedActor`/`AuditWriter`；只有事件目录中已经冻结且登记实际消费者的事件才使用`OutboxWriter`，当前提议事件不能发布。后端领域接入不错误等待Windows Service或M6页面，但仍等待自己的上游契约。
 - D4不等于M6登录页面验收。产品发布还必须覆盖M2～M5核心业务E2E、受限provisioning、Provider/Worker/数据库故障、索引恢复、授权与越权、安全降级、备份恢复、性能目标，以及Windows/Ubuntu强制流水线。
 
 ## 10. 并行开发与合并条件
@@ -393,7 +393,7 @@ D0 2026-08-17 / 7016029 历史代码里程碑
 | M1 | 主体/bootstrap/activation 子范围已有单元证据；可补审计强类型桥和 PostgreSQL 集成测试 | P0 actor桥接及D2在线验收 | 不暴露裸ID审计门面给M2/M3/M5；不修改M0 root router/readiness聚合器 |
 | M2 | 领域模型、DTO、Service、存储端口和身份/outbox Mock 测试 | P0+D2 后接真实写路由；迁移基于执行时最新 head | 具体文件/解析实现放基础设施适配层；不扩展旧 `knowledge.py`/静态下载；不导入 M1 ORM/Repository |
 | M3 | 设备/流程领域和 Mock 测试 | D2 后接真实身份；迁移基于执行时最新 head | 不默认绑定流程；不修改 M2 表 |
-| M4 | claim/lease 接口实现、事件 handler/去重/重放及 `api/v1/operations.py` 契约 | M0 claim 端口和生产者提议的 schema/样例；M4 完成可定位 handler 后登记为实际消费者，与生产者共同促成事件冻结和生产启用门禁 | 不轮询/修改 M2/M3/M5 私有表；未满足事件目录生产启用门禁前不作生产输入 |
+| M4 | claim/lease 接口实现、事件 handler/去重/重放及 `api/v1/operations.py` 契约 | M0 claim 端口和生产者提议的 schema/样例；M4 完成可定位 handler 后登记为实际消费者，与生产者共同促成事件冻结 | 不轮询/修改 M2/M3/M5 私有表；提议事件只用于开发/契约测试，冻结和集成门禁前不作生产输入 |
 | M5 | 基于版本化只读Mock重构证据/安全规则，并定义自有查询附件端口 | M2/M3 read port、M4索引状态 | 不查询其他领域ORM，不把查询图片写入M2私表；mock不进入生产 |
 | M6 | 按已冻结Cookie/CSRF/权限和OpenAPI声明开发Mock客户端 | P0/D2/D3后做真实浏览器及provisioning E2E | 不把OpenAPI声明当运行时已验证；不解析Cookie或传reviewer/actor/roles决定授权 |
 | M7 | PostgreSQL、Windows工件、强制双平台CI、Caddy、provisioning和备份测试 | 各模块公开契约 | 不在脚本复制领域逻辑；不把旧mock readiness或可选Linux发行包当发布证据 |
@@ -415,7 +415,7 @@ D0 2026-08-17 / 7016029 历史代码里程碑
 2. 运行 `alembic heads` 并记录执行时实际 revision，在线空库 `upgrade head`、受控 downgrade/再 upgrade，核对实际迁移链、outbox、限流和审计触发器；
 3. M1 执行 bootstrap、HTTP改临时密码、activation、受限provisioning、API、锁/并发、事务回滚和数据库中断/恢复测试；
 4. 显式5xx/异常日志脱敏和`AuthenticatedActor`审计桥接可以与D2环境准备并行，但必须在M2/M3/M5真实生产写路由联调前关闭；
-5. D2和P0均通过后，M2/M3/M5才接入真实身份/审计端口，并且只为满足事件目录生产启用门禁的事件在对应环境调用outbox写端口；此前继续使用公开契约Mock；
+5. D2和P0均通过后，M2/M3/M5才接入真实身份/审计端口，并且只为事件目录中已冻结且登记实际消费者的事件调用outbox写端口；此前继续使用公开契约Mock；
 6. M7持续实现Windows Service/Caddy/provisioning/备份恢复和Windows/Ubuntu CI；M6可并行开发Mock页面，但真实发布验收遵守D4全产品门槛。
 
 后续模块不得重复创建 readiness 聚合器、旧路由守卫或 outbox 写端口，也不得修改任何已经登记或应用的历史 revision。M4 的 `OutboxClaimPort` 是尚未搭建的新端口，需由 M0 另行冻结。

@@ -20,7 +20,7 @@
 
 | 脚本 | 前置条件与证据边界 |
 | --- | --- |
-| `run-local-verification.ps1` | 组合后端 pytest、前端构建和旧 JSON/mock 原型闭环。脚本显示名已改为“Legacy prototype offline smoke”；下游文件名中的 `production-readiness` 仍是历史命名。该链路不调用 `/api/v1/health/ready`，不得用于生产验收。 |
+| `run-local-verification.ps1` | 组合后端 pytest、前端构建和旧 JSON/mock 原型闭环。其内部的“Production readiness check”是历史名称，不调用 `/api/v1/health/ready`，不得用于生产验收。 |
 | `run-frontend-smoke.ps1` | 调用 `npm run test:e2e`。当前 `@playwright/test` 未写入 `package.json`/lockfile，因此此脚本尚不是可复现门禁。 |
 | `prepare_external_test_data.py` | 准备外部评测数据；必须遵守数据授权、来源和提交策略，它不表示外部数据测试已完成。 |
 | `evaluate_manual_recall.py` / `evaluate-manual-recall.ps1` | 特定手册数据集的召回评测工具。结果只适用于记录的数据集、配置和代码基线。 |

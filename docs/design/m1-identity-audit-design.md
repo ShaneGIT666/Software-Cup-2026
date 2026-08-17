@@ -235,7 +235,7 @@ Writer 把 `actor.user_id` 和 `actor.initiator_user_id` 映射到非空 actor/�
 
 - 普通生产 HTTP 写操作使用服务端认证的 `CurrentUser`；内部任务使用 M1 resolver 产生的受管 actor，并按需保留 initiator。
 - 领域状态、审计、必要幂等记录，以及适用的 outbox append 必须在调用方拥有的同一事务中写入。
-- 只有满足[事件目录](event-catalog.md)“生产启用门禁”的事件才在对应环境追加 outbox。预期消费者、Mock、仅冻结契约或尚未完成集成验证的消费者都不满足条件。
+- 只有[事件目录](event-catalog.md)中生命周期已冻结且登记实际消费者的事件才追加 outbox。预期消费者、Mock 或尚未实现的消费者不满足条件。
 - M1 安全状态、会话、登录尝试、限流、bootstrap 和 heartbeat/lease 在没有上述事件消费者时不为形式统一发布业务 outbox；它们仍遵守主体、事务、审计或日志/指标规则。
 
 ## 9. readiness、错误与日志边界

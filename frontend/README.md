@@ -1,8 +1,8 @@
 # Frontend
 
-> 本文件只维护前端开发入口与稳定接入边界。[根 README](../README.md)是文档入口，产品范围和验收语义只以 [SRS](../docs/requirements/software-requirements-spec.md) 为准，当前实现状态、证据和缺口只以[现行需求追踪矩阵](../docs/requirements/current-traceability-matrix.md)为准。
+> 本文件是前端开发辅助说明。产品范围、状态和验收口径以[根 README](../README.md)、[SRS](../docs/requirements/software-requirements-spec.md)和[现行需求追踪矩阵](../docs/requirements/current-traceability-matrix.md)为准。
 
-## 迁移期前端资产边界
+## 当前实现
 
 当前目录是 Vue 3 + TypeScript + Vite + Element Plus 单页原型：
 

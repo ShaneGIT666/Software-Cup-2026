@@ -1,10 +1,8 @@
 # Backend
 
-> 本文件只维护后端开发入口、组件边界和代码证据说明。产品需求与验收语义只以 [SRS](../docs/requirements/software-requirements-spec.md) 为准，当前实现状态、验证证据和未关闭问题只以[现行需求追踪矩阵](../docs/requirements/current-traceability-matrix.md)为准，公共 API/事务契约只以 [M0 公共契约](../docs/design/m0-public-contract.md)为准。
-
 FastAPI 后端正在从演示原型迁移为模块化单体。旧业务接口保留在 `/api`，用于前端与测试兼容；所有新增生产接口使用 `/api/v1`。
 
-## 模块 0：记录 019 代码证据快照（非动态状态）
+## 模块 0：记录 019 已单元验证的基础子范围
 
 - `core/`：严格 `APP_` 前缀配置、请求 ID、稳定 v1 信封、未捕获异常响应体的 `INTERNAL_ERROR/500` 脱敏和公共错误模型。
 - `core/`：受控 CORS/浏览器来源及 `ETag` 暴露、可信代理客户端地址、M0-owned 强类型 readiness、旧表面集中保护、敏感身份响应 `no-store`、列表分页信封和公共错误码契约。
@@ -44,9 +42,9 @@ M1 本地账户基础依赖已包含 `argon2-cffi`。开发环境配置示例见
 .\backend\.venv\Scripts\python.exe -m backend.app.domains.identity.activation --username <name>
 ```
 
-从 `backend/` 目录执行时，将模块路径改为 `app.domains.identity.bootstrap` 和 `app.domains.identity.activation`。bootstrap 仅允许在无交互用户且实例状态为 `uninitialized` 时执行，并以受管 bootstrap 服务用户记账；它创建必须改密的首次管理员并把实例推进到 `bootstrapped`。activation 只接受有效、已完成强制改密且持有 `system_admin` 角色的本地账户；数据模型不另行绑定 bootstrap 创建者。成功后实例进入 `active`；生产 readiness 在此前保持不健康。实现状态与数据库证据只查现行需求追踪矩阵。
+从 `backend/` 目录执行时，将模块路径改为 `app.domains.identity.bootstrap` 和 `app.domains.identity.activation`。bootstrap 仅允许在无交互用户且实例状态为 `uninitialized` 时执行，并以受管 bootstrap 服务用户记账；它创建必须改密的首次管理员并把实例推进到 `bootstrapped`。当前 activation 实现只要求候选账户是有效、已完成强制改密且持有 `system_admin` 角色的本地账户；它没有在数据模型中另行绑定 bootstrap 创建者。成功后实例进入 `active`；生产 readiness 在此前保持不健康。上述边界已通过单元测试，但尚未在真实 PostgreSQL 上验证，因此不能作为生产可用或集成完成证据。
 
-首次生产部署还必须执行 [SRS 第 10.1 节](../docs/requirements/software-requirements-spec.md)和 [M0/M1 部署就绪方案](../docs/design/m0-m1-deployment-readiness-plan.md)规定的受限 provisioning 阶段。`bootstrapped` 期间 `ready=503` 是预期状态，必须保留只供本机或明确可信管理来源完成登录、CSRF、本人改密和登出的最小身份路径；只有 activation 完成且 `ready=200` 后才开放普通业务流量。部署工件状态只查现行需求追踪矩阵。迁移期旧前端需要 `/api` 时保持 `APP_LEGACY_SURFACE_MODE=enabled`；仅本机直连可选 `loopback`；生产只允许 `disabled`。
+首次生产部署还必须执行 [SRS 第 10.1 节](../docs/requirements/software-requirements-spec.md)和 [M0/M1 部署就绪方案](../docs/design/m0-m1-deployment-readiness-plan.md)规定的受限 provisioning 阶段。`bootstrapped` 期间 `ready=503` 是预期状态，必须保留只供本机或明确可信管理来源完成登录、CSRF、本人改密和登出的最小身份路径；只有 activation 完成且 `ready=200` 后才开放普通业务流量。当前 M7 部署工件尚未实现该过程。迁移期旧前端需要 `/api` 时保持 `APP_LEGACY_SURFACE_MODE=enabled`；仅本机直连可选 `loopback`；生产只允许 `disabled`。
 
 健康检查：
 
@@ -74,7 +72,7 @@ GET http://127.0.0.1:8000/api/v1/health/ready
    .\.venv\Scripts\alembic.exe upgrade head
    ```
 
-连接串只放在 `.env`、Windows Service 环境或企业密钥管理系统中，禁止提交到 Git。后续领域模块创建 revision 前必须执行 `alembic heads` 并在修改日志记录实际 head；不得修改已经登记或应用的历史迁移。后续 revision 必须基于执行时重新查得的实际 head 新增，当前 head 与验证证据只查现行需求追踪矩阵及对应日志。
+连接串只放在 `.env`、Windows Service 环境或企业密钥管理系统中，禁止提交到 Git。后续领域模块创建 revision 前必须执行 `alembic heads` 并在修改日志记录实际 head；不得修改已经登记或应用的历史迁移。记录 019 已提交快照登记的单一 head 为 `20260817_0006`，且仅完成离线 SQL 生成检查；后续 revision 必须基于执行时重新查得的实际 head 新增。
 
 ## 验证
 
@@ -82,4 +80,4 @@ GET http://127.0.0.1:8000/api/v1/health/ready
 .\backend\.venv\Scripts\python.exe -m pytest tests\test_module0_foundation.py tests\test_configuration_contract.py -q
 ```
 
-测试数量、skip、执行环境、提交与迁移 head 不在本文件复制；带日期证据只查修改日志，当前可采信状态与未关闭问题只查现行需求追踪矩阵。
+2026-08-17、提交 `7016029` 的阶段 1 工作区全量回归为 `259 passed, 25 skipped`；该结果是记录 017 的历史证据。记录 019 执行时的 D1.2 待提交变更全量回归为 `271 passed, 25 skipped`，后随该逻辑变更落入提交 `11bd05ba94b4`；其中 3 项真实 PostgreSQL 和 22 项外部手册测试跳过，`20260817_0006` 只完成离线正向/反向 SQL 生成检查。该历史结果仅支持其明确覆盖的“单元已验证”子范围，不得作为真实数据库或生产集成证据。
