@@ -1,6 +1,6 @@
 # 外部测试资料
 
-> 本文件只说明测试资产。产品需求、生产入库和当前实现状态分别以 [SRS](../../docs/requirements/software-requirements-spec.md)、[事件目录](../../docs/design/event-catalog.md)和[现行需求追踪矩阵](../../docs/requirements/current-traceability-matrix.md)为准。
+> 本文件只说明测试资产。产品需求与生产入库规则以 [SRS](../../docs/requirements/software-requirements-spec.md) 为准，涉及异步领域事件时再以 [事件目录](../../docs/design/event-catalog.md) 为准；当前实现状态、验证证据和未关闭问题只以[现行需求追踪矩阵](../../docs/requirements/current-traceability-matrix.md)为准。
 
 本目录用于保存比赛演示和回归测试所需的外部资料清单、小样本数据和生成案例。这里的资料只用于验证上传解析、`pending_review` 隔离、审核入库、检索/RAG 引用和评测 runner，不作为默认正式知识库的一部分。
 
@@ -12,7 +12,7 @@
 - `cases/`：由公开数据转写的中文维修案例，默认 `review_status=pending_review`。
 - `raw/`、`cache/`、`downloads/`：下载缓存或大文件目录，默认被 `.gitignore` 忽略。
 
-## 当前 P0 数据源
+## 外部测试资料来源
 
 1. SAPID `maintenance-manual.pdf`
    - 来源：https://github.com/sreejitheg/SAPID

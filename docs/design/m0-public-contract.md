@@ -84,7 +84,7 @@ M0 另提供 `require_trusted_browser_origin()`，供所有建立或使用 Cooki
 1. 根据 `actor_id`、HTTP 方法、路径、DTO payload 和 `APP_IDEMPOTENCY_SECRET` 调用 `request_fingerprint()`。该函数持久化 HMAC-SHA-256 指纹而非普通哈希，允许密码等敏感写入字段参与重复请求检测而不形成可离线猜测的普通摘要。
 2. 使用 `IdempotencyService.begin()` 以稳定的业务 `scope` 预约记录。
 3. 若返回 `IdempotencyReplay`，通过 `v1_success(..., status_code=replay.status_code)` 直接返回其中的状态码和 data，不得再次调用领域写服务。
-4. 若返回 `IdempotencyReservation`，执行领域写入、审计和必要幂等记录；只有[事件目录](event-catalog.md)中生命周期已冻结且登记实际消费者的操作才追加 outbox。随后调用 `complete()` 保存成功响应并提交事务。
+4. 若返回 `IdempotencyReservation`，执行领域写入、审计和必要幂等记录；只有满足[事件目录](event-catalog.md)“生产启用门禁”的操作才在启用环境追加 outbox。随后调用 `complete()` 保存成功响应并提交事务。
 
 同一 `scope + actor_id + key` 但不同请求指纹返回 `IDEMPOTENCY_CONFLICT`；相同请求仍在事务中返回 `REQUEST_IN_PROGRESS`。失败事务回滚预约记录，不缓存错误响应。`idempotency_records` 是 M0 共享表，领域模块不得直接写表或创建副本。
 
@@ -171,19 +171,19 @@ OutboxWriter.append(session, event) -> OutboxAppendResult(event_id: str)
 
 `OutboxEventInput` 是生产者调用 `append()` 的输入，不包含 `event_id`。Writer 在持久化时生成稳定 `event_id`；持久化记录和投递 envelope 由该 ID 加上输入字段组成，消费者不得要求生产者预先生成或伪造 ID。`OutboxWriter` 只向调用方拥有的事务追加记录，不 commit/rollback，也不返回 ORM 实体。
 
-M2/M3/M5 在事件处于“提议”阶段时可依赖 `app.db` 公共写端口编写生产者契约测试和受控实现，但只有事件生命周期已冻结且登记实际消费者后，才允许生产路径实际调用 `append()`。M0 必须另行冻结 claim/lease/retry/replay 输入、返回值和并发语义后，M4 才能实现消费者；M4 不得通过导入或更新 `db.models.OutboxEvent` 绕过公共端口。当前实现状态只见追踪矩阵。
+M2/M3/M5 在事件处于“提议”或仅“已冻结”阶段时可依赖 `app.db` 公共写端口编写生产者契约测试和受控实现，但只有满足事件目录“生产启用门禁”后，才允许对应环境的生产路径实际调用 `append()`。M0 必须另行冻结 claim/lease/retry/replay 输入、返回值和并发语义后，M4 才能实现消费者；M4 不得通过导入或更新 `db.models.OutboxEvent` 绕过公共端口。当前实现状态只见追踪矩阵。
 
 outbox 范围按以下矩阵执行：
 
 | 写操作类型 | 同事务要求 | outbox 要求 |
 | --- | --- | --- |
-| M2/M3/M5 可对外观察，且事件生命周期已冻结并登记实际消费者的关键领域状态变更 | 业务状态 + 已认证 `CurrentUser`；异步延续使用受管服务用户并保留发起身份 + 审计 + 必要幂等记录 | 必须追加版本化事件 |
-| M5 查询、回答或反馈等未满足“事件已冻结且登记实际消费者”的状态变更 | 已认证 `CurrentUser`；异步延续使用受管服务用户并保留发起身份 + 审计/调用记录 + 必要幂等记录 | 不发布业务 outbox |
-| M1 用户、角色、密码等安全状态变更 | 安全状态 + 已认证 `CurrentUser` + 审计 + 必要幂等记录 | 仅在事件生命周期已冻结且登记实际消费者时追加 |
+| M2/M3/M5 可对外观察，且对应事件满足生产启用门禁的关键领域状态变更 | 业务状态 + 已认证 `CurrentUser`；异步延续使用受管服务用户并保留发起身份 + 审计 + 必要幂等记录 | 在启用环境必须追加版本化事件 |
+| M5 查询、回答或反馈等未满足事件生产启用门禁的状态变更 | 已认证 `CurrentUser`；异步延续使用受管服务用户并保留发起身份 + 审计/调用记录 + 必要幂等记录 | 不发布业务 outbox |
+| M1 用户、角色、密码等安全状态变更 | 安全状态 + 已认证 `CurrentUser` + 审计 + 必要幂等记录 | 仅在对应安全事件满足生产启用门禁时追加 |
 | 登录成功后的会话签发、显式注销 | 已认证用户 + 独立短事务 + 适用的安全审计 | 不发布业务 outbox |
 | 被动会话活动续期 | 已认证用户 + 独立短事务 + 结构化日志/指标 | 不发布业务 outbox，也不逐次写业务审计事件 |
 | 登录失败、限流等认证子系统记账 | 认证子系统受管服务用户 + 独立短事务 + 安全审计 | 不发布业务 outbox |
 | 首次 bootstrap | 仅限 `uninitialized`；bootstrap 受管服务用户 + 生命周期锁 + 审计 + 独立 CLI 操作标识 | 不属于正常生产流量写入；激活后拒绝再次执行 |
 | Worker heartbeat/lease/retry 等运行维护 | 受管服务用户 + 任务上下文 + 运行日志/指标 | 不发布业务 outbox；事件目录登记的显式领域结果事件除外 |
 
-新增事件前必须在[事件目录](event-catalog.md)冻结事件名、版本、生产者、实际消费者、payload 白名单、幂等与回滚语义，并更新生产者/消费者契约及事务测试。只有需求语义或 M0 公共端口变化时才修改 SRS 或本文；新增具体事件不再要求重复改写多个说明文档。
+新增事件及其生产启用条件只在[事件目录](event-catalog.md)登记，并更新生产者/消费者契约、追踪矩阵及事务/集成测试。只有需求语义或 M0 公共端口变化时才修改 SRS 或本文；新增具体事件不再要求重复改写多个说明文档。
