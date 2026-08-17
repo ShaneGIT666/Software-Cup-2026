@@ -6,7 +6,7 @@
 
 默认开发及目标交付平台为 Windows；业务代码保持跨平台，并以 Ubuntu Server 24.04 LTS x64 CI 验证 Linux 兼容性。Linux 生产发行包和 systemd 服务属于可选交付物，不是当前基础版本承诺。
 
-> 当前仓库仍处于开发和试点阶段。旧原型可以运行，M0/M1 公共底座代码已经搭建并通过进程内测试；M0 已对环境枚举、脱敏 500、CORS `ETag` 和 readiness 白名单增加回归保护。真实 PostgreSQL、前端认证接入、Windows Service、备份恢复和生产部署尚未完成。
+> 当前仓库仍处于开发和试点阶段。旧原型可以运行；以 2026-08-17、提交 `7016029` 为证据基线，M0/M1 所列代码的实现状态为“单元已验证”。真实 PostgreSQL、前端认证接入、Windows Service、备份恢复和生产部署尚未完成。动态状态只以现行需求追踪矩阵为准。
 > 本系统不能替代设备原厂手册、安全规程、作业票、现场负责人或专业人员的最终判断。
 
 ## 1. 文档适用范围
@@ -14,13 +14,15 @@
 阅读项目资料时，必须区分目标要求、当前状态和历史材料：
 
 1. 产品范围、功能要求和验收标准以 [`docs/requirements/software-requirements-spec.md`](docs/requirements/software-requirements-spec.md) 为准。
-2. 当前模块状态以本 README、[`docs/design/module-build-progress-and-interface-plan.md`](docs/design/module-build-progress-and-interface-plan.md) 和最新修改日志为准。
+2. 当前模块状态只以 [`docs/requirements/current-traceability-matrix.md`](docs/requirements/current-traceability-matrix.md) 为准；修改日志保存证据，模块计划和本 README 只提供日期化摘要。
 3. 公共 API、分页、并发、幂等和数据库接入契约以 [`docs/design/m0-public-contract.md`](docs/design/m0-public-contract.md) 为准。
-4. 后端运行与 M0/M1 状态参考 [`backend/README.md`](backend/README.md)。
-5. 本地变更历史和未关闭事项以 [`docs/change-log/INDEX.md`](docs/change-log/INDEX.md) 及相关模块的最新记录为准。
-6. `docs/architecture/`、`docs/deployment/`、`docs/ppt-assets/`、`docs/product/`、`docs/project-management/`、`docs/research/`、`docs/submission/`、`docs/testing/` 和 `docs/superpowers/specs/` 当前均作为历史材料保存，不代表现行产品状态、开发顺序或交付承诺。
-7. `docs/design/api-contract-draft.md`、`docs/design/data-model-draft.md`、`docs/design/software-design-doc.md`，SRS 以外的早期 `docs/requirements/` 材料，以及根目录 `PRODUCT.md`、`findings.md`、`progress.md`、`task_plan.md` 同样属于历史快照。
-8. 标有“历史快照（非现行基线）”的文件只用于追溯当时事实；其中的“当前”“最终”“正式”“已完成”“必须”“一键部署”等词不具有现行效力，命令、测试数量和部署结论必须重新验证后才能引用。
+4. 后端本地运行和组件边界参考 [`backend/README.md`](backend/README.md)；其中日期化状态不得覆盖现行追踪矩阵。
+5. 版本化事件、生产者/消费者和 outbox 适用范围以 [`docs/design/event-catalog.md`](docs/design/event-catalog.md) 为准。
+6. 本地变更历史和未关闭事项以 [`docs/change-log/INDEX.md`](docs/change-log/INDEX.md) 及相关模块的最新记录为准。
+7. `docs/architecture/`、`docs/deployment/`、`docs/ppt-assets/`、`docs/product/`、`docs/project-management/`、`docs/research/`、`docs/submission/`、`docs/testing/` 和 `docs/superpowers/specs/` 当前均作为历史材料保存，不代表现行产品状态、开发顺序或交付承诺。
+8. `docs/design/api-contract-draft.md`、`docs/design/data-model-draft.md`、`docs/design/software-design-doc.md`，SRS 和现行追踪矩阵以外的早期 `docs/requirements/` 材料，以及根目录 `PRODUCT.md`、`findings.md`、`progress.md`、`task_plan.md` 同样属于历史快照。
+9. `frontend/README.md`、`data/external-test/README.md` 和 `data/evaluation/reports/README.md` 是当前辅助说明，但不得覆盖本节前述现行基线。
+10. 标有“历史快照（非现行基线）”的文件只用于追溯当时事实；其中的“当前”“最终”“正式”“已完成”“必须”“一键部署”等词不具有现行效力，命令、测试数量和部署结论必须重新验证后才能引用。
 
 当文档内容发生冲突时，应先核对文档日期、适用范围、需求编号、模块归属和修改日志。不得在没有验证证据的情况下，以较早文档覆盖当前基线。
 
@@ -77,16 +79,18 @@
 
 仓库由比赛演示原型逐步向模块化单体迁移。当前可用于开发和原型验证，但尚未形成可验收的生产业务闭环。
 
-| 模块 | 当前状态 | 主要未完成项 |
-| --- | --- | --- |
-| 公共底座 M0 | v1 响应/脱敏 500、请求 ID、严格环境枚举、CORS `ETag`、数据库 Session、强类型 readiness、旧表面保护、幂等和 outbox 写端口已搭建；进程内已验证 | 真实 PostgreSQL 在线迁移、中断恢复、真实代理/跨域浏览器和生产部署验收 |
-| 身份与审计 M1 | 本地账户、会话、CSRF、用户/角色、审计、bootstrap 和 v1 路由已搭建；进程内已验证 | PostgreSQL 触发器、锁、并发、回滚、前端接入及目标生产事务闭环 |
-| 文档与知识 M2 | 旧 JSON、上传和知识原型存在 | 目标领域表、版本审核、受控下载、v1 API 和异步解析 |
-| 设备与作业 M3 | 旧种子流程和关联展示存在 | 设备/流程领域模型、版本审核、CSV 导入和可靠匹配 |
-| Worker 与索引 M4 | outbox 生产者写端口存在 | claim、lease、heartbeat、retry、恢复和索引世代切换 |
-| 检索与 RAG M5 | 旧检索和 RAG 原型部分可运行 | effective-only 数据源、授权过滤、v1 API、证据约束和安全降级 |
-| 网页前端 M6 | Vue 单页原型可构建，使用旧 `/api` | Vue Router、登录、权限守卫、v1 客户端、领域页面和完整 E2E |
-| 部署与验证 M7 | Windows 本地脚本和历史容器材料存在 | API/Worker Windows Service、安装升级、备份恢复、双平台 CI 和真实依赖验收 |
+下表是 2026-08-17、提交 `7016029` 的摘要快照，后续状态变化只更新现行需求追踪矩阵和对应修改日志；仅当模块边界或 README 导航摘要需要调整时才修改本表。
+
+| 模块 | 状态对象 | 实现状态 | 资产与证据限定 | 主要未完成项 |
+| --- | --- | --- | --- | --- |
+| 公共底座 M0 | 当前 M0 公共代码 | 单元已验证 | v1 响应/脱敏 500、请求 ID、严格环境枚举、CORS `ETag`、数据库 Session、强类型 readiness、旧表面保护、幂等和 outbox 写端口已有进程内/契约测试 | OpenAPI 通用 500 声明、真实 PostgreSQL 在线迁移/中断恢复、真实代理/跨域浏览器和生产部署验收 |
+| 身份与审计 M1 | 本地账户与审计代码 | 单元已验证 | 会话、CSRF、用户/角色、审计、bootstrap 和 v1 路由已有进程内单元/API 测试 | 生产写入认证主体收口、PostgreSQL 触发器/锁/并发/回滚、前端接入和 OIDC |
+| 文档、知识与案例 M2 | 目标 M2 模块 | 已设计 | 旧 JSON、上传、知识和案例原型只作为迁移期资产 | 目标领域表、版本审核、案例闭环、受控下载、v1 API 和异步解析 |
+| 设备与作业 M3 | 目标 M3 模块 | 已设计 | 旧种子流程和关联展示只作为迁移期资产 | 设备/流程领域模型、版本审核、CSV 导入和可靠匹配 |
+| Worker 与索引 M4 | 目标 M4 模块 | 已设计 | M0 outbox 生产者写端口已单元验证，不属于 M4 消费端实现 | claim、lease、heartbeat、retry、恢复和索引世代切换 |
+| 检索、RAG 与反馈 M5 | 目标 M5 模块 | 已设计 | 旧检索、RAG 和回答修正原型只作为迁移期资产 | effective-only 数据源、授权过滤、查询/回答/反馈记录、v1 API、证据约束和安全降级 |
+| 网页前端 M6 | 目标网页重构 | 已设计 | Vue 单页原型可构建但仍使用旧 `/api` | Vue Router、登录、权限守卫、v1 客户端、领域页面和完整 E2E |
+| 部署与验证 M7 | 目标生产交付 | 已设计 | Windows 本地脚本和历史容器材料不属于生产工件 | API/Worker Windows Service、安装升级、备份恢复、双平台 CI 和真实依赖验收 |
 
 当前旧原型包含以下演示能力：
 
@@ -175,17 +179,18 @@ IIS 和 Caddy 是当前 Windows 基础验收范围。其他反向代理只有在
 
 ```text
 backend/                 FastAPI 后端和领域服务
+  alembic/               Alembic 环境和数据库迁移
   app/
     api/v1/              目标生产 API
     core/                配置、契约、中间件和 readiness
-    db/                  SQLAlchemy、迁移、幂等和 outbox
+    db/                  SQLAlchemy、幂等和 outbox 公共端口
     domains/             目标领域模块
     retrieval/           旧检索、融合和重排实现
     evaluation/          检索评测
 frontend/                Vue 网页前端
 data/examples/           开发示例数据
-docs/requirements/       产品需求和验收标准
-docs/design/             架构、模块和公共契约
+docs/requirements/       现行 SRS/追踪矩阵及带声明的历史需求材料
+docs/design/             现行公共契约/事件目录及带声明的历史设计材料
 docs/change-log/         可追溯修改记录、索引和模板
 docs/deployment/         历史部署资料（非现行产品部署基线）
 scripts/                 开发、验证和部署辅助脚本
@@ -460,7 +465,7 @@ Idempotency-Key
 
 ### 11.5 生产事务
 
-生产写操作按用途分类，不得为了形式统一向所有内部状态更新发布 outbox。会改变可对外观察业务事实、并已在事件目录中登记下游消费者的关键领域写操作，必须在同一数据库事务中提交：
+生产写操作按用途分类，不得为了形式统一向所有内部状态更新发布 outbox。会改变可对外观察业务事实、并已在[事件目录](docs/design/event-catalog.md)中登记下游消费者的关键领域写操作，必须在同一数据库事务中提交：
 
 - 业务状态。
 - 审计事件。
@@ -469,7 +474,7 @@ Idempotency-Key
 
 `AuditWriter` 和 `OutboxWriter` 只能向调用方持有的事务追加记录，不得自行 `commit`、`rollback` 或返回 ORM 实体。
 
-身份管理等安全状态变更必须与审计同事务；只有在版本化事件及其消费者已冻结时才同事务追加 outbox。登录尝试、限流计数、会话签发/活动续期/注销、Worker 心跳与租约维护均不发布业务 outbox；它们仍必须遵守各自的短事务、审计或运行日志契约。bootstrap 使用受控系统主体并写审计，在尚无登记消费者时不写 outbox。新增或变更分类必须同时修改 SRS、M0 公共契约、事件目录和事务测试。
+身份管理等安全状态变更必须与审计同事务；只有在事件目录已冻结版本化消费者时才同事务追加 outbox。登录尝试、限流计数、会话签发/活动续期/注销、Worker 心跳与租约维护均不发布业务 outbox；它们仍必须遵守各自的短事务、认证主体、审计或运行日志契约。新增或变更分类必须先修改事件目录及对应事务测试；SRS 和 M0 契约只在需求语义或公共端口发生变化时修改，避免为每个具体事件重复改写需求文档。
 
 ## 12. 身份与安全
 
@@ -499,17 +504,17 @@ Idempotency-Key
 
 ### 12.2 写操作身份与追踪
 
-除匿名登录、首次 bootstrap 和内部系统任务等明确登记的非普通业务流程外，生产业务写操作必须使用服务端认证得到的 `CurrentUser`。
+所有生产持久化写操作必须携带经过服务端认证且可审计的用户身份。普通业务 HTTP 写操作使用 `CurrentUser`；内部任务使用受管服务用户身份，不能以缺少用户身份的“系统事件”绕过本规则。
 
 具体要求如下：
 
 - 普通业务写操作的操作者、提交者和审核者必须由服务端身份上下文确定。
 - 客户端不得通过传入 `actor`、`reviewer`、用户 ID、角色或权限范围决定服务端授权。
-- 匿名登录只能写入建立身份所必需的限流、会话和安全审计数据，不能借此修改普通业务对象。
-- bootstrap 只能通过受控本地 CLI 在满足空用户库等前置条件时执行，并记录相应审计事件。
+- 登录成功后的会话与安全审计写入归属到刚完成认证的用户；登录失败记账须由认证子系统的受管服务用户执行，当前代码尚未实现该主体，不能作为生产合规证据。
+- bootstrap 只允许在实例进入生产激活状态前，通过受控本地 CLI 在空用户库执行；激活后禁止再次执行。当前代码仍以新建用户作为 actor 并使用固定操作标识，尚未达到该目标契约。
 - 异步任务必须保留发起用户、原始请求 ID、任务 ID 和业务对象标识。
-- 无法归属到普通用户的内部系统事件允许没有用户 actor，但必须记录明确的事件类型、任务或请求 ID、来源、目标对象和执行结果。
-- 系统事件不得伪装成普通用户操作，也不得使用前端提供的身份信息代替服务端追踪信息。
+- 无法归属到普通业务用户的内部写入必须归属到受认证的服务用户，并记录事件类型、任务或请求 ID、来源、目标对象和执行结果。
+- 服务用户不得伪装成普通用户，也不得使用前端提供的身份信息代替服务端认证结果。
 - 所有授权判断必须由服务端根据认证身份和当前权限快照完成。
 
 ### 12.3 浏览器安全
@@ -591,9 +596,8 @@ JPG、JPEG、PNG、WEBP
 ### 14.2 数据库与迁移
 
 - 所有数据库结构变更必须附带 Alembic 迁移脚本。
-- 当前单一 migration head 为 `20260814_0005`。
-- 不得修改已经登记的 `0001`～`0005`。
-- 创建新 revision 前必须重新检查最新 migration head。
+- 创建新 revision 前必须运行 `alembic heads` 并记录当次实际 migration head。
+- 不得修改已经登记或应用的历史迁移。
 - 出现多个 migration head 时，只能通过受控集成创建合并迁移。
 - 数据库迁移必须记录升级、降级、数据影响和回滚边界。
 - 离线 SQL 生成成功不等于在线迁移已经验证。
@@ -601,11 +605,11 @@ JPG、JPEG、PNG、WEBP
 
 ### 14.3 身份与写操作
 
-- 除认证入口、bootstrap 和登记的系统任务外，生产业务写操作必须携带经过服务端认证的用户身份。
+- 所有生产持久化写操作必须携带经过服务端认证且可审计的用户身份；普通业务使用 `CurrentUser`，内部任务使用受管服务用户，bootstrap 只允许在生产激活前执行。
 - 授权必须由服务端根据认证身份和当前权限快照决定。
 - 客户端不得通过传入用户、角色、审核人或操作者字段决定服务端授权。
 - 异步延续任务必须保留发起身份和关联请求；系统任务必须使用可追溯的任务上下文。
-- 生产写事务必须遵循业务状态、审计、outbox 和必要幂等记录的公共契约。
+- 生产写事务必须按操作分类遵循业务状态、审计和必要幂等契约；只有事件目录已登记下游消费者的操作才追加 outbox。
 
 ### 14.4 模块与平台边界
 
@@ -693,9 +697,11 @@ YYYY-MM-DD-NNN-简短主题.md
 
 - 变更标识和日期。
 - 记录状态。
+- 状态对象。
 - 功能验证状态。
 - 所属模块和协作模块。
 - 需求追踪和关联记录。
+- 规范来源影响。
 - 改动内容。
 - 文件、数据库、API、DTO、事件和配置影响。
 - 已检查的契约、迁移头、日志和冲突。
@@ -703,17 +709,7 @@ YYYY-MM-DD-NNN-简短主题.md
 - 回滚方式。
 - 未完成事项及后续开发提示。
 
-记录状态与功能验证状态必须分开：
-
-```text
-记录状态：
-计划中 | 执行中 | 变更已结束 | 已回滚 | 已替代
-
-功能验证状态：
-未开始 | 已设计 | 代码已搭建 | 单元已验证 | 集成已验证 | 已完成
-```
-
-“变更已结束”只表示本次修改记录已经结束，不表示对应需求已经完成。存在未关闭冲突时，功能验证状态不得填写为“已完成”。
+记录状态、状态对象与功能验证状态必须分开。“变更已结束”只表示本次修改记录已经结束，不表示对应需求已经完成。存在未关闭冲突时，功能验证状态不得填写为“已完成”。具体枚举和字段只以日志模板为准，本 README 不复制模板正文。
 
 开始下一次修改前，必须：
 
@@ -722,6 +718,8 @@ YYYY-MM-DD-NNN-简短主题.md
 3. 检查关联需求、公共契约和当前 migration head。
 4. 确认是否已有相同目标的进行中或已结束记录。
 5. 确认不会重复实现已有公共端口、数据结构或安全机制。
+
+文档更新遵循单一事实源：需求语义更新 SRS，动态完成状态更新[当前追踪矩阵](docs/requirements/current-traceability-matrix.md)，具体事件更新[事件目录](docs/design/event-catalog.md)，执行证据更新变更日志。除对应事实源的语义或结构确实变化外，不为同一实现进度反复修改多个说明文档。
 
 其他强制规则：
 
@@ -911,15 +909,16 @@ uninstall.ps1
 
 ## 19. 改造优先级
 
-1. 完成 PostgreSQL 16 在线迁移、触发器、事务和并发验收。
-2. 完成本地身份、RBAC、审计和受控文件访问闭环。
-3. 建立知识版本审核、统一生产写事务、outbox 和索引一致性。
-4. 建立持久化 Worker、失败重试和重启恢复。
-5. 重构前端路由、登录、权限守卫和 `/api/v1` 客户端。
-6. 完成 API/Worker Windows Service、代理、备份恢复和升级回滚。
-7. 建立 Windows 与 Ubuntu Server 24.04 LTS CI。
-8. 锁定 Playwright 依赖并完成核心浏览器 E2E。
-9. 完成检索评测、安全降级、性能测试和发布验收。
+1. 以现行追踪矩阵和事件目录为基线，先补 OpenAPI 通用 500 和生产写入认证主体契约。
+2. 完成 PostgreSQL 16 在线迁移、触发器、事务和并发验收。
+3. 完成本地身份、RBAC、审计和受控文件访问闭环。
+4. 建立知识版本审核、统一生产写事务、outbox 和索引一致性。
+5. 建立持久化 Worker、失败重试和重启恢复。
+6. 重构前端路由、登录、权限守卫和 `/api/v1` 客户端。
+7. 完成 API/Worker Windows Service、代理、备份恢复和升级回滚。
+8. 建立 Windows 与 Ubuntu Server 24.04 LTS CI。
+9. 锁定 Playwright 依赖并完成核心浏览器 E2E。
+10. 完成检索评测、安全降级、性能测试和发布验收。
 
 在真实 PostgreSQL、身份与权限、知识版本、可靠任务和 Windows 部署闭环完成前，项目应保持“开发/试点”状态，不应用于无人监督的现场检修决策。
 
