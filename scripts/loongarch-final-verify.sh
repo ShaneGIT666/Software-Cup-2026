@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Historical LoongArch/mock prototype verification only. "final" is part of
+# the legacy filename and does not mean current SRS release acceptance.
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

@@ -1,5 +1,6 @@
 -r requirements.txt
 
-# Optional local OCR enhancement. Keep these out of the default dependency set
-# so LoongArch/Kylin deployment can still use the conservative mock fallback.
+# Optional experimental local OCR adapter for development/evaluation only.
+# It is not part of the lightweight base dependency set. Production must use a
+# validated real adapter or report OCR unavailable; mock output is forbidden.
 rapidocr-onnxruntime>=1.4.0,<2.0.0

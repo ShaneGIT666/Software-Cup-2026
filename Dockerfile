@@ -1,5 +1,9 @@
 # syntax=docker/dockerfile:1
 
+# HISTORICAL PROTOTYPE CONTAINER ONLY. It does not provide the target
+# PostgreSQL/identity/v1-Web/proxy chain and is not a production or release
+# artifact. See scripts/README.md for the current evidence boundary.
+
 # Keep BASE_IMAGE configurable because LoongArch image availability differs
 # across Kylin/Loongnix/Docker Hub environments.
 ARG BASE_IMAGE=cr.loongnix.cn/library/python:3.11

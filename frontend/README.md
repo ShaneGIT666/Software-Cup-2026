@@ -28,7 +28,7 @@ npm run dev
 - 新生产客户端统一放入 `src/services/v1/` 并只访问 `/api/v1`；不得继续向旧 `api.ts` 增加生产功能。
 - Cookie 会话请求使用 `credentials: include`；写请求按 M1/OpenAPI 契约携带 CSRF token。
 - 授权身份、审核人和角色只来自服务端认证结果；前端不得发送 `reviewer`、`actorId` 或角色字段决定授权。
-- 客户端统一解析 v1 错误信封和 request ID。后端 OpenAPI 已为全部 v1 操作声明通用脱敏 500 并通过契约测试，可据此生成公共错误类型；真实浏览器接入仍须在 M6/D4 验证。
+- 客户端统一解析 v1 错误信封和 request ID。后端 OpenAPI 已为全部 v1 操作声明通用 `500/V1Response` 错误结构并通过契约测试，该证据只支持公共错误基类；它不证明显式 `HTTPException`/`AppError` 5xx 或服务端日志已完整脱敏。现有成功响应的 `data/items` 仍可为 `Any`，不得据此生成或锁定最终业务客户端；真实浏览器接入仍须在 M6/D4 验证。
 - 后端已在进程内验证 CORS 暴露 `ETag`；真实跨域浏览器读取并以 `If-Match` 回传仍待 E2E 验收。
 
 M6 的最新状态只在[现行追踪矩阵](../docs/requirements/current-traceability-matrix.md)维护；接入门槛和顺序参考[模块进度计划](../docs/design/module-build-progress-and-interface-plan.md)。

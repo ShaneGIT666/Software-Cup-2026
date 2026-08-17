@@ -1,3 +1,5 @@
+"""Historical prototype benchmark reporter; not current SRS release evidence."""
+
 from __future__ import annotations
 
 import json

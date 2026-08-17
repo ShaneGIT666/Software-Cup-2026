@@ -34,7 +34,7 @@ MUST/SHOULD/MAY 只表示需求优先级。实现进度必须使用以下独立�
 
 ### 1.1 当前原型与目标版本的关系
 
-截至 2026-08-17，目标版本尚未进入验收。MUST/SHOULD/MAY 表示目标优先级，不表示当前实现状态。当前状态、代码/迁移、自动测试、验收证据和未关闭问题统一在[现行需求追踪矩阵](current-traceability-matrix.md)更新；本文不再复制会随实现变化的模块状态表。
+MUST/SHOULD/MAY 表示目标优先级，不表示当前实现状态。当前状态、代码/迁移、自动测试、验收证据和未关闭问题统一在[现行需求追踪矩阵](current-traceability-matrix.md)更新；本文不再保存日期化提交、测试数量、迁移头或原型差异，避免实现变化时反复修改需求语义。
 
 旧检索、RAG、JSON、前端、脚本和容器材料只能作为“原型资产”记录。原型资产、文件存在、Mock、离线 SQL、进程内测试或历史报告都不能代替六级实现状态，也不能支持生产承诺。
 
@@ -126,7 +126,7 @@ MUST/SHOULD/MAY 只表示需求优先级。实现进度必须使用以下独立�
 - AUTH-01 MUST：除存活/就绪健康检查，以及当前启用认证模式的匿名登录入口（本地账户登录，或 OIDC 登录发起与授权回调）外，所有业务接口必须要求认证。匿名例外仅能用于建立身份，不得读取业务数据、下载附件或执行业务状态变更。
 - AUTH-02 MUST：写操作必须由后端依据用户身份和角色授权，不能信任前端传入的 reviewer。
 - AUTH-03 MUST：基础版在单一共享知识域中运行；检索、文档、附件和审核事件都必须先认证并执行相同的状态与角色权限检查。
-- AUTH-04 MUST：审核人不得审核自己提交的知识版本。少于两名合格审核人的部署不得上线审核发布功能；基础版不提供绕过该规则的配置例外。
+- AUTH-04 MUST：审核人不得审核自己提交的知识版本、流程版本、维修案例，以及会形成知识修订的反馈等受审核对象。每类启用的审核发布能力至少需要两名启用且具有对应审核权限的合格用户；不满足时该能力不得上线，基础版不提供绕过该规则的配置例外。
 - AUTH-05 MUST：系统管理员默认不具备内容审核权；若同一自然人同时被授予两种角色，仍受“不得自审”和审计规则约束。
 - AUTH-06 SHOULD：支持本地账户与 OIDC 两种认证模式，但一次部署只启用经管理员选择的模式。
 - AUTH-07 MUST：本地账户密码采用成熟密码哈希算法保存，禁止明文或可逆加密。
@@ -307,10 +307,10 @@ effective -> superseded / deprecated
 - DocumentScopeMetadata（基础版仅保存适用信息，不作为 ACL）。
 - Document、DocumentFile、DocumentParseTask。
 - KnowledgeItem、KnowledgeVersion、KnowledgeSourceLocation。
-- ReviewTask、ReviewDecision、AuditEvent。
+- KnowledgeReviewTask/Decision、CaseReviewTask/Decision、WorkflowReviewTask/Decision、AuditEvent。各领域拥有自己的审核记录表，只复用审核规则和公共身份 DTO，不建立跨领域通用审核 ORM。
 - Workflow、WorkflowVersion、WorkflowStep。
-- RepairCase、CaseAttachment。
-- RagQuery、RagAnswer、EvidenceReference、RagFeedback。
+- RepairCase、RepairCaseVersion、CaseAttachment。
+- RagQuery、RagQueryAttachment、RagAnswer、EvidenceReference、RagFeedback。查询附件元数据归 M5，不能写入 M2 文档、知识或案例私表。
 - IndexJob、ProviderCallRecord、SystemSettingMetadata。
 
 基础版设备型号和类型由知识管理员维护，支持界面增删改查及 UTF-8 CSV 导入；删除已被文档、知识、流程或案例引用的设备项时必须拒绝或改为停用。
@@ -318,7 +318,7 @@ effective -> superseded / deprecated
 ### 7.2 数据一致性
 
 - DATA-01 MUST：数据库是业务状态的唯一事实来源，向量索引和缓存是可重建派生数据。
-- DATA-02 MUST：关键写操作使用事务。会改变可对外观察业务事实、并已在[事件目录](../design/event-catalog.md)登记下游消费者的领域写操作，必须在同一事务中追加版本化 outbox 事件；索引、缓存或异步任务更新由 outbox 或经批准的等价可靠机制触发。未登记消费者的身份安全状态、登录尝试、限流计数、会话签发/活动续期/注销，以及 Worker 心跳/租约维护不发布业务 outbox，但仍必须满足认证主体、事务和审计要求。bootstrap 只允许在生产激活前执行。
+- DATA-02 MUST：关键写操作使用事务。会改变可对外观察业务事实、且对应事件在[事件目录](../design/event-catalog.md)中的生命周期已经冻结并登记实际消费者的领域写操作，必须在同一事务中追加版本化 outbox 事件；索引、缓存或异步任务更新由 outbox 或经批准的等价可靠机制触发。身份安全状态、登录尝试、限流计数、会话签发/活动续期/注销，以及 Worker 心跳/租约维护在没有冻结事件消费者时不发布业务 outbox，但仍必须满足适用的认证主体和事务要求。审核、权限、配置等安全相关动作按 NFR-OBS-02 审计；被动会话活动续期以及 heartbeat/lease 不逐次写业务审计事件，改由结构化日志和指标记录。bootstrap 只允许在生产激活前执行。
 - DATA-03 MUST：所有业务主键使用与操作系统和部署节点无关的稳定 ID。
 - DATA-04 MUST：数据库保存 UTC 时间，界面按用户时区展示。
 - DATA-05 MUST：删除受审计数据默认采用逻辑删除；物理删除遵循保留策略。
@@ -360,11 +360,9 @@ effective -> superseded / deprecated
 | NFR-PERF-01 | MUST | 20 个并发交互请求下，检索 API 的 P95 不高于 2 秒。 |
 | NFR-PERF-02 | MUST | 普通非模型读写 API 的 P95 不高于 1 秒。 |
 | NFR-PERF-03 | MUST | LLM 调用具有可配置超时，默认不超过 30 秒。 |
-| NFR-PERF-04 | MUST | 目标版单文件默认上限 50 MB，可由管理员降低；当前原型普通上传为 10 MB、知识资料为 20 MB，属于待改造差异。 |
+| NFR-PERF-04 | MUST | 单文件默认上限 50 MB，可由管理员降低。 |
 | NFR-PERF-05 | MUST | 支持至少 5,000 份文档和 50,000 个有效片段，达到阈值前完成基准测试。 |
 | NFR-PERF-06 | SHOULD | 管理员可配置用户级和接口级限流。 |
-
-当前初始化脚本的真实 LLM 模式使用 60 秒超时；在 1.0 验收前必须调整为目标默认值，或经基准测试修订本需求并统一脚本、示例配置和验收口径。
 
 ### 9.3 可用性与恢复
 
@@ -448,6 +446,8 @@ uninstall.ps1
 ```
 
 安装和升级脚本必须可重复执行，失败时不得破坏现有数据库和文件。
+
+首次部署必须具有受限 provisioning 阶段：实例处于 `bootstrapped` 时，`live` 可以成功而 `ready` 必须保持失败；只有本机或显式可信管理来源可以访问设置页及完成登录、本人信息、CSRF、改密和登出的最小认证接口，其他业务接口与旧兼容表面继续阻断。符合激活条件的本地系统管理员完成改密并通过受控 CLI 激活后，实例达到 `active` 且 `/api/v1/health/ready` 成功，才允许正常业务流量。安装程序不得在尚未激活时报告部署完成。
 
 ### 10.2 Linux 部署
 
@@ -563,13 +563,13 @@ uninstall.ps1
 | 编号 | 模块 | 主要责任 | 独占代码/数据范围 | 上游依赖 | 可并行对象 |
 | --- | --- | --- | --- | --- | --- |
 | M0 | 契约与数据底座 | 配置、请求 ID、统一 v1 响应/错误、PostgreSQL 会话、Alembic、共享 outbox | `core/`、`db/`、`api/v1/router.py`、迁移基础设施、`main.py` 路由装配 | 无 | M1、M2、M3、M5、M6 可基于契约 Mock 同时开发 |
-| M1 | 身份与审计 | 本地账户/OIDC、会话、RBAC、当前用户、不可变审计事件 | `domains/identity/`、`domains/audit/`、`api/v1/auth.py`、`api/v1/users.py`、`api/v1/audit.py`、身份/审计表 | M0 | M2、M3、M6 |
+| M1 | 身份与审计 | 本地账户/OIDC、会话、RBAC、当前用户、受管服务主体、不可变审计事件 | `domains/identity/`、`domains/audit/`、`api/v1/auth.py`、`api/v1/users.py`、`api/v1/audit.py`、身份/审计表 | M0 | M2～M6 |
 | M2 | 文档、知识与案例版本 | 受控文件、文档元数据、解析任务、知识版本、维修案例、审核、发布 | `domains/documents/`、`domains/knowledge/`（含案例子域）、`api/v1/documents.py`、`api/v1/knowledge.py` 及对应表 | M0；写操作接入 M1 的当前用户接口 | M3、M6；M5 使用约定的检索端口 Mock |
 | M3 | 设备与作业流程 | 设备型号/类型、CSV 导入、流程草稿、流程版本、审核、匹配规则 | `domains/devices/`、`domains/workflows/`、对应路由和表 | M0；写操作接入 M1 的当前用户接口 | M2、M6；M5 使用约定的流程端口 Mock |
-| M4 | Worker 与索引 | 任务租约、重试、outbox 消费、索引世代、缓存/图谱失效 | `workers/`、`indexing/`、Worker 专用表 | M0；消费事件目录中已冻结的 M2/M3/M5 事件 | M6、M7；在相应事件契约冻结后接入生产者 |
-| M5 | 检索、RAG 与回答反馈 | 有效版本过滤、证据选择、流程/资料召回、查询/回答记录、回答反馈、唯一最终回答和安全降级 | `domains/rag/`（含反馈子域）、重构后的 `retrieval/`、`api/v1/search.py`、`api/v1/rag.py` 及对应表 | M1 的授权接口、M2/M3 的只读/修订提交端口、M4 的索引端口 | M6，可先用 Mock 实现 |
+| M4 | Worker 与索引 | 任务租约、重试、outbox 消费、失败任务管理、索引世代、缓存/图谱失效 | `workers/`、`indexing/`、`api/v1/operations.py`、Worker/索引专用表 | M0 ClaimPort；与 M2/M3/M5 共同提议事件，完成可定位 handler 和实际消费者登记后才允许目录冻结；解析结果只通过生产者公开的幂等完成/失败命令端口回写 | M6、M7；事件冻结与契约测试通过前不启用生产发布 |
+| M5 | 检索、RAG 与回答反馈 | 有效版本过滤、查询附件、证据选择、流程/资料召回、查询/回答记录、回答反馈、唯一最终回答和安全降级 | `domains/rag/`（含反馈和查询附件子域）、重构后的 `retrieval/`、`api/v1/search.py`、`api/v1/rag.py` 及对应表 | M1 的授权接口、M2/M3 的只读/修订提交端口、M4 的索引端口 | M6，可先用 Mock 实现 |
 | M6 | 前端重构 | 路由、登录、权限守卫、检索会话、任务中心、版本差异、证据选择 | `frontend/src/router/`、`stores/`、`views/`、`services/` | OpenAPI/DTO 契约；不直接依赖后端内部实现 | M1、M2、M3、M5 |
-| M7 | 部署、测试与运维 | Windows Service、备份恢复、CI、E2E、性能/安全测试、运行报告 | `deploy/`、`scripts/`、`tests/`、CI 配置 | 各模块公开 API、健康检查与验收样本 | 从 M0 开始持续并行 |
+| M7 | 部署、测试与运维 | Windows Service、备份恢复、CI、跨模块 E2E、性能/安全测试、运行报告 | `deploy/`、生产运维脚本、跨模块 E2E/性能/安全/部署验收测试和 CI 配置；各模块继续拥有自己的单元、契约和模块集成测试 | 各模块公开 API、健康检查与验收样本 | 从 M0 开始持续并行 |
 
 当前模块状态、代码/迁移、自动测试和未关闭问题统一在[现行需求追踪矩阵](current-traceability-matrix.md)维护。M0/M1 公共接缝分别以[M0 公共契约](../design/m0-public-contract.md)和[M1 设计](../design/m1-identity-audit-design.md)为准；本节只维护稳定的模块边界和接入门槛。
 
@@ -583,23 +583,24 @@ SRS 不再复制随每次实现变化的模块状态表。状态变化只更新�
 
 ### 14.2 并行开发前置条件
 
-以下项目必须在 M1～M7 开始合并业务代码前冻结，并以版本化 OpenAPI/DTO 或 `contracts/` 文档维护。变更必须经过接口所有者评审，并在同一合并请求中更新消费者契约测试：
+以下公共边界必须在相应模块接入该边界前冻结，并以版本化 OpenAPI/DTO 或 `contracts/` 文档维护。尚未依赖某边界的纯领域代码可以使用版本化 Mock 开发；切换真实依赖前必须经过接口所有者评审，并在同一逻辑变更中更新消费者契约测试：
 
 1. API 基础路径固定为 `/api/v1`；旧 `/api` 只维持兼容，禁止向旧接口新增生产功能。
-2. 所有 v1 响应使用 `success`、`data`、`error`、`meta.requestId` 信封；错误使用稳定 `error.code`，不得把堆栈、密钥、绝对路径写入响应。
+2. 所有 v1 响应使用 `success`、`data`、`error`、`meta.requestId` 信封；错误使用稳定 `error.code`，不得把堆栈、密钥、绝对路径写入响应。每个端点必须为成功 `data` 和分页 `items` 声明具体响应模型，不能只以 `Any` 作为生成客户端的最终契约。
 3. 普通业务身份上下文统一为 `CurrentUser` 依赖；内部任务使用受管服务用户身份。业务请求不得再传入 `reviewer`、角色、用户 ID 或权限范围来决定服务端授权。
 4. 分页统一采用 `limit` 与不透明 `cursor`；关键创建、审核、重试操作预留幂等键。其字段和错误码由 M0 维护。
 5. 领域模块各自拥有表、Repository、迁移脚本与数据回滚说明；任何模块不得直接写入其他领域表。跨领域读取走只读服务接口或显式查询端口。
 6. `main.py` 只负责中间件、异常处理和路由装配；除 M0 外的模块不得在其中直接新增业务逻辑。每个模块将路由注册到自己的 `api/v1/*.py`。
 7. `data_store.py`、`knowledge.py`、`services.py`、`schemas.py` 与 `frontend/src/App.vue` 视为旧原型兼容层，除关键缺陷修复外不得继续堆叠新生产功能。
-8. 所有生产持久化写操作都必须携带经过服务端认证且可审计的用户身份，并按操作类型遵守事务和审计契约。M2/M3/M5 中已在事件目录登记下游消费者的关键领域写操作，在一个数据库事务内提交业务状态、审计事件、outbox 事件和接口要求的幂等记录。M1 安全状态变更与审计同事务，仅在事件目录已冻结消费者时追加 outbox；认证维护和 Worker 租约等不发布业务 outbox，但分别使用当前用户或受管服务用户。M4 只消费 outbox，不直接修改 M2/M3/M5 领域记录。
-9. M2/M3/M5 只发布[事件目录](../design/event-catalog.md)中已经登记并冻结版本的事件。事件至少包含 `eventId`、`aggregateType`、`aggregateId`、`versionId`、`occurredAt`、`requestId` 和不含密钥的 payload；新增具体事件通常只更新事件目录、生产者/消费者契约和测试，不重复修改本 SRS。
+8. 所有生产持久化写操作都必须携带经过服务端认证且可审计的用户身份，并按操作类型遵守事务和审计契约。M2/M3/M5 中生命周期已冻结且已登记实际消费者的关键领域写操作，在一个数据库事务内提交业务状态、审计事件、outbox 事件和接口要求的幂等记录。M1 安全状态变更与审计同事务，仅在事件目录已有冻结消费者时追加 outbox；认证维护和 Worker 租约等不发布业务 outbox，但分别使用当前用户或受管服务用户。M4 只消费 outbox；需要反馈解析或索引任务结果时调用生产者公开的幂等命令端口，不直接修改 M2/M3/M5 领域表。
+9. M2/M3/M5 只发布[事件目录](../design/event-catalog.md)中生命周期已经冻结且已登记实际消费者的事件。生产者提交给 `OutboxWriter` 的 append input 不含 `eventId`，由 Writer 生成；持久化及交付信封至少包含 `eventId`、`aggregateType`、`aggregateId`、`versionId`、`occurredAt`、`requestId` 和不含密钥的 payload。新增具体事件通常只更新事件目录、生产者/消费者契约和测试，不重复修改本 SRS。
 10. M5 只通过“授权后的有效知识/流程/案例只读端口”获取上下文；回答反馈审核后需要形成知识修订时，只调用 M2 显式修订提交端口，不直接写 M2 表。M6 只通过 v1 API 与契约 Mock 访问后端，不导入后端内部模型。
-11. M2/M3/M5 接入真实身份依赖前，[当前追踪矩阵](current-traceability-matrix.md)必须显示 DATA-08、AUTH-11～AUTH-13 已达到所需门禁，并关联真实 PostgreSQL 与认证路由证据；门禁未满足时只使用版本化身份依赖 Mock。任何业务路由不得只因进程内测试通过就宣称已满足生产授权。
+11. M2/M3/M5 接入真实身份依赖前，[当前追踪矩阵](current-traceability-matrix.md)必须显示 DATA-08、AUTH-11、AUTH-12，以及 AUTH-13 的 M1 侧边界已经达到所需门禁：受管服务账户不变量、`CurrentUser`/typed actor 到审计输入的强类型传播、事件级 metadata 白名单和真实 PostgreSQL 认证路由证据均已关闭。完整 AUTH-13 仍随各领域生产写链逐项验收，不能反过来作为领域代码开始开发的循环前置；门禁未满足时只使用版本化身份依赖 Mock。
 12. 任何模块只能按第 1 节实现状态定义报告进度；代码文件存在只能支持“代码已搭建”，单元或进程内测试覆盖的状态对象最多支持“单元已验证”。存在未关闭冲突、缺少真实依赖验证或接口闭环时禁止写“已完成”。
 13. `/api/v1/health/ready` 的必需依赖策略归 M0 所有。领域 readiness 只返回脱敏健康状态，不得携带或降低 `required`；后续模块只新增自己的 contributor，不修改 `api/v1/system.py` 或另建健康聚合器。
 14. 旧 `/api`、`/uploads`、`/knowledge` 的迁移期保护由 M0 `APP_LEGACY_SURFACE_MODE` 统一实施。M1～M5 不得逐路由复制 guard；生产只允许 `disabled`。应用层阻断不替代 M2 的受控下载/物理退役或 M7 的代理纵深防御。
-15. M2/M3/M5 生产写事务只使用 M0 `OutboxWriter` 和 M1 `AuditWriter` 公共端口；二者都不 commit/rollback 或返回 ORM。只有事件目录已登记消费者的操作才调用 `OutboxWriter`；事件统一包含 `versionId`、`requestId`、`occurredAt`。M4 claim/lease 端口未冻结前不得直接导入 `OutboxEvent` ORM。
+15. M2/M3/M5 生产写事务只使用 M0 `OutboxWriter` 和 M1 `AuditWriter` 公共端口；二者都不 commit/rollback 或返回 ORM。只有事件目录中生命周期已冻结且已登记实际消费者的操作才调用 `OutboxWriter`；事件统一包含 `versionId`、`requestId`、`occurredAt`。M4 claim/lease 端口未冻结前不得直接导入 `OutboxEvent` ORM。
+16. M1 提供审核资格与容量的只读公共端口，按对应审核权限统计启用且未删除的合格用户；M2/M3/M5 的 readiness 通过该端口执行 AUTH-04 门禁，不得导入 M1 Repository 或建立共享审核 ORM。
 
 ### 14.3 集成顺序与合并门槛
 
@@ -613,8 +614,8 @@ M0 冻结契约/数据库基础
 ```
 
 1. 当前追踪矩阵显示 M0 公共契约达到“单元已验证”并冻结版本后，M1、M2、M3、M6、M7 可以同时进行不依赖真实集成的工作；M5 可使用 M2/M3 的版本化 Mock 端口并行实现。不得把“公共契约已冻结”写成“M0 功能已完成”。
-2. M1 先发布稳定的 `CurrentUser`、受管服务用户与审计端口；关闭 DATA-08、AUTH-11、AUTH-12、AUTH-13，通过认证路由和真实 PostgreSQL 集成测试后，M2/M3/M5 才将后端生产写操作接入真实身份依赖。Windows Service、代理/备份恢复和 M6 浏览器 E2E 仍是产品发布门槛，但不阻塞已通过 PostgreSQL 验收后的后端领域接入。此前使用契约 Mock，不得自行实现第二套登录或权限判断。
-3. M2/M3/M5 在事件目录冻结各自需要异步消费的事件后，M4 才接入对应真实 outbox；在此之前可用目录中的事件样例测试消费者，不得轮询或直接修改领域数据。
+2. M1 先发布稳定的 `CurrentUser`、受管服务用户、typed actor、审核资格/容量与审计端口；关闭 DATA-08、AUTH-11、AUTH-12 和 AUTH-13 的 M1 侧门槛，通过认证路由和真实 PostgreSQL 集成测试后，M2/M3/M5 才将后端生产写操作接入真实身份依赖。完整 AUTH-13 随各领域写链继续验收。Windows Service、代理/备份恢复和 M6 浏览器 E2E 仍是产品发布门槛，但不阻塞已通过上述门槛的后端领域接入；此前使用契约 Mock，不得自行实现第二套登录或权限判断。
+3. M2/M3/M5 与 M4 先共同提议需要异步消费的事件和样例；M0 冻结 ClaimPort 后，M4 按提议契约实现 handler、去重/重放和失败恢复，并登记实际消费者。只有生产者、消费者和契约测试闭合后，事件目录才冻结该版本并允许生产者启用发布；M4 不得轮询或直接修改领域数据。
 4. M2/M3 提供只读端口、M4 提供索引状态后，M5 切换 Mock 为真实依赖；M6 同步完成端到端联调。
 5. 任一模块合并前必须满足：模块级单元测试、契约测试、数据库迁移可升级和可降级说明、无跨模块私有导入、`git diff --check` 通过。影响公开契约时必须同时更新 API 文档和消费者测试。
 6. 每次代码、配置、迁移、脚本、测试或文档修改都必须在变更说明中标明所属模块（M0～M7）；跨模块修改必须列出主责模块和协作模块，禁止使用“通用修改”等无归属描述。

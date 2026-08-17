@@ -4,6 +4,9 @@ param(
     [int]$Port = 8000
 )
 
+# Historical demo prototype only; this does not verify /api/v1 readiness,
+# PostgreSQL, identity, HTTPS/proxy, or the target Web client.
+
 $ErrorActionPreference = "Stop"
 
 $existing = docker ps -aq --filter "name=^/$ContainerName$"

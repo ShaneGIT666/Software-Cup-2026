@@ -1,3 +1,5 @@
+"""Legacy JSON/mock prototype smoke; never a production-readiness verdict."""
+
 from __future__ import annotations
 
 import json
@@ -50,6 +52,10 @@ def run_step(checks: list[dict[str, Any]], name: str, func: Callable[[], dict[st
 
 
 def main() -> int:
+    print(
+        "WARNING: legacy prototype offline smoke only; not production readiness.",
+        file=sys.stderr,
+    )
     started = time.perf_counter()
     checks: list[dict[str, Any]] = []
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -268,6 +274,8 @@ def main() -> int:
 
     report = {
         "success": True,
+        "scope": "legacy-prototype-offline-smoke",
+        "productionReady": False,
         "durationMs": round((time.perf_counter() - started) * 1000, 2),
         "checks": checks,
     }

@@ -3,6 +3,8 @@ param(
     [switch]$SkipFrontendBuild
 )
 
+# Historical competition demo package only; not a product release package.
+
 $ErrorActionPreference = "Stop"
 
 $projectRoot = Resolve-Path (Join-Path $PSScriptRoot "..")

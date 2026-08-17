@@ -4,6 +4,8 @@ param(
     [switch]$SkipFrontendBuild
 )
 
+# Historical LoongArch/demo prototype only; not a production or release build.
+
 $ErrorActionPreference = "Stop"
 $ProjectRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 

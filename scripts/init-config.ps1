@@ -14,7 +14,8 @@ $EnvPath = Join-Path $Root ".env"
 $GitIgnorePath = Join-Path $Root ".gitignore"
 
 function Show-Help {
-    Write-Host "Initialize local configuration for Software Cup maintenance assistant."
+    Write-Host "Initialize legacy prototype Provider/mock configuration only."
+    Write-Warning "This script does not generate PostgreSQL, M1 identity, idempotency, controlled-storage, or production deployment configuration."
     Write-Host ""
     Write-Host "Usage:"
     Write-Host "  powershell -ExecutionPolicy Bypass -File .\scripts\init-config.ps1 -Mode offline"
@@ -57,6 +58,8 @@ if ($Help) {
     Show-Help
     exit 0
 }
+
+Write-Warning "Legacy prototype configuration only; this is not a product or production configuration initializer."
 
 if (-not $Mode) {
     Write-Host "Select run mode:"
@@ -135,9 +138,8 @@ Write-Host "  Base URL: $displayBaseUrl"
 Write-Host "  Model: $displayModel"
 Write-Host "  API Key: $(Mask-Key $ApiKey)"
 Write-Host ""
-Write-Host "Next start commands:"
-Write-Host "  .\backend\.venv\Scripts\python.exe -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000"
-Write-Host "  cd frontend; npm.cmd run dev"
+Write-Host "Windows development start (legacy prototype only):"
+Write-Host "  .\dev.bat start"
 Write-Host ""
 Write-Host "Validate provider status:"
 Write-Host "  powershell -ExecutionPolicy Bypass -File .\scripts\validate-provider.ps1"

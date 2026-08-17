@@ -9,4 +9,5 @@ if (-not (Test-Path $PythonExe)) {
 }
 
 Set-Location $RepoRoot
+Write-Warning "Legacy prototype offline smoke only: this does not call /api/v1/health/ready or verify PostgreSQL, authentication, proxy, or production deployment."
 & $PythonExe (Join-Path $PSScriptRoot "production_readiness_check.py")

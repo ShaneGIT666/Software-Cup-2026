@@ -15,6 +15,9 @@ param(
     [switch]$NonInteractiveSsh
 )
 
+# Historical remote demo deployment only; not a supported product deployment
+# or evidence for the Windows default / Ubuntu CI target.
+
 $ErrorActionPreference = "Stop"
 
 function Invoke-Remote {

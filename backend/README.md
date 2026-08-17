@@ -2,16 +2,18 @@
 
 FastAPI 后端正在从演示原型迁移为模块化单体。旧业务接口保留在 `/api`，用于前端与测试兼容；所有新增生产接口使用 `/api/v1`。
 
-## 模块 0：单元已验证的基础代码
+## 模块 0：记录 019 已单元验证的基础子范围
 
-- `core/`：严格 `APP_` 前缀配置、请求 ID、稳定 v1 响应、脱敏 `INTERNAL_ERROR/500` 与公共错误模型。
+- `core/`：严格 `APP_` 前缀配置、请求 ID、稳定 v1 信封、未捕获异常响应体的 `INTERNAL_ERROR/500` 脱敏和公共错误模型。
 - `core/`：受控 CORS/浏览器来源及 `ETag` 暴露、可信代理客户端地址、M0-owned 强类型 readiness、旧表面集中保护、敏感身份响应 `no-store`、列表分页信封和公共错误码契约。
 - `db/`：SQLAlchemy 2、PostgreSQL 连接/就绪状态、独立短事务、脱敏数据库 503、共享元数据根、事务 outbox 写端口和关键写操作的幂等记录服务。
 - `alembic/`：基础、幂等、M1 身份、`0005` outbox 契约及 `0006` 受管服务身份/实例生命周期迁移；领域模型通过 M0 的发现入口登记到 `Base.metadata`。
 - `/api/v1/health/live`：进程存活检查。
 - `/api/v1/health/ready`：规范生产预检路径，聚合基础配置、数据库和领域 contributor；生产环境即使设置 `APP_DATABASE_REQUIRED=false` 也不能把 PostgreSQL 或关键模块降为可选。
 
-M1 已有本地账户、会话/CSRF、独立账号/来源限流、同一授权快照、事务外 Argon2 校验与签发前复验、用户/角色管理、审计查询、固定受管服务身份、bootstrap 与 activation CLI 代码。`/api/v1/auth/*`、`/users*`、`/roles`、`/audit-events` 已由预留注册表自动装配，OpenAPI 可识别 Session Cookie、CSRF header、匿名登录、权限要求和全部 v1 操作的通用脱敏 500；`AuditWriter` 只返回不可变结果，不暴露 ORM。该范围的实现状态为“单元已验证”。`0006` 只完成离线 SQL 生成检查，真实 PostgreSQL 16 在线迁移、触发器、锁/并发和回滚测试仍未执行，前端也未接入。旧 `/api` 与静态挂载仍物理存在，但 `APP_LEGACY_SURFACE_MODE=disabled` 可在应用层统一拒绝；生产环境只允许该模式。
+M0 已为全部 v1 操作声明通用 `500/V1Response` OpenAPI 错误模型，但这不等于所有运行时 5xx 路径都已脱敏。显式 `HTTPException`/`AppError` 5xx 响应及服务端日志脱敏仍是 P0 缺口；现有成功响应的 `data/items` 仍可为 `Any`，不是 M6 生成强类型客户端的最终契约。
+
+M1 已有本地账户、会话/CSRF、独立账号/来源限流、同一授权快照、事务外 Argon2 校验与签发前复验、用户/角色管理、审计查询、固定受管服务身份、bootstrap 与 activation CLI 代码。`/api/v1/auth/*`、`/users*`、`/roles`、`/audit-events` 已由预留注册表自动装配，OpenAPI 可识别 Session Cookie、CSRF header、匿名登录、权限要求和全部 v1 操作的通用 500 错误结构；`AuditWriter` 只返回不可变结果，不暴露 ORM。记录 019 覆盖范围的实现状态为“单元已验证”。`AuthenticatedActor` 值对象已存在，但 typed actor 到 `AuditWriter` 输入的强类型传播和事件级 metadata 白名单尚未闭环，后续生产写链不得绕过该门槛。`0006` 只完成离线 SQL 生成检查，真实 PostgreSQL 16 在线迁移、触发器、锁/并发和回滚测试仍未执行，前端也未接入。旧 `/api` 与静态挂载仍物理存在，但 `APP_LEGACY_SURFACE_MODE=disabled` 可在应用层统一拒绝；生产环境只允许该模式。
 
 M1 及后续领域模块只能新增自己的 `domains/<domain>/`、`api/v1/<domain>.py`、迁移和测试文件。v1 根路由与 readiness 分别从 M0 的固定注册表加载领域路由/contributor；readiness 预留 identity、documents、knowledge、devices、workflows、workers、indexing 和 rag。模块发现可选不等于生产依赖可选；八类目标模块在生产环境均由 M0 标记为必需。领域 contributor 只返回 M0 `ReadinessDetails` 白名单中的脱敏状态，无权设置 `required` 或扩展白名单值。领域团队不得直接编辑 `main.py`、`api/v1/router.py`、`api/v1/system.py`、`db/models.py` 或 `alembic/env.py`，不得复制旧表面 guard 或 `OutboxWriter`。
 
@@ -28,17 +30,21 @@ powershell -ExecutionPolicy Bypass -File .\scripts\init-config.ps1 -Mode offline
 .\dev.bat start
 ```
 
+`requirements.txt` 是当前开发/测试安装入口，仍含宽版本范围和测试依赖，不是已完成锁定与分层的生产依赖集。生产依赖锁定缺口以现行需求追踪矩阵为准。
+
 M1 本地账户基础依赖已包含 `argon2-cffi`。开发环境配置示例见仓库根目录 `.env.example`；运行 M1 前必须配置 PostgreSQL、执行 Alembic、设置 `APP_AUTH_SECRET` 和 `APP_IDEMPOTENCY_SECRET`，生产环境还必须使用 `Secure` 的 `__Host-` 会话 Cookie。不提供 HTTP 注册或激活入口。
 
 从仓库根目录执行：
 
 ```powershell
 .\backend\.venv\Scripts\python.exe -m backend.app.domains.identity.bootstrap --username <name> --display-name <name>
-# 首次管理员登录后必须先修改临时密码，再执行：
+# 标准首次引导中，首次管理员登录后先修改临时密码，再执行：
 .\backend\.venv\Scripts\python.exe -m backend.app.domains.identity.activation --username <name>
 ```
 
-从 `backend/` 目录执行时，将模块路径改为 `app.domains.identity.bootstrap` 和 `app.domains.identity.activation`。bootstrap 仅允许在无交互用户且实例状态为 `uninitialized` 时执行，并以受管 bootstrap 服务用户记账；它创建必须改密的首次管理员并把实例推进到 `bootstrapped`。activation 需要该管理员重新输入已修改的密码并持有 `system_admin` 角色，成功后把实例推进到 `active`；生产 readiness 在此前保持不健康。上述边界已通过单元测试，但尚未在真实 PostgreSQL 上验证，因此不能作为生产可用或集成完成证据。迁移期旧前端需要 `/api` 时保持 `APP_LEGACY_SURFACE_MODE=enabled`；仅本机直连可选 `loopback`；生产只允许 `disabled`。
+从 `backend/` 目录执行时，将模块路径改为 `app.domains.identity.bootstrap` 和 `app.domains.identity.activation`。bootstrap 仅允许在无交互用户且实例状态为 `uninitialized` 时执行，并以受管 bootstrap 服务用户记账；它创建必须改密的首次管理员并把实例推进到 `bootstrapped`。当前 activation 实现只要求候选账户是有效、已完成强制改密且持有 `system_admin` 角色的本地账户；它没有在数据模型中另行绑定 bootstrap 创建者。成功后实例进入 `active`；生产 readiness 在此前保持不健康。上述边界已通过单元测试，但尚未在真实 PostgreSQL 上验证，因此不能作为生产可用或集成完成证据。
+
+首次生产部署还必须执行 [SRS 第 10.1 节](../docs/requirements/software-requirements-spec.md)和 [M0/M1 部署就绪方案](../docs/design/m0-m1-deployment-readiness-plan.md)规定的受限 provisioning 阶段。`bootstrapped` 期间 `ready=503` 是预期状态，必须保留只供本机或明确可信管理来源完成登录、CSRF、本人改密和登出的最小身份路径；只有 activation 完成且 `ready=200` 后才开放普通业务流量。当前 M7 部署工件尚未实现该过程。迁移期旧前端需要 `/api` 时保持 `APP_LEGACY_SURFACE_MODE=enabled`；仅本机直连可选 `loopback`；生产只允许 `disabled`。
 
 健康检查：
 
@@ -66,7 +72,7 @@ GET http://127.0.0.1:8000/api/v1/health/ready
    .\.venv\Scripts\alembic.exe upgrade head
    ```
 
-连接串只放在 `.env`、Windows Service 环境或企业密钥管理系统中，禁止提交到 Git。后续领域模块创建 revision 前必须执行 `alembic heads` 并在修改日志记录实际 head；不得修改已经登记或应用的历史迁移。记录 019 工作区的当前单一 head 为 `20260817_0006`，且仅完成离线 SQL 生成检查；后续 revision 必须基于执行时的实际 head 新增。
+连接串只放在 `.env`、Windows Service 环境或企业密钥管理系统中，禁止提交到 Git。后续领域模块创建 revision 前必须执行 `alembic heads` 并在修改日志记录实际 head；不得修改已经登记或应用的历史迁移。记录 019 已提交快照登记的单一 head 为 `20260817_0006`，且仅完成离线 SQL 生成检查；后续 revision 必须基于执行时重新查得的实际 head 新增。
 
 ## 验证
 
@@ -74,4 +80,4 @@ GET http://127.0.0.1:8000/api/v1/health/ready
 .\backend\.venv\Scripts\python.exe -m pytest tests\test_module0_foundation.py tests\test_configuration_contract.py -q
 ```
 
-2026-08-17、提交 `7016029` 的阶段 1 工作区全量回归为 `259 passed, 25 skipped`；该结果是记录 017 的历史证据。记录 019 的 D1.2 工作区全量回归为 `271 passed, 25 skipped`，其中 3 项真实 PostgreSQL 和 22 项外部手册测试跳过；`20260817_0006` 只完成离线正向/反向 SQL 生成检查。当前未配置 PostgreSQL，因此对应范围的实现状态仍为“单元已验证”，不得作为真实数据库或生产集成证据。
+2026-08-17、提交 `7016029` 的阶段 1 工作区全量回归为 `259 passed, 25 skipped`；该结果是记录 017 的历史证据。记录 019 执行时的 D1.2 待提交变更全量回归为 `271 passed, 25 skipped`，后随该逻辑变更落入提交 `11bd05ba94b4`；其中 3 项真实 PostgreSQL 和 22 项外部手册测试跳过，`20260817_0006` 只完成离线正向/反向 SQL 生成检查。该历史结果仅支持其明确覆盖的“单元已验证”子范围，不得作为真实数据库或生产集成证据。

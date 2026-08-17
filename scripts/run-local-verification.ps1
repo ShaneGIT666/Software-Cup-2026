@@ -36,7 +36,7 @@ if (-not $SkipFrontendBuild) {
 }
 
 if (-not $SkipReadinessCheck) {
-    Write-Step "Production readiness check"
+    Write-Step "Legacy prototype offline smoke (not production readiness)"
     powershell -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "run-production-readiness-check.ps1")
 }
 

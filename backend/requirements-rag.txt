@@ -1,6 +1,6 @@
 -r requirements.txt
 
-# Optional Chroma vector store for non-LoongArch environments where chromadb
-# and chroma-hnswlib install cleanly. The competition LoongArch/Kylin route
-# uses the built-in SQLite vector store by default.
+# Optional experimental Chroma adapter for development/evaluation only.
+# The Windows x64 product target has not selected or validated a production
+# vector backend yet; installing this file does not make Chroma a deliverable.
 chromadb>=0.5.0,<2.0.0

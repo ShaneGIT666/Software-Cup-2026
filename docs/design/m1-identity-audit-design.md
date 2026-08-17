@@ -1,357 +1,268 @@
 # M1 身份与审计模块设计方案
 
-> 状态对象：M1 本地账户、受管服务主体与审计代码；实现状态：`单元已验证`。真实 PostgreSQL 在线/并发验收和前端接入未完成，OIDC 作为 M1.1 扩展。<br>
-> 主责模块：M1；协作模块：M0、M7。<br>
-> 关联记录：`2026-08-13-002-auth-entry-exception`、`2026-08-13-003-m0-m1-prerequisites`、`2026-08-13-004-m1-design`、`2026-08-13-005-m1-contract-gates`、`2026-08-13-006-m1-core-foundation`、`2026-08-13-007-m1-completion-audit`、`2026-08-13-008-m0-http-concurrency-contract`、`2026-08-13-009-m1-identity-persistence`、`2026-08-13-010-module-progress-audit`、`2026-08-13-011-m1-local-identity-http`、`2026-08-14-013-m0-m1-public-integration-gates`、`2026-08-17-016-stage0-contract-alignment`、`2026-08-17-017-m0-foundation-hardening`、`2026-08-17-018-current-document-baseline-closure`、`2026-08-17-019-d1-2-production-contract-closure`。
+> 文档性质：M1 稳定设计与公共接入契约；主责模块：M1；协作模块：M0、M2～M7。<br>
+> 当前实现状态、验证证据、迁移 head 和未关闭问题只在[现行需求追踪矩阵](../requirements/current-traceability-matrix.md)维护。
 
-页首状态和下述实施进度是 2026-08-17 设计复核快照；后续动态状态只更新现行需求追踪矩阵和修改日志。只有身份/审计需求语义、公共端口或模块边界变化时才修改本文。
+本文定义本地身份、可扩展 OIDC 边界、服务器会话、RBAC、受管服务主体、职责分离、实例生命周期和不可变审计。测试数量、阶段完成度、最新日志清单和精确文件清单不得复制到本文；只有需求语义、稳定端口、数据不变量或模块所有权变化时才修改本文。
 
-实施进度：P0～P2 及 D1.2 受管主体代码的实现状态为“单元已验证”。identity readiness 的必需策略仍由 M0 掌握；`AuditWriter` 不返回 ORM，OpenAPI 已声明 Cookie、CSRF、匿名面、权限和全部 v1 操作通用 500。D1.2 新增固定受管服务用户、非空审计 actor、可选 initiator、实例生命周期及 bootstrap/activation CLI，迁移 `20260817_0006` 已通过离线升级/降级 SQL检查。真实 PostgreSQL 在线迁移、不可变触发器、行锁/并发、回滚、旧表面物理退役及前端联调仍未验证，详见现行需求追踪矩阵和第 10、11 节。
+## 1. 目标与边界
 
-## 1. 目标与实施边界
+M1 为业务模块提供：
 
-M1 为后续业务模块提供本地账户、服务器会话、RBAC、当前用户上下文、职责分离和不可变审计事件。第一阶段只实现 `APP_AUTH_MODE=local`；OIDC 仅定义扩展接口，不在本次本地账户交付中接入第三方 SDK 或回调。
+- `CurrentUser`：已登录交互用户的请求身份、角色、权限和会话标识。
+- `AuthenticatedActor`：交互写入或受管内部任务的可审计主体，可携带原始发起用户。
+- 后端授权、本人复核隔离和审核容量查询。
+- 本地账户、会话、CSRF、密码、登录限流、用户/角色管理。
+- 单例身份实例生命周期、bootstrap、activation 和 identity readiness。
+- 与调用方事务同生共死、只追加且不泄露 ORM 的审计写端口。
 
-M1 的目标需求范围为 AUTH-01～AUTH-13、FR-IAM-01～FR-IAM-05、DATA-02～DATA-08 中与身份/审计相关的条款、API-01～API-07 中与 M1 HTTP 表面相关的条款、NFR-SEC-02/04/07、NFR-OBS-01～OBS-03；当前实现并未全部满足这些需求。其中 AUTH-11/12、DATA-08 和 AUTH-13 的 M1 主体/激活子范围已有进程内代码证据，但仍缺真实 PostgreSQL/代理验收，M2～M5 生产写链也尚未实现。M1 不迁移旧 `/api` 的业务功能，也不负责 M2/M3/M5 的知识审核、文档、附件、工作流、检索或回答反馈数据。
+M1 不拥有文档、知识、案例、设备、工作流、RAG 或反馈数据，不建立跨领域通用审核 ORM，也不迁移旧 `/api` 的业务语义。领域模块不得导入 M1 ORM、Repository、Cookie 或节流实现。
 
-```text
-浏览器
-  │  Cookie + X-CSRF-Token
-  ▼
-/api/v1/auth, /users, /audit ──> M1 API / DTO
-  │                                  │
-  │ CurrentUser / require_permissions│
-  ▼                                  ▼
-M2、M3、M5 公开端口            IdentityService / AuditWriter
-                                     │
-                                     ▼
-                       PostgreSQL users / sessions / audit_events
-```
+## 2. 所有权与依赖方向
 
-## 2. 开工门禁与已确认前置
+M1 所有权按稳定目录而非逐文件清单界定：
 
-### 2.1 已确认可复用的 M0 前置
-
-| 前置 | 复用方式 | 验证结论 |
+| 所有者 | 目录/表面 | 责任 |
 | --- | --- | --- |
-| v1 根路由和领域发现 | 新增 `api/v1/auth.py`、`users.py`、`audit.py` 的 `router` 即被自动装配 | 已加载 M1 预留模块名；未交付模块安全跳过 |
-| 领域模型发现 | 新增 `domains/identity/models.py`、`domains/audit/models.py` 并继承 `Base` | Alembic 读取 `Base.metadata` 前会发现模型 |
-| 迁移基础 | 首个 M1 revision 以 `20260813_0002` 为起点；生成前重查 head | 离线升级已生成 M0 两条迁移 |
-| 响应与分页 | 普通接口用 `v1_success()`；列表用 `v1_page()` 和 `PageRequest` | `data.items` / `meta.nextCursor` 已冻结 |
-| 游标与并发条件 | M1 列表复用 `encode_cursor()`/`decode_cursor()`；资源修改复用强 ETag/`If-Match` 帮助函数 | 已由 M0 第 008 号变更冻结并有契约测试 |
-| CORS | Cookie 会话复用 `APP_TRUSTED_ORIGINS` 与 M0 全局中间件 | 可信来源预检 200；非可信来源 400 |
-| 浏览器写来源 | 登录和 Cookie 写接口复用 `require_trusted_browser_origin()` | 独立于 CORS；缺失或不可信来源返回 403 |
-| 幂等 | 关键写接口以同一事务调用 `IdempotencyService` | HMAC 指纹、冲突/回放语义已冻结 |
-| 请求 ID 与错误处理 | 抛出 `AppError`，让 M0 返回 v1 错误信封 | request ID 已由中间件注入 |
+| M1 identity | `backend/app/domains/identity/` | 身份模型、Repository、服务、公共身份 DTO、授权、生命周期和 readiness contributor |
+| M1 audit | `backend/app/domains/audit/` | 审计模型、事件输入、Writer 和只读查询 |
+| M1 HTTP | `backend/app/api/v1/auth.py`、`users.py`、`audit.py` | `/api/v1` 身份与审计路由 |
+| M1 migrations | 新增 Alembic revision | 仅修改 M1 表及其约束；不得改写已登记或已应用的历史 revision |
+| M0 | `core/`、`db/`、v1 根路由、`main.py` | 公共信封、错误、Session、readiness 聚合、幂等和 outbox |
+| M2～M5 | 各自领域或 Worker 目录 | 审核对象、提交者、领域事务，以及事件级审计 metadata DTO；M4 仅通过公开命令端口回写领域结果 |
+| M7 | `deploy/`、CI 和验收工件 | PostgreSQL、代理、provisioning 入口、服务管理和跨平台验证 |
 
-### 2.2 已关闭的设计门槛
+依赖方向固定为“业务模块 -> M1 公共身份/审计端口 -> M1 私有实现”。M1 可以依赖 M0 公共端口，但不能读取 M0 私有 Session factory、复制数据库配置或修改总路由。
 
-| 门禁 | 问题 | 解决方案 | 所有者 |
-| --- | --- | --- | --- |
-| G1：身份专用错误码 | M0 当前仅登记公共错误码，M1 不能绕过登记自行发布新语义 | 已在 M0 `ErrorCode` 与公共契约登记身份错误码；匿名登录仍统一使用 `INVALID_CREDENTIALS` 防止账户枚举 | 已关闭；M1 主责、M0 协作 |
-| G2：审计查看者业务读取范围 | 角色矩阵允许审计查看者“只读查看有效知识和流程”，AUTH-09 却限制其只能读取审计和运行报告 | SRS 已以最小权限为准：基线 `auditor` 仅有 `audit:read`、`ops:read`；业务读取必须叠加 `technician` 并审计 | 已关闭；产品/SRS |
+## 3. 数据模型与数据库不变量
 
-G1 和 G2 已关闭，M1 可按本文实施公开 API。后续若改变错误码或角色基线，必须作为 M0 公共契约变更另行评审并增加日志，不得在 M1 私有实现中静默修改。
+所有主键为与操作系统和部署节点无关的稳定不透明 ID；数据库时间使用带时区 UTC。任何结构变化必须新增迁移并附回滚说明。
 
-## 3. 新建文件与所有权
-
-M1 只能创建或修改下列文件。不得编辑 M0 的 `main.py`、`api/v1/router.py`、`core/`、`db/models.py`、`db/domain_models.py`、`alembic/env.py` 和 M0 迁移。
-
-```text
-backend/app/
-  domains/
-    __init__.py
-    identity/
-      __init__.py
-      models.py              # User、Role、会话、限流和 IdentityInstanceState
-      contracts.py           # 权限码、CurrentUser、AuthenticatedActor
-      usernames.py           # 唯一用户名规范化策略
-      repository.py          # IdentityRepository；只访问 M1 表
-      passwords.py           # Argon2id 哈希与校验
-      sessions.py            # 随机会话令牌、CSRF 与过期判断
-      http_contracts.py      # M1 私有 HTTP DTO，禁止放入旧 schemas.py
-      http_responses.py      # 统一 Cookie/no-store 响应帮助
-      authorization.py       # require_permissions、职责分离断言
-      dependencies.py        # get_current_user、require_permissions 的 FastAPI 依赖
-      service.py             # 会话创建和安全状态复验基础服务
-      login.py               # 登录短读、事务外哈希、短写编排
-      commands.py            # 登出、本人改密命令
-      admin.py               # 用户/角色/状态/重设密码编排
-      transactions.py        # 基于 M0 new_session() 的身份快照/活动续期适配器
-      bootstrap.py           # 一次性初始管理员 CLI，不提供 HTTP 注册接口
-      activation.py          # 初始管理员改密后的显式实例激活 CLI
-      service_accounts.py    # 固定受管服务用户及稳定身份
-      oidc.py                # M1.1 接口桩；M1.0 不导入 Authlib
-    audit/
-      __init__.py
-      models.py              # AuditEvent
-      contracts.py           # 审计事件输入/脱敏查询视图
-      writer.py              # 同事务 AuditWriter
-      repository.py          # 仅查询，游标分页
-  api/v1/
-    auth.py                  # 匿名登录、登出、me、CSRF、本人改密
-    users.py                 # 用户、状态、角色、管理员重设密码
-    audit.py                 # 审计只读查询
-backend/alembic/versions/
-  20260813_0003_m1_identity_audit.py
-  20260813_0004_m1_login_throttle_buckets.py
-  20260817_0006_managed_service_identity.py
-tests/
-  test_m1_identity_passwords.py
-  test_m1_identity_sessions.py
-  test_m1_authorization.py
-  test_m1_identity_repository.py
-  test_m1_identity_dependencies.py
-  test_m1_identity_api.py
-  test_m1_users_api.py
-  test_m1_audit_api.py
-  test_m1_bootstrap.py
-  test_m1_managed_service_identity.py
-  test_m1_postgres_integration.py
-docs/design/
-  m1-identity-audit-design.md
-docs/change-log/
-  <本模块后续逻辑变更日志>
-```
-
-M1 可以修改的共享文件只有经过 M0 评审的 `core/error_codes.py`、`.env.example`、`backend/requirements.txt`、M0 公共契约和 SRS；这些修改必须注明“主责 M1、协作 M0”，单独记录并先更新消费者契约测试。
-
-## 4. 数据模型与不变量
-
-所有时间存 UTC，所有 ID 使用 UUID 字符串，不采用 Windows 用户名、磁盘路径或系统账户标识。
-
-| 表 | 核心字段 | 不变量与索引 |
+| 表 | 核心字段 | 强制不变量 |
 | --- | --- | --- |
-| `users` | `id`、`username_normalized`、`display_name`、`password_hash`、`auth_source`、`is_active`、`auth_version`、`must_change_password`、`version`、时间戳、逻辑删除时间 | `username_normalized` 全局唯一；仅 `auth_source=local` 有密码哈希；禁用或安全变更递增 `auth_version` |
-| `roles` | `id`、`code`、`display_name`、`is_system` | 固定种子角色代码唯一；不允许 API 删除系统角色 |
-| `user_roles` | `user_id`、`role_id`、分配者、分配时间 | `(user_id, role_id)` 唯一；权限取并集，但职责分离规则优先 |
-| `auth_sessions` | `id`、`token_digest`、`user_id`、`auth_version`、`csrf_digest`、绝对/空闲过期、最近活动、撤销信息 | 仅保存令牌和 CSRF 摘要；每请求检查用户启用状态及 `auth_version`；撤销后不可复用 |
-| `login_throttle_buckets` | `bucket_type`、`bucket_hmac`、失败计数、窗口、锁定时间 | 账号主体桶和来源桶独立计数；用户名/IP 不以明文存储；成功登录只清理账号桶，避免替来源上的其他攻击者清零 |
-| `login_throttles` | 历史 `0003` 组合维度表 | 为保持历史迁移不可变暂时保留，新登录代码不再读写；是否清理须待在线升级与数据迁移评审后新建迁移 |
-| `audit_events` | `id`、`occurred_at`、`actor_user_id` 可空、`action`、`target_type/id`、`result`、`request_id`、`metadata` | 只追加；无 HTTP 更新/删除接口；迁移阻止 `UPDATE`、`DELETE` 和 `TRUNCATE`；用户采用逻辑删除，审计外键使用 `RESTRICT` 保留操作人引用 |
+| `users` | `id`、规范化用户名、显示名、`password_hash`、`auth_source`、`service_key`、`is_active`、`auth_version`、`must_change_password`、`version`、时间与逻辑删除 | `auth_source in {local, oidc, service}`；local 必须有密码且无 service key；oidc/service 无本地密码；service 必须有唯一 service key，非 service 不得有 |
+| `roles` / `user_roles` | 固定角色、系统标记、授予人和授予时间 | 角色码唯一；服务主体不通过客户端管理接口授予或修改 |
+| `auth_sessions` | token/CSRF 摘要、用户、`auth_version`、绝对/空闲期限、活动与撤销字段 | 不保存明文 token；每次授权重新检查会话、用户状态和版本 |
+| 登录限流表 | 规范化账号主体与可信来源的独立 HMAC bucket、窗口、计数和锁定时间 | 账号维度和来源维度均独立生效；不能只使用二者组合 |
+| `identity_instance_state` | 单例 ID、`lifecycle`、`version`、激活时间和激活用户 | ID 固定为 `identity`；生命周期只允许 `uninitialized -> bootstrapped -> active`；仅 active 可填写激活字段 |
+| `audit_events` | `id`、时间、非空 `actor_user_id`、可空 `initiator_user_id`、动作、目标、结果、request ID、JSON metadata | actor 外键非空且 `RESTRICT`；initiator 若有也 `RESTRICT`；只追加，普通业务接口不得更新、删除或截断 |
 
-角色种子及权限码：
+`audit_events.metadata` 在存储层使用 JSON，不代表调用方可传任意映射。每个事件必须先由封闭的事件级 metadata DTO 构造；通用敏感键过滤只作为最后一道防线。
 
-```text
-technician        knowledge:read, workflow:read, case:create, feedback:create
-reviewer          knowledge:read, workflow:read, knowledge:review, workflow:review,
-                  case:review, feedback:review
-knowledge_manager knowledge:read, workflow:read, document:write, knowledge:write, workflow:write
-system_admin      iam:users:read, iam:users:write, iam:roles:write, ops:read
-auditor           audit:read, ops:read
-```
+## 4. 角色、权限与审核容量
 
-`system_admin` 不隐含审核权限；同一自然人同时具有 `reviewer` 和提交能力时，仍由 `ensure_not_self_review()` 拒绝审核自身提交内容。M2/M3/M5 接入时必须传入提交者 ID，禁止比较展示名。
+### 4.1 稳定角色与权限
 
-## 5. 身份、安全与会话设计
+目标权限码及基础角色映射如下。新增、重命名或移除权限属于 M1 公共契约及种子数据变化，必须附迁移/兼容策略和授权测试。
 
-### 5.1 配置
+~~~text
+technician:
+  knowledge:read, workflow:read, case:create, feedback:create
 
-M1 增加以下 `APP_AUTH_*` 键；密钥只来自 Windows Service 环境、部署密钥存储或受控 `.env`，不得回传给浏览器。
+reviewer:
+  knowledge:read, workflow:read,
+  knowledge:review, workflow:review, case:review, feedback:review
 
-```text
-APP_AUTH_MODE=local                     # local | oidc，一次部署只启用一种
-APP_AUTH_SECRET=<随机高熵密钥>             # 会话/CSRF HMAC，生产必填
-APP_SESSION_COOKIE_NAME=repair_session            # HTTP 开发默认；生产改为 __Host-repair_session
-APP_SESSION_TTL_MINUTES=480
-APP_SESSION_IDLE_TIMEOUT_MINUTES=30
-APP_SESSION_COOKIE_SECURE=true
-APP_AUTH_MAX_LOGIN_FAILURES=5
-APP_AUTH_LOGIN_WINDOW_SECONDS=900
-APP_AUTH_LOCK_SECONDS=900
-```
+knowledge_manager:
+  knowledge:read, workflow:read,
+  document:write, knowledge:write, workflow:write, device:write
 
-生产环境 Cookie 配置必须拒绝非安全 Cookie 和非 `__Host-` 名称；M1 任一登录或身份依赖入口必须调用 `validate_identity_runtime_settings()`，在 `APP_AUTH_SECRET` 缺失、少于 32 字节或配置为尚未交付的 OIDC 模式时返回稳定的 503 错误。M0 全局 CORS/健康检查装配不得因尚未交付的 M1 路由缺少密钥而阻断旧兼容进程启动；M1 对外启用后，M7 生产预检或 M0 就绪扩展必须把认证运行时校验纳入发布门槛。开发环境允许明确设置 `APP_SESSION_COOKIE_SECURE=false`，此时 Cookie 名不得使用浏览器要求 `Secure` 的 `__Host-` 前缀；该值不得成为生产默认。
+system_admin:
+  iam:users:read, iam:users:write, iam:roles:write,
+  ops:read, ops:write
 
-### 5.2 本地账户
+auditor:
+  audit:read, ops:read
+~~~
 
-- 使用 `argon2-cffi` 的 Argon2id；参数由 M1 集中配置，密码哈希不得进入审计、日志、API 响应或幂等响应。
-- `POST /auth/login` 对用户名、密码失败返回同一 `INVALID_CREDENTIALS`，不枚举账户状态；锁定时记录审计但对外仍使用泛化错误。
-- 会话令牌使用 `secrets.token_urlsafe()` 生成，数据库仅保存 HMAC/SHA-256 摘要；Cookie 必须 `HttpOnly`、`SameSite=Lax`、`Path=/`，生产使用 `Secure`。若采用 `__Host-` 前缀，则不得设置 `Domain`。
-- 对 Cookie 认证的所有状态变更接口要求 `X-CSRF-Token`。CSRF token 由服务器使用 `APP_AUTH_SECRET` 和当前原始会话令牌按独立 HMAC purpose 确定性派生，数据库只保存其摘要；因此 `GET /auth/csrf` 可在页面刷新后重新计算，而无需保存明文。比较必须使用常量时间函数。
-- M0 CORS 白名单只作为浏览器响应策略；M1 登录及所有 Cookie 写请求还必须在执行业务前验证 `Origin`/受控 `Referer` 与 `APP_TRUSTED_ORIGINS`。匿名登录没有既有 CSRF token，因此尤其不能只依赖 CORS。生产浏览器来源必须显式配置；无 Origin 的非浏览器客户端若有需求，应另行定义非 Cookie 认证方式，不得静默绕过来源检查。
-- 改密、账号禁用、角色变更和管理员重设密码递增 `auth_version`，撤销受影响会话；本人改密保留当前会话并推进其安全版本，同时撤销其他会话。`must_change_password` 为真时，服务端权限依赖只允许本人信息、CSRF、改密和登出，不能仅依赖前端限制。
-- 初始管理员通过本地 CLI 创建，要求实例生命周期为 `uninitialized`、交互用户库为空、显式用户名和密码输入；不提供公共注册、默认密码或 HTTP bootstrap。单例生命周期行使用数据库行锁串行化并发引导，bootstrap 受管服务用户作为 actor，每次操作生成独立 request ID，初始管理员必须改密。改密后再以系统管理员凭据运行 `activation.py` 显式切换到 `active`；生产 readiness 在激活前保持失败。上述行为已有单元测试，真实 PostgreSQL 行锁、约束和触发器仍待 D2。
+`system_admin` 不隐含任何内容审核权限。`auditor` 不隐含业务知识、流程或附件读取权；确需读取时必须显式叠加 `technician`，并按安全访问规则审计。角色在服务端解析，禁止根据前端隐藏、Cookie 内容或请求体中的角色/权限授权。
 
-### 5.3 OIDC 扩展（M1.1）
+### 4.2 不得自审与容量门禁
 
-`oidc.py` 仅先定义 `IdentityProvider` 接口与 `LocalIdentityProvider`。后续启用 OIDC 时新增 `OidcIdentityProvider`、授权状态/nonce/PKCE 表和 `GET /auth/oidc/start`、`GET /auth/oidc/callback`；必须安装并锁定 OIDC 依赖后再实施。不得在 M1.0 添加伪 OIDC 回退或同时启用本地/OIDC 登录。
+`ensure_not_self_review()` 只负责单次决定中的“当前用户 != 提交者”。每个拥有审核/发布能力的领域还必须通过 M1 公共 reviewer capacity 端口检查至少两名不同、启用、未删除、非服务主体且具有相应审核权限的交互用户：
 
-## 6. 对外 HTTP 接口
+~~~python
+class ReviewCapability(str, Enum):
+    KNOWLEDGE = "knowledge"
+    WORKFLOW = "workflow"
+    CASE = "case"
+    FEEDBACK = "feedback"
 
-所有接口位于 `/api/v1`，返回 M0 信封。除表中标明的匿名接口外，一律依赖 `CurrentUser`。所有状态变更接口要求 CSRF；标有“幂等”的接口另要求 `Idempotency-Key`。`If-Match` 使用用户 `version`，并发冲突返回 `VERSION_CONFLICT`。
+@dataclass(frozen=True)
+class ReviewerCapacity:
+    capability: ReviewCapability
+    eligible_user_ids: tuple[str, ...]
 
-| 方法与路径 | 认证与权限 | 请求 / 响应要点 | 审计与幂等 |
+class ReviewerCapacityPort(Protocol):
+    def get(self, session, capability: ReviewCapability) -> ReviewerCapacity: ...
+    def require_publish_capacity(self, session, capability: ReviewCapability) -> None: ...
+~~~
+
+M1 只根据身份、状态和权限计算资格，不读取领域审核表。`require_publish_capacity()` 固定执行 SRS 的两人下限，不接受可下调的请求参数。M2/M3/M5 负责把能力映射到审核对象，并在启用/发布该能力前调用容量门禁；少于两人时必须失败关闭，基础版没有配置绕过。
+
+## 5. 身份、会话与安全
+
+### 5.1 运行配置
+
+~~~text
+APP_AUTH_MODE=local|oidc
+APP_AUTH_SECRET=<独立高熵密钥>
+APP_PASSWORD_PEPPER=<独立高熵密钥>
+APP_SESSION_COOKIE_NAME=repair_session
+APP_SESSION_ABSOLUTE_MINUTES=<正整数>
+APP_SESSION_IDLE_MINUTES=<正整数>
+APP_LOGIN_WINDOW_SECONDS=<正整数>
+APP_LOGIN_MAX_FAILURES=<正整数>
+APP_TRUSTED_PROXY_CIDRS=<显式 CIDR 列表>
+~~~
+
+生产配置缺失、密钥不足或请求的认证模式没有可用 Provider 时必须失败关闭，不得降级为匿名、本地回退或 Mock。密钥不得进入代码库、前端、普通日志、readiness details 或 API 响应。
+
+### 5.2 本地账户与登录事务
+
+- 用户名先执行唯一规范化策略，再查询和限流；匿名失败统一返回 `INVALID_CREDENTIALS`，不得泄露账号存在、锁定或删除状态。
+- 密码使用成熟的 Argon2id 实现。凭据短读完成后在数据库事务外校验哈希；成功后在写事务内重新验证用户启用、未删除、密码凭据未变化且 `auth_version` 一致，再签发会话。
+- 登录失败必须在受控短事务中同时更新账号/来源独立限流 bucket，并以 authentication 服务主体写脱敏审计，然后才返回匿名错误。抛出 HTTP 错误不得回滚已决定持久化的失败记录。
+- Cookie 只保存随机会话令牌；数据库保存摘要。会话具有绝对和空闲期限、`Secure`、`HttpOnly`、`SameSite=Lax` 和固定 Path。
+- 所有建立或使用 Cookie 会话的浏览器写请求先复用 M0 Trusted Origin 校验；已登录写请求还必须校验与当前原始会话令牌绑定的 CSRF token。
+- 改密、禁用、角色变化和管理员重设密码在同一事务内递增 `auth_version`、撤销受影响会话、写审计和必要幂等记录。本人改密可以推进当前会话版本并仅撤销其他会话。
+- `must_change_password=true` 时，后端只允许本人信息、CSRF、改密和登出；前端限制不能替代后端门禁。
+
+`get_current_user()` 必须从同一数据库一致性快照读取会话、用户活动状态、两侧 `auth_version` 和角色集合，只构造 `CurrentUser`，不得提交或回滚调用方业务事务。被动会话活动续期使用独立短事务，只做条件更新并记录结构化日志/指标，不逐次写业务审计事件。
+
+### 5.3 OIDC 扩展
+
+`APP_AUTH_MODE=oidc` 只有在完整 OIDC Provider 适配器交付后才可启用。适配器必须包含授权发起/回调、state、nonce、PKCE、签名与 issuer/audience 校验、稳定用户映射、登出/会话策略、依赖锁定和迁移。M1 不假定某个 `oidc.py` 文件已经存在，也不以接口桩、配置枚举或本地回退冒充 OIDC 能力。
+
+## 6. 受管服务主体、生命周期与 provisioning
+
+### 6.1 固定服务主体
+
+受管服务账户是 M1 数据，不是各模块自行约定的 UUID：
+
+| service key | 稳定用户 ID | 用途 |
+| --- | --- | --- |
+| `authentication` | `20000000-0000-0000-0000-000000000001` | 匿名登录失败与认证子系统记账 |
+| `bootstrap` | `20000000-0000-0000-0000-000000000002` | 激活前一次性实例引导 |
+| `worker` | `20000000-0000-0000-0000-000000000003` | 后台任务与异步延续 |
+
+三者必须满足 `auth_source=service`、对应唯一 `service_key`、启用、未删除、无密码凭据且不可建立交互会话。调用方通过 M1 resolver 按 service key 获得 `AuthenticatedActor`，不得复制固定 ID、直接构造服务 actor 或创建第二套系统用户。Worker 延续用户发起的任务时，把原始用户放入 `initiator_user_id`；无真实发起人的周期任务保持为空。
+
+identity readiness 除运行配置和实例 lifecycle 外，还必须验证三条服务账户逐项满足稳定 ID、service key、认证来源、活动/删除状态和无密码不变量。任一缺失或漂移都必须使生产 readiness 失败，响应只返回 M0 白名单内的脱敏信息。
+
+### 6.2 bootstrap、provisioning 与 activation
+
+1. `uninitialized`：bootstrap 仅通过本地受控 CLI 执行，持有生命周期行锁，要求交互用户数为零且 bootstrap 服务主体有效；创建首个 `local system_admin`，强制临时密码更换，并推进到 `bootstrapped`。不提供 HTTP 注册、默认账号或默认密码。
+2. `bootstrapped`：这是受限 provisioning 阶段，不是正常生产就绪状态。`live` 可成功而 `ready` 必须失败；只允许 [SRS 10.1](../requirements/software-requirements-spec.md#101-windows-默认部署)规定的本机或显式可信管理来源访问受限设置页，以及登录、本人信息、CSRF、改密、登出最小接口。其他业务接口和旧兼容表面必须阻断。
+3. `active`：activation 只通过受控 CLI，先在事务外验证本地密码，再在持锁事务内复验用户仍为 `auth_source=local`、启用、未删除、`must_change_password=false` 且具有 `system_admin`。满足条件的任一本地系统管理员都可以激活；首个管理员只是常规路径，不是唯一合法激活人。激活写入用户、时间和审计。
+4. 实例达到 `active` 后仍须全部必需 readiness contributor 成功，代理才可放行正常业务流量。部署脚本只能编排这些端口，不得复制生命周期判断或在未激活时报告部署完成。
+
+激活后 bootstrap 永久拒绝再次执行。并发 bootstrap/activation 依赖 PostgreSQL 行锁和数据库约束，不能用“先查后改”或文件锁代替。
+
+## 7. 对外 HTTP 契约
+
+所有接口位于 `/api/v1` 并使用 M0 具体响应 DTO、错误信封、request ID、游标、ETag 和幂等契约。除表中匿名入口外均依赖 `CurrentUser`；Cookie 状态变更要求 Trusted Origin 和 CSRF。身份错误码只在 M0 公共错误目录登记，本文不复制错误码清单。
+
+| 方法与路径 | 认证与权限 | 请求/响应要点 | 审计与并发 |
 | --- | --- | --- | --- |
-| `POST /auth/login` | 匿名，仅 `local` 模式 | `{username,password}`；成功设置 Cookie，返回用户、权限、过期时间和 CSRF token | 登录成功/失败；限流；不幂等 |
-| `POST /auth/logout` | 当前用户 + CSRF | 无正文；撤销当前会话并清 Cookie | 登出；不幂等 |
-| `GET /auth/me` | 当前用户 | 返回用户 ID、显示名、角色、权限、会话到期、是否需改密 | 无 |
-| `GET /auth/csrf` | 当前用户 | 返回当前会话 CSRF token | 无 |
-| `PUT /auth/password` | 当前用户 + CSRF | `{currentPassword,newPassword}`；改密后保留当前会话并撤销其他会话 | `password.changed`；幂等 |
-| `GET /users?limit&cursor&status` | `iam:users:read` | `data.items`；不得返回密码哈希、令牌、限流明细 | 无 |
-| `POST /users` | `iam:users:write` + CSRF | `{username,displayName,initialPassword,roles}` | `user.created`；幂等 |
-| `PATCH /users/{id}` | `iam:users:write` + CSRF + `If-Match` | 仅展示名等非安全资料 | `user.updated`；不幂等 |
-| `PATCH /users/{id}/status` | `iam:users:write` + CSRF + `If-Match` | `{isActive,reason}`；禁止禁用自己和最后一个启用管理员 | `user.disabled/enabled`；幂等 |
-| `PUT /users/{id}/roles` | `iam:roles:write` + CSRF + `If-Match` | `{roles,reason}`；替换集合，禁止修改自己/移除最后管理员 | `user.roles_changed`；幂等 |
-| `PUT /users/{id}/password` | `iam:users:write` + CSRF + `If-Match` | `{temporaryPassword,reason}`，标记强制改密 | `user.password_reset`；幂等 |
-| `GET /roles` | `iam:users:read` | 固定角色及权限说明，不返回内部配置 | 无 |
-| `GET /audit-events?limit&cursor&actorId&action&from&to` | `audit:read` | 脱敏 `data.items`；只允许白名单过滤与时间倒序 | 无 |
+| `POST /auth/login` | 匿名，仅当前启用模式 | 本地模式接收用户名/密码；成功设置 Cookie 并返回具体会话/用户 DTO | 成功/失败按主体规则审计；限流；不幂等 |
+| `POST /auth/logout` | 当前用户 + CSRF | 撤销当前会话并清 Cookie | 显式登出审计；不发布业务 outbox |
+| `GET /auth/me` | 当前用户 | 用户 ID、显示名、角色、权限、期限、是否需改密 | 只读 |
+| `GET /auth/csrf` | 当前用户 | 当前会话 CSRF token | 只读 |
+| `PUT /auth/password` | 当前用户 + CSRF | 当前密码、新密码；保留当前会话并撤销其他会话 | 审计；幂等 |
+| `GET /users` | `iam:users:read` | 游标列表和白名单过滤；不返回凭据、令牌或限流明细 | 只读 |
+| `POST /users` | `iam:users:write` + CSRF | 本地用户、临时密码、基础角色 | 审计；幂等 |
+| `PATCH /users/{id}` | `iam:users:write` + CSRF + `If-Match` | 仅非安全资料 | 审计 |
+| `PATCH /users/{id}/status` | `iam:users:write` + CSRF + `If-Match` | 启用/禁用；保护本人和最后启用管理员 | 审计；幂等 |
+| `PUT /users/{id}/roles` | `iam:roles:write` + CSRF + `If-Match` | 服务端替换角色集合；保护本人和最后管理员 | 审计；幂等 |
+| `PUT /users/{id}/password` | `iam:users:write` + CSRF + `If-Match` | 管理员设置临时密码并强制改密 | 审计；幂等 |
+| `GET /roles` | `iam:users:read` | 固定角色和权限的具体 DTO | 只读 |
+| `GET /audit-events` | `audit:read` | 脱敏游标列表；仅白名单过滤和稳定时间顺序 | 只读 |
 
-M1 已由 M0 登记的错误码：
+provisioning 阶段的路由暴露以第 6.2 节和 [SRS 10.1](../requirements/software-requirements-spec.md#101-windows-默认部署)为准；表中存在路由不表示 `bootstrapped` 阶段全部可访问。
 
-```text
-INVALID_CREDENTIALS        ACCOUNT_LOCKED          ACCOUNT_DISABLED
-SESSION_EXPIRED            CSRF_INVALID            SELF_REVIEW_FORBIDDEN
-LAST_ADMIN_PROTECTED       PASSWORD_POLICY_VIOLATION AUTH_MODE_UNAVAILABLE
-```
+## 8. 供业务模块使用的公共端口
 
-## 7. 服务接口供 M2/M3/M5 复用
+### 8.1 身份与授权
 
-M1 只公开下列 Python 端口，领域消费者不得导入 M1 Repository、ORM 实体或 Cookie 实现：
-
-```python
+~~~python
+@dataclass(frozen=True)
 class CurrentUser:
     id: str
     roles: frozenset[str]
     permissions: frozenset[str]
     session_id: str
 
+@dataclass(frozen=True)
+class AuthenticatedActor:
+    user_id: str
+    kind: ActorKind
+    initiator_user_id: str | None = None
+
 def get_current_user(...) -> CurrentUser: ...
 def require_permissions(*permissions: str): ...
 def ensure_not_self_review(current_user: CurrentUser, submitter_user_id: str) -> None: ...
+def resolve_managed_actor(service_key: ManagedServiceKey, initiator_user_id: str | None = None) -> AuthenticatedActor: ...
+~~~
 
-class AuditWriter:
+交互写入从 `CurrentUser` 派生 `AuthenticatedActor(kind=interactive)`；受管内部写入只能由 resolver 从数据库中验证过的服务账户生成。API 不接受 `actorId`、`initiatorId`、`reviewer`、角色或权限字段来决定授权或审计归属。
+
+### 8.2 强类型审计门面
+
+业务模块接入生产写事务时使用如下目标门面，不直接提交裸 actor/initiator ID 或任意 metadata：
+
+~~~python
+class AuditMetadata(Protocol):
+    def to_safe_dict(self) -> dict[str, JsonScalar | list[JsonScalar]]: ...
+
+@dataclass(frozen=True)
+class AuditEventInput:
+    action: str
+    target_type: str
+    target_id: str
+    result: str
+    request_id: str
+    actor: AuthenticatedActor
+    metadata: AuditMetadata
+
+class AuditWriter(Protocol):
     def append(self, session, event: AuditEventInput) -> AuditAppendResult: ...
-```
+~~~
 
-M2/M3 中已在[事件目录](event-catalog.md)登记下游消费者的关键领域写操作，在一个事务中写入领域状态、经过认证的 `CurrentUser`、`AuditWriter.append()`、M0 outbox 与必要幂等记录，再提交。操作者、审核者、提交者均由服务器端身份确定；不得接受客户端 `reviewer`、`actorId`、角色或权限字段。
+Writer 把 `actor.user_id` 和 `actor.initiator_user_id` 映射到非空 actor/可空 initiator 列，返回不可变 `AuditAppendResult(event_id)`，不 commit/rollback、不返回 ORM。每个 action 使用专用构造器和 metadata 白名单；禁止把请求体、原始用户名/IP、Cookie、令牌、密码、连接串或路径直接写入目标或 metadata。需要关联账号/来源时使用独立 purpose 的 HMAC 摘要。
 
-M1 用户/角色/密码等安全状态变更必须与经过认证的 `CurrentUser`、审计、会话失效和必要幂等记录同事务；当前事件目录没有冻结任何 M1 安全事件消费者，因此不得为满足形式而发布 outbox。登录成功后的会话写入归属到完成认证的用户；登录失败和限流记账归属认证子系统受管服务用户。bootstrap 只允许在 `uninitialized` 状态执行并归属 bootstrap 服务用户，激活由完成改密的系统管理员执行；审计 actor 不再允许为空，并预留 `initiator_user_id` 供后续 Worker 保留原始发起人。该子范围已单元验证，真实 PostgreSQL 迁移、锁和回滚证据仍待 D2。
+### 8.3 领域事务与 outbox
 
-`AuditWriter.append()` 返回不可变 `AuditAppendResult(event_id)`，不返回 `AuditEvent` ORM；消费者不得根据 ORM 状态或私有字段建立业务逻辑。其通用敏感键脱敏只是最后一道防线，不替代事件级白名单 DTO。M1 登录事件不得把原始用户名、IP、Cookie、令牌或密码放入 `target_id`/`metadata`，只允许通用目标标识及带独立 purpose 的 HMAC 主体/来源摘要；M2/M3/M5 为每类安全事件定义允许的 metadata 字段，禁止把任意请求体直接传给 `AuditEventInput`。
+- 普通生产 HTTP 写操作使用服务端认证的 `CurrentUser`；内部任务使用 M1 resolver 产生的受管 actor，并按需保留 initiator。
+- 领域状态、审计、必要幂等记录，以及适用的 outbox append 必须在调用方拥有的同一事务中写入。
+- 只有[事件目录](event-catalog.md)中生命周期已冻结且登记实际消费者的事件才追加 outbox。预期消费者、Mock 或尚未实现的消费者不满足条件。
+- M1 安全状态、会话、登录尝试、限流、bootstrap 和 heartbeat/lease 在没有上述事件消费者时不为形式统一发布业务 outbox；它们仍遵守主体、事务、审计或日志/指标规则。
 
-### 7.1 身份依赖事务与一致性端口
+## 9. readiness、错误与日志边界
 
-`get_current_user()` 只负责解析凭据、读取同一授权快照并构造 `CurrentUser`，不得在调用方的业务 Session 上执行 `commit()`、`rollback()` 或提交幂等/审计/领域写入。空闲会话续期通过 `transactions.py` 的独立短事务端口完成；该端口只允许条件更新当前 `auth_sessions` 行，不能接收调用方业务 Session。
+- M1 contributor 只能返回 M0 `ReadinessDetails` 白名单字段；不得输出服务账户 ID、用户名、连接串、路径、异常文本或堆栈。
+- M1 路由抛出已登记的 `AppError`，由 M0 统一形成响应。M1 不创建第二套错误信封，也不自行把显式 5xx 的内部 message/details 暴露给客户端。
+- 普通结构化日志只记录 request ID、脱敏用户/主体标识和登记字段；原始凭据、token、Cookie、请求体与异常秘密不得写入。响应脱敏不等于日志脱敏。
+- 审计事件用于安全事实，不替代运行日志/指标；被动会话续期和 Worker heartbeat/lease 不逐次写业务审计。
 
-会话、用户活动状态、两侧 `auth_version` 和角色集合必须在同一数据库一致性快照中解析。可使用一条聚合查询，或使用显式只读事务的一致性快照；不得先读取会话/用户、再在可能跨提交边界的第二条查询读取角色。角色、禁用和密码安全变更仍在写事务中递增用户 `auth_version` 并撤销会话。
+## 10. 验收与变更门禁
 
-## 8. 已知冲突与解决方案
+### 10.1 自动化测试范围
 
-| 冲突 | 当前证据 | 风险 | 解决方案 |
-| --- | --- | --- | --- |
-| 旧 API 信任 `reviewer="operator"` | `schemas.py`、`frontend/src/api.ts` 仍向旧 `/api` 传 reviewer | 可伪造审核身份 | M1 不修改旧契约；M2/M3/M5 迁移到 v1 时删除该字段并改用 `CurrentUser`。生产发布前禁用或下线旧写接口。 |
-| 旧 `main.py` 有业务路由、静态数据挂载和硬编码旧 CORS | 旧 `/api` 和 `/uploads`、`/knowledge` 仍存在 | M1 若继续堆逻辑会破坏边界；旧端点仍不满足 AUTH-01 | M1 仅加领域子路由；不改 `main.py`。M2 负责受控下载并迁移业务端点，M7 在生产入口禁用旧写 API/静态数据暴露。 |
-| M0 公共错误码与 M1 语义 | 身份错误码已由 M0 登记并有契约测试 | 后续私自新增仍可能漂移 | G1 已关闭；新错误码继续走 M0 评审，不修改既有码含义。 |
-| 审计查看者权限文本 | SRS 与角色种子均为 `audit:read`、`ops:read` | 后续角色扩权可能意外读取知识 | G2 已关闭；业务阅读必须额外授予 `technician` 并审计。 |
-| 密码/OIDC 依赖状态 | `argon2-cffi==23.1.0` 已锁定并实测；OIDC SDK/接口尚未交付 | 配置 `oidc` 时不能建立身份 | M1.0 运行时显式返回 `AUTH_MODE_UNAVAILABLE`，不得回退本地或伪 OIDC；M1.1 另行设计迁移、依赖和路由。 |
-| 当前环境无 PostgreSQL 集成实例 | 已新增要求 `M1_TEST_POSTGRES_URL` 且数据库名以 `_test` 结尾的在线测试，当前 3 项均跳过 | 不能验证唯一约束、触发器、锁、会话失效和事务原子性 | M7 提供 PostgreSQL 16 CI 服务；M1 的 API/迁移集成测试不得用 SQLite 替代，也不得把 skip 计为成功。 |
-| `auth_version` 与会话并发 | 账号禁用/角色调整时旧会话可能继续使用 | 权限变更不及时生效 | 每次 `get_current_user()` 联表检查用户活动状态和版本；安全修改同事务递增版本、撤销会话。 |
-| 身份依赖提交调用方 Session | 已改为 `SessionIdentityResolver`/`SessionActivityRefresher` 各自使用 M0 `new_session()` | 真实连接池异常或隔离级别下仍可能出现差异 | 进程内“调用方 Session 零提交”已通过；保留 PostgreSQL 在线事务验证门槛。 |
-| 授权快照分步读取 | `resolve_session()` 已用单条聚合查询读取会话、用户和角色 | PostgreSQL 并发角色替换尚未实测 | SQL/单元证据已通过；M7 PostgreSQL 场景继续覆盖角色替换和账号禁用。 |
-| 客户端地址边界 | M0 `ClientAddressResolver` 与 `APP_TRUSTED_PROXY_CIDRS` 已提供，登录路由只消费解析结果 | 实际代理拓扑配置错误仍可能造成来源误判 | 进程内代理欺骗测试已通过；M7 必须用部署代理链验收。 |
-| 登录签发竞态 | 已拆为最小凭据短读、事务外 Argon2、写事务内账号/凭据/`auth_version`/限流快照复验 | 真实并发禁用/改密仍未实测 | 保留 PostgreSQL 并发测试门槛，失败不得签发会话。 |
-| 登录限流维度 | `0004` 新增独立账号/来源桶，登录失败同时更新两桶 | 锁等待、并发累计和窗口边界尚未在线验证 | 进程内 SQL/行为测试已通过；匿名响应继续统一，在线并发测试未通过前不标完成。 |
-| 数据库依赖异常映射 | M0 已统一映射为脱敏 `DEPENDENCY_UNAVAILABLE/503` | 真实数据库中断/连接池耗尽尚未验证 | M1 不自行捕获连接异常；M7 补在线中断与恢复测试。 |
-| 幂等 service 要求 HMAC 密钥 | M0 的 `request_fingerprint()` 要求 `APP_IDEMPOTENCY_SECRET` | 配置遗漏会在关键写操作时报 503 | M1 关键写路由调用前验证；M7 生产预检纳入发布门槛；测试显式注入测试密钥，不把密钥写入前端/日志。不得在 M0 全局装配阶段读取失败而阻断无 M1 路由的兼容进程。 |
-| 路由/模型相对发现 | M0 同时支持 `backend.app` 与 `app` 包路径 | 写死绝对包名会在另一启动方式失效 | M1 仅使用 M0 预留相对文件名和相对导入；新增路由/模型后分别从仓库根和 `backend/` 启动路径验证。 |
+- 密码策略、用户名规范化、会话绝对/空闲期限、CSRF、强制改密与 `auth_version`。
+- 匿名响应不可枚举、账号/来源独立限流、可信代理解析和登录事务外哈希/事务内复验。
+- 用户/角色/最后管理员保护、权限码迁移、`device:write`/`ops:write` 和不得自审。
+- 每类审核能力的两名合格用户容量门禁，包括不足、禁用、删除、服务用户和并发角色变化。
+- 三类服务账户的固定 ID/service key/认证来源/状态/无密码不变量，以及 identity readiness 失败关闭。
+- bootstrap、受限 provisioning、任一合格本地 system_admin activation、重复/并发执行与激活后阻断。
+- `AuthenticatedActor`、强类型审计输入、initiator 继承、metadata 白名单、敏感字段拒绝和 Writer 事务所有权。
+- 审计不可变、游标/过滤、显式 5xx 响应与普通日志脱敏。
 
-## 9. 实施顺序与验收
+### 10.2 集成与发布门禁
 
-1. 设计门槛已记录，配置契约、`argon2-cffi` 依赖和 `domains/` 骨架代码已搭建；这不代表身份功能完成。
-2. 模型、角色种子、`0003/0004` 迁移和审计触发器代码已搭建，单一 head 和离线升级 SQL已验证；真实 PostgreSQL 升降级、触发器和事务验证未完成。
-3. 密码、会话、CSRF、独立限流、`CurrentUser`、短事务授权快照和签发前复验已有代码与进程内测试；在线并发验证未关闭，功能未完成。
-4. 本地登录、`me/logout/password` API 已搭建，匿名 allowlist、Cookie、可信来源、CSRF、泛化登录错误和 no-store 已有进程内 API 证据。
-5. 用户、角色与审计查询 API 已搭建并接入 M0 分页、幂等、`If-Match` 和审计写入；最后管理员与会话失效仍待 PostgreSQL 并发验证。
-6. bootstrap/activation CLI、受管服务用户、非空审计主体和 OpenAPI/契约测试已搭建；OpenAPI 可机器识别 Session Cookie、`X-CSRF-Token`、匿名登录、`x-required-permissions` 和通用 500。M2/M3/M5 仍只能在 PostgreSQL 门槛关闭前使用身份契约 Mock，OIDC 单独进入 M1.1。
+- 专用 PostgreSQL 16 完成空库、存量库升级、受控降级/再升级、服务账户种子、回填、外键/非空/检查约束、触发器、行锁、并发和回滚验证；SQLite 和离线 SQL 不替代这些证据。
+- IIS/Caddy 或目标代理验证 HTTPS、Cookie、Trusted Origin、CSRF、可信代理链、`bootstrapped` 白名单和激活后正常放流。
+- M2/M3/M5 在强类型审计门面、审核容量、服务 readiness 和 PostgreSQL 门禁关闭前，只能使用版本化公共契约 Mock 开发纯领域逻辑，不得把 M1 私有实现作为生产依赖。
+- M6 使用具体 OpenAPI DTO 完成登录、强制改密、权限守卫、用户管理和错误恢复 E2E；前端不得传 reviewer/actor/roles 作为授权依据。
 
-最低验收：密码没有明文/可逆存储；登录失败不枚举用户；禁用/角色变更立即使会话失效；CSRF、CORS、限流、最后管理员保护、不得自审、审计追加写入和幂等回放均有 PostgreSQL 集成测试。每步完成后必须新建本地修改日志并更新索引。
-
-## 10. 当前完成度与后续合并门槛
-
-### 10.1 需求与实现状态入口
-
-M1 的逐需求状态统一在[现行需求追踪矩阵](../requirements/current-traceability-matrix.md)维护，覆盖 AUTH-01～AUTH-13、FR-IAM-01～05、DATA-02～08 中的 M1 适用条款、API-01～07 的适用性和 M1 非功能要求。本设计不再复制会随实现变化的状态表。
-
-读取顺序固定为：
-
-1. SRS 确认需求语义和优先级；
-2. 本设计确认 M1 边界与安全规则；
-3. 现行追踪矩阵确认最新六级状态、代码、迁移、测试和缺口；
-4. 修改日志确认带日期的验证环境和结果。
-
-状态变化只更新追踪矩阵和对应修改日志；只有 M1 边界、安全语义或公共端口变化时才修改本文。
-
-### 10.2 后续搭建不得突破的边界
-
-1. `20260813_0003` 已进入历史，不再编辑；新增字段、约束或索引必须创建以当前最新 head 为 `down_revision` 的新迁移。若其他模块先增加 revision，M1 必须先重查 head，不得自行制造多头。
-2. Repository 只访问 M1 表；API 通过 Repository/Service，不得直接查询 ORM。M2/M3/M5 只能导入 `CurrentUser`、授权断言和 `AuditWriter` 等公开端口，不得导入 M1 ORM/Repository。
-3. `get_current_user()` 每次请求必须校验 Session 未撤销、绝对/空闲期限、用户启用/未删除和 `auth_version`，并从服务器端角色重新计算权限；不得信任 Cookie、请求体或前端传入角色。
-4. 登录失败需要同时持久化限流计数和脱敏审计后再返回 `INVALID_CREDENTIALS`。实现不得因抛出 `AppError` 让失败记录随事务回滚；推荐服务返回失败结果，端点提交独立登录尝试事务后再构造 401。
-5. 用户禁用、角色变更、本人改密和管理员重置必须在同一事务中递增 `auth_version`、撤销相关会话、追加审计并完成幂等记录；本人改密可在同一事务内推进当前会话版本并只撤销其他会话。临时密码会话必须由服务端权限依赖限制到本人信息、CSRF、改密和登出。最后管理员判断和登录限流更新使用 PostgreSQL 行锁/等价原子语句，禁止“先查后改”的竞态。
-6. 登录/身份依赖入口首先调用 `validate_identity_runtime_settings()`；本地模式密钥少于 32 字节或 M1.0 配置 OIDC 时失败关闭。登录和 Cookie 写端点还必须复用 M0 可信来源配置执行服务端 Origin/Referer 校验，不能把 CORS 当作防 CSRF。`scripts/init-config.*`、Windows Service 和 Docker/CI 的认证配置属于 M7 协作项，在 M1 API 联调前补齐，但不得在脚本中生成或提交生产密钥。
-7. M1 路由只新增 `api/v1/auth.py`、`users.py`、`audit.py`，复用 M0 注册、CORS、错误信封、Session 和幂等服务；不得修改 `main.py` 或建立第二套路由/中间件/事务管理器。
-8. 旧 `/api` 与静态目录是兼容层，不因 M1 路由出现而自动受保护。M1 可以继续开发，但 1.0 生产验收前必须由 M2/M3/M5/M7 完成 v1 迁移或在部署入口禁用旧写接口和静态暴露，否则 AUTH-01/02/03 仍判失败。
-9. 用户名必须在 M1 单一函数中执行长度/字符策略和 Unicode NFKC + `casefold()` 规范化；登录不存在用户时仍执行固定的 Argon2id dummy hash 验证，避免通过响应时间枚举账户。登录来源 IP 只能来自 M0/M7 冻结的可信代理解析结果，禁止直接信任客户端 `X-Forwarded-For`。
-10. 空闲会话活动时间不得在每个读请求上无条件写库；Repository 使用可配置或冻结的最小刷新间隔做条件更新，并保证并发请求不会把 `idle_expires_at` 缩短，以降低热点会话行争用。
-11. M0 已通过第 008 号变更冻结不透明 cursor codec、强 ETag/`If-Match` 和可信浏览器来源规则。M1 在实现 `/users`、`/audit-events` 和 Cookie 写路由时必须直接复用这些帮助函数，不得形成与 M2/M3/M5 不同的第二套格式或来源判断。
-12. 身份相关响应（登录、`me`、CSRF、用户和审计数据）必须返回 `Cache-Control: no-store`；登录 Cookie 设置和清除统一由 M1 响应帮助函数生成，固定 `HttpOnly`、`SameSite=Lax`、`Path=/`、生产 `Secure` 且不设置 `Domain`，不得由各路由手写不同属性。
-13. `get_current_user()` 已不再提交调用方 Session；后续重构必须保持会话活动续期使用 M1 独立短事务，认证依赖不能拥有或结束业务事务。
-14. `resolve_session()` 已以单条聚合查询让会话、用户版本和角色处于同一数据库语句快照；M2/M3/M5 在在线并发验收前仍使用身份契约 Mock。
-15. 登录路由已依赖 M0/M7 统一可信客户端地址端口；后续不得直接解析或信任 `X-Forwarded-For`。
-16. 密码哈希验证在数据库事务外执行；签发会话前在写事务中重新校验用户活动状态、密码凭据标识和 `auth_version`。当前把 ORM User 跨验证阶段直接用于会话创建的流程不得进入路由。
-17. 登录限流已使用 `0004` 的独立账号桶和来源桶；历史 `(账号, 来源)` 表只为迁移历史保留，不得重新作为认证数据源。
-18. M0 数据库请求依赖已提供稳定的 503 错误映射；M1 路由不得用通用 `try/except` 复制连接失败处理。
-
-### 10.3 可继续开发的结论
-
-M1 的本地认证、用户/角色、受管服务主体、实例生命周期、审计与 bootstrap/activation 代码已位于既定领域目录；M0 只在 v1 root router 增加公共 500 OpenAPI 声明，未加入 M1 业务逻辑。P0～P2 和 D1.2 主体子范围的实现状态为“单元已验证”，但 M1 生产能力尚未完成。M2/M3/M5 可继续使用 `CurrentUser`/`AuthenticatedActor` 契约 Mock 开发纯领域逻辑；在 `20260817_0006` 真实 PostgreSQL 在线迁移、触发器、锁/并发、回滚和 API 验收通过前，不得把 M1 作为生产写路由的集成依赖，也不得导入 M1 Repository/ORM。M7 应接续 PostgreSQL 16、代理配置、认证预检和双平台测试；M2/M3/M5/M7 仍负责旧匿名 API 和静态目录退役。
-
-## 11. 搭建批次、接口与文件实施记录
-
-第 11 节保留原批次和完成条件供复核。第 011 号变更已搭建 P0～P2 所列代码并通过进程内测试；表中“完成条件”仍是后续真实 PostgreSQL/系统验收门槛，不表示需求已完成。
-
-### 11.1 P0：关闭认证路由前门槛
-
-| 所属模块 | 文件/接口 | 操作 | 完成条件与冲突规避 |
-| --- | --- | --- | --- |
-| M1 | `domains/identity/repository.py` | 修改 `resolve_session()` | 一次授权读取获得会话、用户版本、状态和角色；Repository 仍不提交事务 |
-| M1 | `domains/identity/transactions.py` | 新增 `SessionActivityRefresher` 端口/实现 | 自行创建并结束只更新会话行的短事务；不接收业务 Session |
-| M1 | `domains/identity/dependencies.py` | 修改 `get_current_user()` | 删除共享 Session `commit()`；注入续期端口；保持 M2/M3/M5 消费签名稳定 |
-| M1 | `domains/identity/repository.py`、`service.py` | 拆分凭据读取、事务外验证和签发前复验 | 不把 ORM User 跨事务作为已验证凭据；并发禁用/改密/版本变化必须拒绝签发 |
-| M1 | `domains/identity/repository.py`、`service.py` | 修改登录限流维度 | 分别限制规范化账号主体和可信来源；不得仅用 `(账号, 来源)` 组合绕过 NFR-SEC-07；若需改表则新建迁移 |
-| M0/M7 | `core/client_address.py` 及部署可信代理配置 | 新增 `ClientAddressResolver` | 默认使用直连地址；仅显式可信代理解析标准头；M1 不复制代理判断 |
-| M0 | `db/session.py` 或统一数据库依赖适配层 | 修改依赖错误映射 | 数据库未配置/不可连接时 v1 返回稳定 `DEPENDENCY_UNAVAILABLE/503`；不把连接串或驱动堆栈写入响应 |
-| M1/M7 | `tests/test_m1_identity_dependencies.py`、`test_m1_postgres_integration.py` | 修改/新增 | 证明调用方 Session 零提交、角色变更无交叉快照、并发续期不缩短期限 |
-
-P0 的授权快照未新增字段；独立限流维度确需变更模型，因此新增 `20260813_0004`。D1.2 另以 `20260817_0006` 新增受管服务用户、实例生命周期、审计 initiator 和非空 actor；没有编辑 `0001`～`0005`。两项后继迁移均尚未在真实 PostgreSQL 在线验收。
-
-### 11.2 P1：本地认证最小闭环
-
-| 所属模块 | 文件/接口 | 操作 | 完成条件与冲突规避 |
-| --- | --- | --- | --- |
-| M1 | `domains/identity/http_contracts.py` | 新增 Login/Me/CSRF/Password DTO | 不修改旧 `schemas.py` 或 M0 路由目录的非预留文件；响应不含哈希、令牌摘要或内部路径 |
-| M1 | `domains/identity/http_responses.py` | 新增 Cookie/no-store 帮助 | 所有属性集中生成，不复制到路由；原始会话令牌只进入 HttpOnly Cookie |
-| M1 | `domains/identity/service.py` | 扩展登出、本人信息、改密编排 | Service/Repository 不提交；改密、`auth_version`、撤销、审计和幂等同事务 |
-| M1 | `api/v1/auth.py` | 新增 `/auth/login`、`logout`、`me`、`csrf`、`password` | 复用自动路由注册、M0 来源/信封/幂等；不修改 `main.py`/根 router |
-| M1 | 审计事件白名单 DTO/常量 | 新增认证事件构造器 | 登录失败先提交节流和脱敏审计，再返回统一 `INVALID_CREDENTIALS` |
-| M1 | `tests/test_m1_identity_api.py` | 新增 API/OpenAPI/Cookie/CSRF 测试 | 匿名面只开放 login；全部身份响应 `no-store`；错误不枚举账户 |
-
-### 11.3 P2：用户、角色和审计管理
-
-| 所属模块 | 文件/接口 | 操作 | 完成条件与冲突规避 |
-| --- | --- | --- | --- |
-| M1 | `domains/identity/repository.py`、`service.py` | 扩展用户分页/创建/资料/状态/角色/重置密码 | 复用 cursor/ETag/幂等；最后管理员使用行锁；所有安全变更递增 `auth_version` |
-| M1 | `domains/audit/repository.py` | 新增只读 keyset 查询 | 每页重施 `audit:read`；过滤白名单；不提供更新/删除方法 |
-| M1 | `api/v1/users.py`、`api/v1/audit.py` | 新增用户/角色/审计路由 | 自动装配；不修改根 router；响应 no-store；不返回敏感内部字段 |
-| M1 | `domains/identity/bootstrap.py` | 新增一次性 CLI | 空用户库检查、交互密码、初始管理员和审计同事务；无 HTTP 注册接口 |
-| M1 | `tests/test_m1_users_api.py`、`test_m1_audit_api.py` | 新增契约与授权测试 | 覆盖最后管理员、自修改、幂等回放、ETag 冲突、游标和审计不可变 |
-
-若 P2 只使用现有字段和约束，不创建迁移；确需新增字段时必须以执行当日最新 Alembic head 创建新 revision，禁止修改 `20260813_0003`。
-
-### 11.4 可并行开发条件
-
-- P0 中 M1 Repository/依赖修正与 M0/M7 客户端地址解析可以并行，双方只通过 `ClientAddressResolver` 返回标准化地址字符串的端口对接。
-- P1 DTO/Cookie 帮助和 API 测试骨架曾与 P0 并行编写；P0 进程内测试通过后路由已由注册表发现，但真实数据库验收前不得标为生产可用。
-- P2 的审计只读 Repository 可与 P1 并行；用户安全写服务必须等待 P0 事务边界稳定，并复用 P1 审计事件构造规则。
-- M2/M3/M5/M6 可继续使用契约 Mock；M2/M3/M5 不导入 `identity.repository/models`，M6 不依赖 Cookie 的服务器内部格式。
+每个逻辑变更前读取 `docs/change-log/INDEX.md` 及受影响模块最近记录；完成后在 `docs/change-log/` 新增日志并更新 `INDEX.md`。修复缺陷必须增加对应测试。当前门禁状态和证据只更新追踪矩阵，不回填到本文。

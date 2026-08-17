@@ -1,5 +1,6 @@
 -r requirements.txt
 
-# Primary document parsing engine for PDF / DOCX / PPTX / XLSX / images.
-# Install this on machines that need real document layout parsing.
+# Optional heavyweight MinerU adapter for document-layout experiments.
+# It is not a lightweight base dependency or the selected production parser;
+# install it only on explicitly evaluated development/test machines.
 mineru[all]==3.2.3

@@ -12,7 +12,10 @@ FORCE="false"
 
 show_help() {
   cat <<'EOF'
-Initialize local configuration for Software Cup maintenance assistant.
+Initialize legacy prototype Provider/mock configuration only.
+
+WARNING: this script does not generate PostgreSQL, M1 identity, idempotency,
+controlled-storage, or production deployment configuration.
 
 Usage:
   bash scripts/init-config.sh --mode offline
@@ -82,6 +85,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "$MODE" ]]; then
+  echo "WARNING: legacy prototype configuration only; not a product or production initializer." >&2
   echo "Select run mode:"
   echo "  1. Offline demo fallback"
   echo "  2. Real LLM"
@@ -157,9 +161,8 @@ else
 fi
 echo "  API Key: $(mask_key "$API_KEY")"
 echo
-echo "Next start commands:"
-echo "  ./backend/.venv/Scripts/python.exe -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000"
-echo "  cd frontend && npm run dev"
+echo "No supported Linux product start entry exists in this repository."
+echo "This script only configures the legacy Provider/mock prototype; see scripts/README.md."
 echo
 echo "Validate provider status:"
 echo "  bash scripts/validate-provider.sh"
