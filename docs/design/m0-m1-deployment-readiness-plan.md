@@ -1,9 +1,9 @@
 # M0/M1 部署复核与后续无冲突接入方案
 
 > 复核日期：2026-08-17<br>
-> 状态对象：D1 公共端口代码；实现状态：`单元已验证`。D1.2、D2～D4 尚未完成。<br>
+> 状态对象：D1/D1.2 公共契约与 M1 生产身份边界代码；实现状态：`单元已验证`。D2～D4 尚未完成。<br>
 > 主责模块：M7；协作模块：M0、M1  
-> 关联记录：`2026-08-13-010-module-progress-audit`、`2026-08-13-011-m1-local-identity-http`、`2026-08-13-012-m0-m1-deployment-audit`、`2026-08-14-013-m0-m1-public-integration-gates`、`2026-08-17-016-stage0-contract-alignment`、`2026-08-17-017-m0-foundation-hardening`、`2026-08-17-018-current-document-baseline-closure`
+> 关联记录：`2026-08-13-010-module-progress-audit`、`2026-08-13-011-m1-local-identity-http`、`2026-08-13-012-m0-m1-deployment-audit`、`2026-08-14-013-m0-m1-public-integration-gates`、`2026-08-17-016-stage0-contract-alignment`、`2026-08-17-017-m0-foundation-hardening`、`2026-08-17-018-current-document-baseline-closure`、`2026-08-17-019-d1-2-production-contract-closure`
 
 本文中的状态和证据均为复核日快照；后续动态状态只更新现行需求追踪矩阵和修改日志。只有部署门禁、公共端口、拓扑或接入顺序改变时才修改本方案。
 
@@ -22,8 +22,8 @@
 
 | 状态对象 | 实现状态 | 证据与未关闭边界 |
 | --- | --- | --- |
-| M0 公共代码 | 单元已验证 | 严格环境枚举、运行时脱敏 500、CORS `ETag`、强类型 readiness、旧表面保护和 outbox 写端口有进程内/契约测试；OpenAPI 通用 500、真实 PostgreSQL/代理/浏览器未验收 |
-| M1 本地账户与审计代码 | 单元已验证 | 登录、会话/CSRF、用户/角色、审计、双桶限流和 identity readiness 有进程内测试；AUTH-13 服务用户/生产激活前 bootstrap 及真实 PostgreSQL 未验收 |
+| M0 公共代码 | 单元已验证 | 严格环境枚举、运行时及 OpenAPI 脱敏 500、CORS `ETag`、强类型 readiness、旧表面保护和 outbox 写端口有进程内/契约测试；真实 PostgreSQL/代理/浏览器未验收 |
+| M1 本地账户与审计代码 | 单元已验证 | 登录、会话/CSRF、用户/角色、审计、双桶限流、受管服务身份、实例激活边界和 identity readiness 有进程内测试；`0006` 仅完成离线 SQL 检查，真实 PostgreSQL 未验收 |
 | 本机兼容原型运行 | 代码已搭建 | Uvicorn、旧 JSON API 和构建后的前端可运行；这不是生产部署或 M1 集成证据 |
 | M0/M1 PostgreSQL 16 在线验收 | 未开始 | 本机无 PostgreSQL 服务、`psql`、Docker 和 `M1_TEST_POSTGRES_URL`；3 项在线测试跳过 |
 | Windows 生产服务目标 | 已设计 | `deploy/windows/` 当前无 Service、安装/升级/诊断/卸载或生产配置工件 |
@@ -36,6 +36,7 @@
 ### 2.2 分批验证证据
 
 - 2026-08-17、提交 `7016029`、记录 017：后端 `259 passed, 25 skipped`，其中 M1 真实 PostgreSQL 3 项和外部手册 22 项跳过；前端构建成功但有约 1.05 MB 大 chunk 警告；两种包导入路径均发现 15 个 v1 操作（14 个唯一路径）；`alembic heads` 返回 `20260814_0005`。这组证据只支持“单元已验证”。
+- 2026-08-17、记录 019 工作区：D1.2 增加全部 v1 操作的通用 500 OpenAPI 契约、固定受管服务身份、非空审计主体、实例生命周期和独立激活 CLI；迁移 head 为 `20260817_0006`，离线 upgrade/downgrade SQL 与单元/契约测试通过。未连接真实 PostgreSQL，因此仍只支持“单元已验证”。
 - 2026-08-14、记录 013：占位 PostgreSQL URL 下离线 `upgrade 20260814_0005 --sql` 成功；真实 Uvicorn 烟测得到 `/api/v1/health/live=200`、开发可选依赖模式的 `/api/v1/health/ready=200`、前端首页 `200`、M1 登录 `503 DEPENDENCY_UNAVAILABLE`。该证据未在记录 017 重跑，不得描述为 2026-08-17 本轮结果。
 - 2026-08-17、记录 017：进程内验证 `APP_DATABASE_REQUIRED=false` 不能把生产 PostgreSQL 降为可选；缺幂等密钥、HTTPS 来源、身份配置或目标关键 contributor 时 `/api/v1/health/ready=503 DEPENDENCY_UNAVAILABLE`。
 - 旧 `production_readiness_check.py` 的 7 项离线 mock 原型检查只覆盖旧 JSON/mock 链路；无论何时通过都不是 M0/M1 生产就绪证据。
@@ -60,8 +61,8 @@
 | P0（代码层已关闭） | `api/v1/system.py` 曾直接导入 M1 | 后续 contributor 会造成反向依赖和共享文件热点 | M0 聚合器和固定注册表已实现；领域只返回无 `required` 字段的 `ReadinessProbe` |
 | P0（部分关闭） | 旧 `/api`、`/uploads`、`/knowledge` 可绕过 M1 | 即使 v1 有认证，系统整体仍不满足 AUTH-01/02/03 | 应用层 guard 已验证且生产只允许 disabled；物理移除、代理拒绝和真实部署验收仍待 M2/M7 |
 | P0 | 无真实 PostgreSQL 在线迁移、触发器、锁/并发和 API 集成 | 无法证明审计不可变、最后管理员、限流和会话失效 | 建立专用 `_test` 数据库验收流水线，先于 M2/M3/M5 真实接入 |
-| P0 | 运行时已有脱敏 `INTERNAL_ERROR/500`，但 OpenAPI 无通用 500 声明 | M6 生成的客户端无法获得完整错误契约 | D1.2 同批补 OpenAPI 响应、错误模型引用和契约测试，完成前只标运行时“单元已验证” |
-| P0 | AUTH-13 所需受管服务用户和生产激活前 bootstrap 尚未实现 | 登录失败记账、Worker 或 bootstrap 可能缺少合规用户身份 | D1.2 先冻结主体 DTO/激活边界并实现测试；M2/M3/M5 不得自建系统 actor |
+| P0（代码层已关闭） | OpenAPI 曾缺少通用脱敏 `INTERNAL_ERROR/500` 声明 | M6 生成的客户端无法获得完整错误契约 | v1 根路由已统一声明公共错误模型并由契约测试覆盖；真实代理/浏览器仍按 D3/D4 验收 |
+| P0（代码层已关闭） | AUTH-13 曾缺少受管服务用户和生产激活前 bootstrap 边界 | 登录失败记账、Worker 或 bootstrap 可能缺少合规用户身份 | 固定服务身份、审计主体约束、实例状态、bootstrap/activation 已单元验证；M2/M3/M5 只能消费公共 actor 契约，不得自建系统 actor，数据库行为待 D2 |
 | P1 | 旧 `init-config.ps1` 只生成 Provider/mock 配置，并覆盖 `.env` | 部署人员可能误以为已经生成 M0/M1 安全配置 | 保留为旧演示脚本；产品配置使用 `deploy/windows/config/application.env.example`、外部密钥注入和 `preflight.ps1`，不承诺自动生成密钥的 `configure.ps1` |
 | P1 | `start-backend.ps1` 使用 `--reload`，缺环境时调用含机器路径假设的旧 Anaconda 脚本 | 不能作为 Windows Service 或可移植安装入口 | M7 创建无 reload、固定 3.11 运行时、显式配置文件的 Service 启动工件 |
 | P1 | 当前 Dockerfile 设置 production，却不提供 PostgreSQL、认证/幂等密钥、可信来源和旧入口隔离 | 传入部分密钥后可能产生 readiness 误判；默认仍是 mock 业务链 | 标为历史/开发容器；产品容器必须复用同一 preflight 和环境契约后再验收 |
@@ -156,7 +157,7 @@ app.domains.audit.AuditEventInput / AuditWriter
 - Route 层使用 `get_current_user()`/`require_permissions()`；Service 层显式接收 `CurrentUser`，不依赖 FastAPI Request。
 - `AuditWriter` 与领域状态和必要幂等记录在同一 `new_session()` 事务中写入；只有事件目录已登记消费者的操作才在该事务追加 outbox。
 - M2～M5 不导入 M1 `models.py`、`repository.py`、Cookie、会话令牌、节流或密码实现。
-- 普通业务的用户 ID、审核人、角色和权限只来自服务端 `CurrentUser`；请求 DTO 不再接受 `reviewer`、`actorId` 或角色声明决定授权。内部任务使用受管服务用户，当前 AUTH-13 主体端口尚未实现。
+- 普通业务的用户 ID、审核人、角色和权限只来自服务端 `CurrentUser`；请求 DTO 不再接受 `reviewer`、`actorId` 或角色声明决定授权。内部任务使用 `AuthenticatedActor` 表示的受管服务用户，并在异步延续时保留 `initiator_user_id`；M2/M3/M5 不得另造主体类型或固定 UUID。
 - `CurrentUser` 若将来增加站点/设备范围，必须版本化公共契约并更新所有消费者测试，不能让领域模块各自附加属性。
 
 ### 5.3 路由、模型和迁移所有权
@@ -165,7 +166,7 @@ app.domains.audit.AuditEventInput / AuditWriter
 - M3 只新增 `api/v1/devices.py`、`workflows.py` 与 `domains/devices|workflows/`。
 - M4 只新增 `workers/`、`indexing/`；M5 只新增 `api/v1/search.py`、`rag.py` 与 `domains/rag/`。
 - 上述模块名已在 M0 注册表预留，领域团队不得编辑 `api/v1/router.py`、`db/domain_models.py` 或把业务代码写入 `main.py`。
-- 截至 2026-08-17 的已验证迁移基线为单一 head `20260814_0005`。领域模型和测试可以并行；正式 revision 前先执行 `alembic heads`，由 M0 指定集成人员基于当次最新 head 串行生成。任何人不得修改已经登记或应用的历史 revision；`0001`～`0005` 是该复核基线下的历史范围，不是未来唯一受保护范围。
+- 截至记录 019 工作区的当前单一迁移 head 为 `20260817_0006`；它已经过离线 SQL 生成检查，尚未完成真实 PostgreSQL 在线验收。领域模型和测试可以并行；正式 revision 前先执行 `alembic heads`，由 M0 指定集成人员基于当次最新 head 串行生成。任何人不得修改已经登记或应用的历史 revision；`0001`～`0006` 均按历史 revision 保护，后续只能新增后继迁移。
 
 ## 6. Readiness 无冲突扩展设计
 
@@ -255,7 +256,7 @@ APP_LEGACY_SURFACE_MODE=enabled|loopback|disabled
 | M0 | `core/legacy_surface.py`、配置和测试 | 生产关闭旧 API/静态目录 | 不把阻断逻辑散落到旧路由 |
 | M0 | `db/outbox.py`、契约测试 | 冻结领域写入端口 | M2/M3/M4/M5 不直接操作 M0 ORM |
 
-以上文件均已创建并通过对应进程内/契约测试，对应实现状态为“单元已验证”；数据目录 preflight、OpenAPI 通用 500、AUTH-13 主体、真实 PostgreSQL、代理、Windows Service 和浏览器验收仍未完成。
+以上文件均已创建并通过对应进程内/契约测试；D1.2 另已补齐 OpenAPI 通用 500、AUTH-13 受管主体、实例激活边界及 `0006` 后继迁移，对应实现状态仍为“单元已验证”。数据目录 preflight、真实 PostgreSQL、代理、Windows Service 和浏览器验收仍未完成。
 
 ### 8.2 M7 Windows 工件
 
@@ -304,7 +305,7 @@ deploy/windows/
 D0 2026-08-17 / 7016029 代码基线
   -> D1 M0 readiness + 旧表面 + outbox 公共端口（单元已验证）
   -> D1.1 现行文档/追踪矩阵/事件目录收口
-  -> D1.2 OpenAPI 通用 500 + AUTH-13 主体/bootstrap 契约
+  -> D1.2 OpenAPI 通用 500 + AUTH-13 主体/bootstrap/activation 契约（单元已验证）
   -> D2 PostgreSQL 16 在线迁移与 M1 集成/并发验收
   -> D2A 允许 M2/M3/M5 后端写路由接入真实 M1（M5 仍等待其业务上游）
   -> D3 Windows Service、代理、配置和备份恢复验收
@@ -319,20 +320,21 @@ D0 2026-08-17 / 7016029 代码基线
 ### D1/D1.1：公共代码单元验证与文档基线收口
 
 - 记录 013、016、017 已搭建并单元验证 readiness contributor、当前代码已覆盖的生产不变量、旧表面保护和 `OutboxWriter`。
-- M1 `AuditWriter` 返回不可变结果，OpenAPI 已声明 Cookie、CSRF、匿名面和权限扩展；通用 500 声明仍待 D1.2。
+- M1 `AuditWriter` 返回不可变结果，OpenAPI 已声明 Cookie、CSRF、匿名面、权限扩展及通用脱敏 500。
 - `0005` 未修改 `0001`～`0004`；真实在线升级不属于本阶段证据。
 - 记录 018 收口现行追踪矩阵、事件目录、状态、证据来源和后续执行顺序。
 
-### D1.2：生产契约补缺
+### D1.2：生产契约补缺（单元已验证）
 
-1. 补齐 OpenAPI 通用 500 响应、错误模型引用和契约测试。
-2. 冻结并实现 AUTH-13 受管服务用户、登录失败记账主体和生产激活前 bootstrap 边界。
-3. 在 D1.2 完成前，M6 不把当前 OpenAPI 当作完整错误契约，M2/M3/M5 不自行实现系统 actor。
+1. v1 根路由已统一声明通用 500 响应和公共错误模型，契约测试覆盖全部 v1 操作。
+2. M1 已实现固定受管服务用户、登录失败记账主体、非空审计 actor、可选发起用户、生产激活前 bootstrap 和独立 activation 边界。
+3. `20260817_0006` 已完成离线 upgrade/downgrade SQL 检查；真实约束、触发器、种子、锁、并发与回滚行为仍由 D2 在线验证，D1.2 不据此提升到“集成已验证”。
+4. M6 可把当前 OpenAPI 作为通用错误类型输入；M2/M3/M5 必须复用 `AuthenticatedActor`/受管服务账户目录，不自行实现系统 actor。
 
 ### D2：真实 PostgreSQL 验收
 
 1. 创建空的 `*_test` 数据库和最小权限账户。
-2. 执行 `alembic heads`，记录实际 revision，再在线 `upgrade head`，检查 outbox 字段、表、种子、唯一约束和审计不可变触发器。
+2. 执行 `alembic heads`，记录实际 revision，再在线 `upgrade head`，检查 `0006` 实例状态/服务用户/审计主体变更以及 outbox 字段、表、种子、唯一约束和审计不可变触发器。
 3. 在 AUTH-13 与生产激活前 bootstrap 契约完成后执行 bootstrap，运行 M1 API、事务、锁和并发测试。
 4. 在隔离库验证受控 downgrade/再 upgrade；记录可逆性和数据影响。
 5. 只有全部通过后，M1 状态才能升级为“PostgreSQL 集成已验证”；旧入口未关闭前仍不能标“系统完成”。
@@ -345,20 +347,20 @@ D0 2026-08-17 / 7016029 代码基线
 
 ### D2A/D4：领域接入与前端发布
 
-- D1.2 与 D2 通过后，M2/M3/M5 后端写路由可从身份 Mock 切换到真实 `CurrentUser`/`AuditWriter`，并仅在事件目录已登记消费者时使用 `OutboxWriter`；不再错误等待 Windows Service 或 M6 前端。
+- D2 通过后，M2/M3/M5 后端写路由可从身份 Mock 切换到真实 `CurrentUser`/`AuthenticatedActor`/`AuditWriter`，并仅在事件目录已登记消费者时使用 `OutboxWriter`；不再错误等待 Windows Service 或 M6 前端。
 - M6 完成登录、CSRF、权限守卫和错误信封 E2E，连同 D3 作为产品发布门槛，而不是后端领域接入前置。
 
 ## 10. 并行开发与合并条件
 
 | 模块 | 现在可以并行 | 必须等待 | 禁止事项 |
 | --- | --- | --- | --- |
-| M0 | D1 公共端口已单元验证；补 OpenAPI 500并设计 M4 claim 端口 | D2 在线验证由 M7 提供环境 | 不加入领域业务；不修改 `0001`～`0005` |
-| M1 | 实现 AUTH-13 主体/bootstrap 边界并补 PostgreSQL 集成测试 | D1.2 后进入 D2 在线验收 | 不再扩展私有接口给 M2/M3/M5；不修改 M0 root router/readiness 聚合器 |
-| M2 | 领域模型、DTO、Service、存储端口和身份/outbox Mock 测试 | D1.2/D2 后接真实写路由；迁移基于执行时最新 head | 不扩展旧 `knowledge.py`/静态下载；不导入 M1 ORM/Repository |
-| M3 | 设备/流程领域和 Mock 测试 | D1.2/D2 后接真实身份；迁移基于执行时最新 head | 不默认绑定流程；不修改 M2 表 |
+| M0 | D1/D1.2 公共端口已单元验证；可设计 M4 claim 端口 | D2 在线验证由 M7 提供环境 | 不加入领域业务；不修改 `0001`～`0006` |
+| M1 | AUTH-13 主体/bootstrap/activation 边界已单元验证；补 PostgreSQL 集成测试 | 进入 D2 在线验收 | 不再扩展私有接口给 M2/M3/M5；不修改 M0 root router/readiness 聚合器 |
+| M2 | 领域模型、DTO、Service、存储端口和身份/outbox Mock 测试 | D2 后接真实写路由；迁移基于执行时最新 head | 不扩展旧 `knowledge.py`/静态下载；不导入 M1 ORM/Repository |
+| M3 | 设备/流程领域和 Mock 测试 | D2 后接真实身份；迁移基于执行时最新 head | 不默认绑定流程；不修改 M2 表 |
 | M4 | claim/lease 接口设计、事件消费者样例 | M0 claim 端口及事件目录中的对应生产者事件冻结 | 不轮询/修改 M2/M3/M5 私有表 |
 | M5 | 基于版本化只读 Mock 重构证据与安全规则 | M2/M3 read port、M4 索引状态 | 不查询其他领域 ORM；mock 不进入生产 |
-| M6 | 按已冻结 Cookie/CSRF/权限 DTO 开发 Mock 客户端 | D1.2 OpenAPI 500、D2/D3 后做真实浏览器 E2E | 不把当前 OpenAPI 当完整错误契约；不解析 Cookie 或传 reviewer/actor/roles 决定授权 |
+| M6 | 按已冻结 Cookie/CSRF/权限/通用错误 DTO 开发 Mock 客户端 | D2/D3 后做真实浏览器 E2E | 不解析 Cookie 或传 reviewer/actor/roles 决定授权 |
 | M7 | PostgreSQL、Windows 工件、CI、代理和备份测试 | 各模块公开契约 | 不在脚本复制领域逻辑；不把旧 mock readiness 当生产验收 |
 
 合并共同门槛：
@@ -372,13 +374,12 @@ D0 2026-08-17 / 7016029 代码基线
 
 ## 11. 下一批可执行计划
 
-D1 公共代码已由记录 013、016、017 达到“单元已验证”，D1.1 文档基线由记录 018 收口。下一批先完成 D1.2，再进入 D2：
+D1 公共代码已由记录 013、016、017 达到“单元已验证”，D1.1 文档基线由记录 018 收口，D1.2 由记录 019 达到“单元已验证”。下一批进入 D2：
 
-1. M0 补 OpenAPI 通用 500 声明和契约测试；M1 实现 AUTH-13 受管服务用户、登录失败记账主体和生产激活前 bootstrap 边界；
-2. M7 建立 PostgreSQL 16 专用 `*_test` 数据库和最小权限账户；
-3. 执行 `alembic heads` 并记录 revision，在线空库 `upgrade head`、受控 downgrade/再 upgrade，核对 outbox、限流和审计触发器；
-4. M1 执行 bootstrap、API、锁/并发、事务回滚和数据库中断/恢复测试；
-5. D2 通过后，M2/M3/M5 才接入真实身份/审计端口，并仅在事件目录已登记消费者时接入 outbox 写端口；此前继续使用公开契约 Mock；
-6. M7 另起变更实现 Windows Service/代理/备份恢复，M6 可并行开发 Mock 页面，但真实联调等待 D1.2/D2。
+1. M7 建立 PostgreSQL 16 专用 `*_test` 数据库和最小权限账户；
+2. 执行 `alembic heads` 并记录 revision，在线空库 `upgrade head`、受控 downgrade/再 upgrade，核对 `0006`、outbox、限流和审计触发器；
+3. M1 执行 bootstrap、改临时密码、activation、API、锁/并发、事务回滚和数据库中断/恢复测试；
+4. D2 通过后，M2/M3/M5 才接入真实身份/审计端口，并仅在事件目录已登记消费者时接入 outbox 写端口；此前继续使用公开契约 Mock；
+5. M7 另起变更实现 Windows Service/代理/备份恢复，M6 可并行开发 Mock 页面，但真实联调等待 D2。
 
 后续模块不得重复创建 readiness 聚合器、旧路由守卫或 outbox 写端口，也不得修改任何已经登记或应用的历史 revision。M4 的 `OutboxClaimPort` 是尚未搭建的新端口，需由 M0 另行冻结。

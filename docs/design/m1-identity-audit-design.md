@@ -1,18 +1,18 @@
 # M1 身份与审计模块设计方案
 
-> 状态对象：M1 本地账户与审计代码；实现状态：`单元已验证`。真实 PostgreSQL 在线/并发验收、生产写入认证主体、前端接入未完成，OIDC 作为 M1.1 扩展。<br>
+> 状态对象：M1 本地账户、受管服务主体与审计代码；实现状态：`单元已验证`。真实 PostgreSQL 在线/并发验收和前端接入未完成，OIDC 作为 M1.1 扩展。<br>
 > 主责模块：M1；协作模块：M0、M7。<br>
-> 关联记录：`2026-08-13-002-auth-entry-exception`、`2026-08-13-003-m0-m1-prerequisites`、`2026-08-13-004-m1-design`、`2026-08-13-005-m1-contract-gates`、`2026-08-13-006-m1-core-foundation`、`2026-08-13-007-m1-completion-audit`、`2026-08-13-008-m0-http-concurrency-contract`、`2026-08-13-009-m1-identity-persistence`、`2026-08-13-010-module-progress-audit`、`2026-08-13-011-m1-local-identity-http`、`2026-08-14-013-m0-m1-public-integration-gates`、`2026-08-17-016-stage0-contract-alignment`、`2026-08-17-017-m0-foundation-hardening`。
+> 关联记录：`2026-08-13-002-auth-entry-exception`、`2026-08-13-003-m0-m1-prerequisites`、`2026-08-13-004-m1-design`、`2026-08-13-005-m1-contract-gates`、`2026-08-13-006-m1-core-foundation`、`2026-08-13-007-m1-completion-audit`、`2026-08-13-008-m0-http-concurrency-contract`、`2026-08-13-009-m1-identity-persistence`、`2026-08-13-010-module-progress-audit`、`2026-08-13-011-m1-local-identity-http`、`2026-08-14-013-m0-m1-public-integration-gates`、`2026-08-17-016-stage0-contract-alignment`、`2026-08-17-017-m0-foundation-hardening`、`2026-08-17-018-current-document-baseline-closure`、`2026-08-17-019-d1-2-production-contract-closure`。
 
 页首状态和下述实施进度是 2026-08-17 设计复核快照；后续动态状态只更新现行需求追踪矩阵和修改日志。只有身份/审计需求语义、公共端口或模块边界变化时才修改本文。
 
-实施进度：P0～P2 对应本地账户与审计代码的实现状态为“单元已验证”。identity readiness 的必需策略仍由 M0 掌握；`AuditWriter` 不返回 ORM，OpenAPI 已声明 Cookie、CSRF、匿名面和权限，但通用 500 响应尚未进入 OpenAPI。2026-08-17、提交 `7016029` 的全量回归为 `259 passed, 25 skipped`，其中 3 项真实 PostgreSQL 验收跳过。在线迁移、不可变触发器、行锁/并发、回滚、受管服务用户、生产激活前 bootstrap、旧表面物理退役及前端联调仍未验证，详见现行需求追踪矩阵和第 10、11 节。
+实施进度：P0～P2 及 D1.2 受管主体代码的实现状态为“单元已验证”。identity readiness 的必需策略仍由 M0 掌握；`AuditWriter` 不返回 ORM，OpenAPI 已声明 Cookie、CSRF、匿名面、权限和全部 v1 操作通用 500。D1.2 新增固定受管服务用户、非空审计 actor、可选 initiator、实例生命周期及 bootstrap/activation CLI，迁移 `20260817_0006` 已通过离线升级/降级 SQL检查。真实 PostgreSQL 在线迁移、不可变触发器、行锁/并发、回滚、旧表面物理退役及前端联调仍未验证，详见现行需求追踪矩阵和第 10、11 节。
 
 ## 1. 目标与实施边界
 
 M1 为后续业务模块提供本地账户、服务器会话、RBAC、当前用户上下文、职责分离和不可变审计事件。第一阶段只实现 `APP_AUTH_MODE=local`；OIDC 仅定义扩展接口，不在本次本地账户交付中接入第三方 SDK 或回调。
 
-M1 的目标需求范围为 AUTH-01～AUTH-13、FR-IAM-01～FR-IAM-05、DATA-02～DATA-08 中与身份/审计相关的条款、API-01～API-07 中与 M1 HTTP 表面相关的条款、NFR-SEC-02/04/07、NFR-OBS-01～OBS-03；当前实现并未全部满足这些需求。其中 AUTH-11/12 和 DATA-08 已有进程内代码证据，AUTH-13 尚未实现，且仍缺真实 PostgreSQL/代理验收。M1 不迁移旧 `/api` 的业务功能，也不负责 M2/M3/M5 的知识审核、文档、附件、工作流、检索或回答反馈数据。
+M1 的目标需求范围为 AUTH-01～AUTH-13、FR-IAM-01～FR-IAM-05、DATA-02～DATA-08 中与身份/审计相关的条款、API-01～API-07 中与 M1 HTTP 表面相关的条款、NFR-SEC-02/04/07、NFR-OBS-01～OBS-03；当前实现并未全部满足这些需求。其中 AUTH-11/12、DATA-08 和 AUTH-13 的 M1 主体/激活子范围已有进程内代码证据，但仍缺真实 PostgreSQL/代理验收，M2～M5 生产写链也尚未实现。M1 不迁移旧 `/api` 的业务功能，也不负责 M2/M3/M5 的知识审核、文档、附件、工作流、检索或回答反馈数据。
 
 ```text
 浏览器
@@ -63,8 +63,8 @@ backend/app/
     __init__.py
     identity/
       __init__.py
-      models.py              # User、Role、UserRole、AuthSession、LoginThrottle
-      contracts.py           # 内部领域 DTO、权限码、CurrentUser
+      models.py              # User、Role、会话、限流和 IdentityInstanceState
+      contracts.py           # 权限码、CurrentUser、AuthenticatedActor
       usernames.py           # 唯一用户名规范化策略
       repository.py          # IdentityRepository；只访问 M1 表
       passwords.py           # Argon2id 哈希与校验
@@ -79,6 +79,8 @@ backend/app/
       admin.py               # 用户/角色/状态/重设密码编排
       transactions.py        # 基于 M0 new_session() 的身份快照/活动续期适配器
       bootstrap.py           # 一次性初始管理员 CLI，不提供 HTTP 注册接口
+      activation.py          # 初始管理员改密后的显式实例激活 CLI
+      service_accounts.py    # 固定受管服务用户及稳定身份
       oidc.py                # M1.1 接口桩；M1.0 不导入 Authlib
     audit/
       __init__.py
@@ -93,6 +95,7 @@ backend/app/
 backend/alembic/versions/
   20260813_0003_m1_identity_audit.py
   20260813_0004_m1_login_throttle_buckets.py
+  20260817_0006_managed_service_identity.py
 tests/
   test_m1_identity_passwords.py
   test_m1_identity_sessions.py
@@ -103,6 +106,7 @@ tests/
   test_m1_users_api.py
   test_m1_audit_api.py
   test_m1_bootstrap.py
+  test_m1_managed_service_identity.py
   test_m1_postgres_integration.py
 docs/design/
   m1-identity-audit-design.md
@@ -167,7 +171,7 @@ APP_AUTH_LOCK_SECONDS=900
 - 对 Cookie 认证的所有状态变更接口要求 `X-CSRF-Token`。CSRF token 由服务器使用 `APP_AUTH_SECRET` 和当前原始会话令牌按独立 HMAC purpose 确定性派生，数据库只保存其摘要；因此 `GET /auth/csrf` 可在页面刷新后重新计算，而无需保存明文。比较必须使用常量时间函数。
 - M0 CORS 白名单只作为浏览器响应策略；M1 登录及所有 Cookie 写请求还必须在执行业务前验证 `Origin`/受控 `Referer` 与 `APP_TRUSTED_ORIGINS`。匿名登录没有既有 CSRF token，因此尤其不能只依赖 CORS。生产浏览器来源必须显式配置；无 Origin 的非浏览器客户端若有需求，应另行定义非 Cookie 认证方式，不得静默绕过来源检查。
 - 改密、账号禁用、角色变更和管理员重设密码递增 `auth_version`，撤销受影响会话；本人改密保留当前会话并推进其安全版本，同时撤销其他会话。`must_change_password` 为真时，服务端权限依赖只允许本人信息、CSRF、改密和登出，不能仅依赖前端限制。
-- 初始管理员通过本地 CLI 创建，要求空用户库、显式用户名和密码输入；不提供公共注册、默认密码或 HTTP bootstrap。目标审计契约要求受控系统主体和每次 CLI 操作的独立标识；当前代码仍以创建后用户作为 actor 并使用固定 `bootstrap-cli` request ID，该差距属于后续 M1 安全修正，不得宣称 bootstrap 审计契约已完成。
+- 初始管理员通过本地 CLI 创建，要求实例生命周期为 `uninitialized`、交互用户库为空、显式用户名和密码输入；不提供公共注册、默认密码或 HTTP bootstrap。单例生命周期行使用数据库行锁串行化并发引导，bootstrap 受管服务用户作为 actor，每次操作生成独立 request ID，初始管理员必须改密。改密后再以系统管理员凭据运行 `activation.py` 显式切换到 `active`；生产 readiness 在激活前保持失败。上述行为已有单元测试，真实 PostgreSQL 行锁、约束和触发器仍待 D2。
 
 ### 5.3 OIDC 扩展（M1.1）
 
@@ -222,7 +226,7 @@ class AuditWriter:
 
 M2/M3 中已在[事件目录](event-catalog.md)登记下游消费者的关键领域写操作，在一个事务中写入领域状态、经过认证的 `CurrentUser`、`AuditWriter.append()`、M0 outbox 与必要幂等记录，再提交。操作者、审核者、提交者均由服务器端身份确定；不得接受客户端 `reviewer`、`actorId`、角色或权限字段。
 
-M1 用户/角色/密码等安全状态变更必须与经过认证的 `CurrentUser`、审计、会话失效和必要幂等记录同事务；当前事件目录没有冻结任何 M1 安全事件消费者，因此不得为满足形式而发布 outbox。登录成功后的会话写入归属到完成认证的用户；登录失败和限流记账由目标受管服务用户执行，当前尚未实现该主体。bootstrap 只允许在实例进入生产激活状态前执行，并使用受控操作主体和独立 CLI 操作标识；当前实现仍以新建用户为 actor 且使用固定标识，不得宣称满足 AUTH-13。
+M1 用户/角色/密码等安全状态变更必须与经过认证的 `CurrentUser`、审计、会话失效和必要幂等记录同事务；当前事件目录没有冻结任何 M1 安全事件消费者，因此不得为满足形式而发布 outbox。登录成功后的会话写入归属到完成认证的用户；登录失败和限流记账归属认证子系统受管服务用户。bootstrap 只允许在 `uninitialized` 状态执行并归属 bootstrap 服务用户，激活由完成改密的系统管理员执行；审计 actor 不再允许为空，并预留 `initiator_user_id` 供后续 Worker 保留原始发起人。该子范围已单元验证，真实 PostgreSQL 迁移、锁和回滚证据仍待 D2。
 
 `AuditWriter.append()` 返回不可变 `AuditAppendResult(event_id)`，不返回 `AuditEvent` ORM；消费者不得根据 ORM 状态或私有字段建立业务逻辑。其通用敏感键脱敏只是最后一道防线，不替代事件级白名单 DTO。M1 登录事件不得把原始用户名、IP、Cookie、令牌或密码放入 `target_id`/`metadata`，只允许通用目标标识及带独立 purpose 的 HMAC 主体/来源摘要；M2/M3/M5 为每类安全事件定义允许的 metadata 字段，禁止把任意请求体直接传给 `AuditEventInput`。
 
@@ -259,7 +263,7 @@ M1 用户/角色/密码等安全状态变更必须与经过认证的 `CurrentUse
 3. 密码、会话、CSRF、独立限流、`CurrentUser`、短事务授权快照和签发前复验已有代码与进程内测试；在线并发验证未关闭，功能未完成。
 4. 本地登录、`me/logout/password` API 已搭建，匿名 allowlist、Cookie、可信来源、CSRF、泛化登录错误和 no-store 已有进程内 API 证据。
 5. 用户、角色与审计查询 API 已搭建并接入 M0 分页、幂等、`If-Match` 和审计写入；最后管理员与会话失效仍待 PostgreSQL 并发验证。
-6. bootstrap CLI、OpenAPI/契约测试已搭建；OpenAPI 可机器识别 Session Cookie、`X-CSRF-Token`、匿名登录和 `x-required-permissions`。M2/M3/M5 仍只能在 PostgreSQL 门槛关闭前使用身份契约 Mock，OIDC 单独进入 M1.1。
+6. bootstrap/activation CLI、受管服务用户、非空审计主体和 OpenAPI/契约测试已搭建；OpenAPI 可机器识别 Session Cookie、`X-CSRF-Token`、匿名登录、`x-required-permissions` 和通用 500。M2/M3/M5 仍只能在 PostgreSQL 门槛关闭前使用身份契约 Mock，OIDC 单独进入 M1.1。
 
 最低验收：密码没有明文/可逆存储；登录失败不枚举用户；禁用/角色变更立即使会话失效；CSRF、CORS、限流、最后管理员保护、不得自审、审计追加写入和幂等回放均有 PostgreSQL 集成测试。每步完成后必须新建本地修改日志并更新索引。
 
@@ -301,7 +305,7 @@ M1 的逐需求状态统一在[现行需求追踪矩阵](../requirements/current
 
 ### 10.3 可继续开发的结论
 
-M1 的本地认证、用户/角色、审计与 bootstrap 代码已位于既定领域目录，未修改根 router、历史迁移或其他领域表；`main.py` 的唯一协作变化是由 M0 安装敏感响应缓存中间件，未加入 M1 业务逻辑。P0～P2 对应代码的实现状态为“单元已验证”，但 M1 生产能力尚未完成。M2/M3/M5 可继续使用 `CurrentUser`/身份依赖 Mock 开发纯领域逻辑；在 AUTH-13 受管服务用户和生产激活前 bootstrap 契约、真实 PostgreSQL 在线迁移、触发器、锁/并发和 API 验收通过前，不得把 M1 作为生产写路由的完成依赖，也不得导入 M1 Repository/ORM。M7 应接续 PostgreSQL 16、代理配置、认证预检和双平台测试；M2/M3/M5/M7 仍负责旧匿名 API 和静态目录退役。共享配置、错误码、迁移 head 或就绪检查变化继续按 M0 契约单独评审并记录。
+M1 的本地认证、用户/角色、受管服务主体、实例生命周期、审计与 bootstrap/activation 代码已位于既定领域目录；M0 只在 v1 root router 增加公共 500 OpenAPI 声明，未加入 M1 业务逻辑。P0～P2 和 D1.2 主体子范围的实现状态为“单元已验证”，但 M1 生产能力尚未完成。M2/M3/M5 可继续使用 `CurrentUser`/`AuthenticatedActor` 契约 Mock 开发纯领域逻辑；在 `20260817_0006` 真实 PostgreSQL 在线迁移、触发器、锁/并发、回滚和 API 验收通过前，不得把 M1 作为生产写路由的集成依赖，也不得导入 M1 Repository/ORM。M7 应接续 PostgreSQL 16、代理配置、认证预检和双平台测试；M2/M3/M5/M7 仍负责旧匿名 API 和静态目录退役。
 
 ## 11. 搭建批次、接口与文件实施记录
 
@@ -320,7 +324,7 @@ M1 的本地认证、用户/角色、审计与 bootstrap 代码已位于既定�
 | M0 | `db/session.py` 或统一数据库依赖适配层 | 修改依赖错误映射 | 数据库未配置/不可连接时 v1 返回稳定 `DEPENDENCY_UNAVAILABLE/503`；不把连接串或驱动堆栈写入响应 |
 | M1/M7 | `tests/test_m1_identity_dependencies.py`、`test_m1_postgres_integration.py` | 修改/新增 | 证明调用方 Session 零提交、角色变更无交叉快照、并发续期不缩短期限 |
 
-P0 的授权快照未新增字段；独立限流维度确需变更模型，因此新增 `20260813_0004`，没有编辑历史 `0003`。该迁移仅完成离线检查，尚未在线验收。
+P0 的授权快照未新增字段；独立限流维度确需变更模型，因此新增 `20260813_0004`。D1.2 另以 `20260817_0006` 新增受管服务用户、实例生命周期、审计 initiator 和非空 actor；没有编辑 `0001`～`0005`。两项后继迁移均尚未在真实 PostgreSQL 在线验收。
 
 ### 11.2 P1：本地认证最小闭环
 

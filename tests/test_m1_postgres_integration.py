@@ -51,7 +51,8 @@ def migrated_postgres():  # type: ignore[no-untyped-def]
 
 
 def test_m1_online_migration_has_identity_audit_and_independent_throttle_tables(migrated_postgres) -> None:
-    tables = set(inspect(migrated_postgres).get_table_names())
+    inspector = inspect(migrated_postgres)
+    tables = set(inspector.get_table_names())
 
     assert {
         "outbox_events",
@@ -61,12 +62,33 @@ def test_m1_online_migration_has_identity_audit_and_independent_throttle_tables(
         "auth_sessions",
         "login_throttle_buckets",
         "audit_events",
+        "identity_instance_state",
     }.issubset(tables)
-    outbox_columns = {column["name"] for column in inspect(migrated_postgres).get_columns("outbox_events")}
+    outbox_columns = {column["name"] for column in inspector.get_columns("outbox_events")}
     assert {"version_id", "request_id", "occurred_at"}.issubset(outbox_columns)
+    audit_columns = {column["name"]: column for column in inspector.get_columns("audit_events")}
+    assert audit_columns["actor_user_id"]["nullable"] is False
+    assert audit_columns["initiator_user_id"]["nullable"] is True
+    state_checks = " ".join(
+        constraint["sqltext"] or ""
+        for constraint in inspector.get_check_constraints("identity_instance_state")
+    )
+    assert "id = 'identity'" in state_checks
+    assert "version >= 1" in state_checks
+    assert "activated_by_user_id IS NOT NULL" in state_checks
     with migrated_postgres.connect() as connection:
         roles = set(connection.execute(text("SELECT code FROM roles")).scalars())
+        services = set(
+            connection.execute(
+                text("SELECT service_key FROM users WHERE auth_source = 'service'")
+            ).scalars()
+        )
+        lifecycle = connection.execute(
+            text("SELECT lifecycle FROM identity_instance_state WHERE id = 'identity'")
+        ).scalar_one()
     assert roles == {"technician", "reviewer", "knowledge_manager", "system_admin", "auditor"}
+    assert services == {"authentication", "bootstrap", "worker"}
+    assert lifecycle == "uninitialized"
 
 
 def test_m1_audit_trigger_rejects_mutation_online(migrated_postgres) -> None:
@@ -75,10 +97,13 @@ def test_m1_audit_trigger_rejects_mutation_online(migrated_postgres) -> None:
             text(
                 "INSERT INTO audit_events "
                 "(id, actor_user_id, action, target_type, target_id, result, request_id, metadata) "
-                "VALUES (:id, NULL, 'integration.test', 'test', 'test', 'success', 'integration', '{}'::jsonb) "
+                "VALUES (:id, :actor, 'integration.test', 'test', 'test', 'success', 'integration', '{}'::jsonb) "
                 "RETURNING id"
             ),
-            {"id": str(uuid4())},
+            {
+                "id": str(uuid4()),
+                "actor": "20000000-0000-0000-0000-000000000001",
+            },
         ).scalar_one()
     with pytest.raises(DBAPIError):
         with migrated_postgres.begin() as connection:

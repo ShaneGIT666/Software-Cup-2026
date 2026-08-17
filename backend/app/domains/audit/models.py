@@ -18,7 +18,10 @@ class AuditEvent(Base):
     occurred_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), index=True
     )
-    actor_user_id: Mapped[str | None] = mapped_column(
+    actor_user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    initiator_user_id: Mapped[str | None] = mapped_column(
         String(36), ForeignKey("users.id", ondelete="RESTRICT"), nullable=True, index=True
     )
     action: Mapped[str] = mapped_column(String(128), nullable=False, index=True)

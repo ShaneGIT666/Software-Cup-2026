@@ -51,7 +51,7 @@ M0 提供 `encode_cursor()`/`decode_cursor()`。游标使用 `v1.` 版本前缀�
 
 并发修改统一使用强 ETag：响应 ETag 和请求 `If-Match` 均为 `"v<正整数>"`，例如 `"v3"`。M0 提供 `etag_for_version()`、`parse_if_match()` 和 `require_matching_version()`；缺少条件返回 `PRECONDITION_REQUIRED`/428，格式非法返回 `INVALID_PRECONDITION`/400，版本过期返回 `VERSION_CONFLICT`/412。不接受裸整数、弱 ETag、`*` 或多 ETag 列表。
 
-M0 当前冻结以下公共错误码：`HTTP_ERROR`、`VALIDATION_ERROR`、`INTERNAL_ERROR`、`DEPENDENCY_UNAVAILABLE`、`AUTHENTICATION_REQUIRED`、`FORBIDDEN`、`IDEMPOTENCY_KEY_REQUIRED`、`IDEMPOTENCY_CONFLICT`、`REQUEST_IN_PROGRESS`、`VERSION_CONFLICT`、`INVALID_CURSOR`、`PRECONDITION_REQUIRED`、`INVALID_PRECONDITION`、`TRUSTED_ORIGIN_REQUIRED`。未捕获异常的 v1 响应只返回 `INTERNAL_ERROR/500`、固定脱敏消息和 request ID；原始异常仅记录到服务端日志，不得进入响应体。运行时和进程内测试已经覆盖该行为，但当前 OpenAPI 尚未为各 v1 操作声明通用 500 响应；在 OpenAPI 声明及契约测试补齐前，只能把运行时错误处理标为“单元已验证”。
+M0 当前冻结以下公共错误码：`HTTP_ERROR`、`VALIDATION_ERROR`、`INTERNAL_ERROR`、`DEPENDENCY_UNAVAILABLE`、`AUTHENTICATION_REQUIRED`、`FORBIDDEN`、`IDEMPOTENCY_KEY_REQUIRED`、`IDEMPOTENCY_CONFLICT`、`REQUEST_IN_PROGRESS`、`VERSION_CONFLICT`、`INVALID_CURSOR`、`PRECONDITION_REQUIRED`、`INVALID_PRECONDITION`、`TRUSTED_ORIGIN_REQUIRED`。未捕获异常的 v1 响应只返回 `INTERNAL_ERROR/500`、固定脱敏消息和 request ID；原始异常仅记录到服务端日志，不得进入响应体。`api_v1_router` 已为全部 v1 操作统一声明 `500/V1Response`，运行时脱敏和逐操作 OpenAPI 契约测试均已通过；真实客户端和代理行为仍待 M6/M7 集成验证。
 
 M1 身份与审计错误码已登记为：`INVALID_CREDENTIALS`、`ACCOUNT_LOCKED`、`ACCOUNT_DISABLED`、`SESSION_EXPIRED`、`CSRF_INVALID`、`SELF_REVIEW_FORBIDDEN`、`LAST_ADMIN_PROTECTED`、`PASSWORD_POLICY_VIOLATION`、`AUTH_MODE_UNAVAILABLE`。匿名登录对不存在用户、密码错误和已锁定账户统一返回 `INVALID_CREDENTIALS`，不得利用其他错误码泄露账户是否存在；领域模块不得改变这些代码的含义。
 
@@ -98,7 +98,7 @@ workers.models           M4
 indexing.models          M4
 ```
 
-每个领域模型继承 `app.db.base.Base`，领域迁移使用独立 revision，并在合并前以执行时最新迁移头为 `down_revision`。M1 的 `20260813_0003/0004` 后，M0 以 `20260814_0005` 补齐共享 outbox 事件字段；截至 2026-08-17 的已验证基线为单一 head `20260814_0005`。未来步骤必须先执行 `alembic heads`，使用 `upgrade head` 并记录实际 revision，不得把 `0005` 永久当作目标 head。领域模块不得修改 `app.db.models`、任何已经登记或应用的历史 revision 或 `alembic/env.py`。
+每个领域模型继承 `app.db.base.Base`，领域迁移使用独立 revision，并在合并前以执行时最新迁移头为 `down_revision`。M1 的 `20260813_0003/0004` 后，M0 以 `20260814_0005` 补齐共享 outbox 事件字段；D1.2 又以 M1 后继迁移 `20260817_0006` 增加受管服务用户、实例生命周期和审计主体约束。未来步骤必须先执行 `alembic heads`，使用 `upgrade head` 并记录实际 revision，不得把任一日期化 head 永久当作目标。领域模块不得修改 `app.db.models`、任何已经登记或应用的历史 revision 或 `alembic/env.py`。
 
 ## 6. M1 公共协作端口及实现记录
 
@@ -171,8 +171,8 @@ outbox 范围按以下矩阵执行：
 | M5 查询、回答或反馈等当前未登记消费者的状态变更 | 已认证 `CurrentUser`；异步延续使用受管服务用户并保留发起身份 + 审计/调用记录 + 必要幂等记录 | 当前不发布业务 outbox |
 | M1 用户、角色、密码等安全状态变更 | 安全状态 + 已认证 `CurrentUser` + 审计 + 必要幂等记录 | 仅在事件目录已冻结消费者时追加；当前无此契约 |
 | 登录成功后的会话签发/续期/注销 | 已认证用户 + 独立短事务 + 安全审计 | 不发布业务 outbox |
-| 登录失败、限流等认证子系统记账 | 受管服务用户 + 独立短事务 + 安全审计 | 不发布业务 outbox；当前服务用户尚未实现 |
-| 首次 bootstrap | 仅限生产激活前；受控操作主体 + 安全状态 + 审计 + 独立 CLI 操作标识 | 不属于生产运行写入；当前主体/标识尚未实现 |
+| 登录失败、限流等认证子系统记账 | 认证子系统受管服务用户 + 独立短事务 + 安全审计 | 不发布业务 outbox；主体代码和迁移已单元验证，真实 PostgreSQL 待 D2 |
+| 首次 bootstrap | 仅限 `uninitialized`；bootstrap 受管服务用户 + 生命周期锁 + 审计 + 独立 CLI 操作标识 | 不属于生产运行写入；激活后拒绝再次执行，真实行锁/迁移待 D2 |
 | Worker heartbeat/lease/retry 等运行维护 | 受管服务用户 + 任务上下文 + 运行日志/指标 | 不发布业务 outbox；事件目录登记的显式领域结果事件除外 |
 
 新增事件前必须在[事件目录](event-catalog.md)冻结事件名、版本、生产者、消费者、payload 白名单、幂等与回滚语义，并更新生产者/消费者契约及事务测试。只有需求语义或 M0 公共端口变化时才修改 SRS 或本文；新增具体事件不再要求重复改写多个说明文档。

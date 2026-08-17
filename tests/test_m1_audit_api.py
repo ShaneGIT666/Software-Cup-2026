@@ -19,6 +19,7 @@ def test_audit_model_remains_append_only_contract() -> None:
         "id",
         "occurred_at",
         "actor_user_id",
+        "initiator_user_id",
         "action",
         "target_type",
         "target_id",
@@ -26,4 +27,3 @@ def test_audit_model_remains_append_only_contract() -> None:
         "request_id",
         "metadata",
     }
-

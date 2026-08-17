@@ -8,7 +8,7 @@ from sqlalchemy import case, delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from .models import AuthSession, LoginThrottleBucket, Role, User, UserRole
+from .models import AuthSession, IdentityInstanceState, LoginThrottleBucket, Role, User, UserRole
 from .sessions import NewSessionSecrets, secret_digest
 
 
@@ -151,7 +151,43 @@ class IdentityRepository:
         return list(session.scalars(select(Role).where(Role.code.in_(role_codes)).order_by(Role.code)).all())
 
     def lock_user(self, session: Session, user_id: str) -> User | None:
-        return session.scalar(select(User).where(User.id == user_id, User.deleted_at.is_(None)).with_for_update())
+        return session.scalar(
+            select(User)
+            .where(
+                User.id == user_id,
+                User.auth_source != "service",
+                User.deleted_at.is_(None),
+            )
+            .with_for_update()
+        )
+
+    def managed_service_user(self, session: Session, *, service_key: str) -> User | None:
+        return session.scalar(
+            select(User).where(
+                User.auth_source == "service",
+                User.service_key == service_key,
+                User.is_active.is_(True),
+                User.deleted_at.is_(None),
+            )
+        )
+
+    def lock_instance_state(self, session: Session) -> IdentityInstanceState | None:
+        return session.scalar(
+            select(IdentityInstanceState)
+            .where(IdentityInstanceState.id == "identity")
+            .with_for_update()
+        )
+
+    def instance_state(self, session: Session) -> IdentityInstanceState | None:
+        return session.scalar(
+            select(IdentityInstanceState).where(IdentityInstanceState.id == "identity")
+        )
+
+    def interactive_user_count(self, session: Session) -> int:
+        value = session.scalar(
+            select(func.count()).select_from(User).where(User.auth_source != "service")
+        )
+        return int(value or 0)
 
     def active_system_admin_ids(self, session: Session) -> tuple[str, ...]:
         values = session.scalars(
@@ -203,7 +239,10 @@ class IdentityRepository:
             .correlate(User)
             .scalar_subquery()
         )
-        statement = select(User, roles.label("role_codes")).where(User.deleted_at.is_(None))
+        statement = select(User, roles.label("role_codes")).where(
+            User.auth_source != "service",
+            User.deleted_at.is_(None),
+        )
         if is_active is not None:
             statement = statement.where(User.is_active.is_(is_active))
         if after_created_at is not None and after_id is not None:

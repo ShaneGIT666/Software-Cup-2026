@@ -31,6 +31,7 @@ class AuditWriter:
         record = AuditEvent(
             id=event_id,
             actor_user_id=event.actor_user_id,
+            initiator_user_id=event.initiator_user_id,
             action=event.action,
             target_type=event.target_type,
             target_id=event.target_id,

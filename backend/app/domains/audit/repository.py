@@ -49,6 +49,7 @@ def audit_event_view(event: AuditEvent) -> dict[str, object]:
         "id": event.id,
         "occurredAt": event.occurred_at.isoformat(),
         "actorUserId": event.actor_user_id,
+        "initiatorUserId": event.initiator_user_id,
         "action": event.action,
         "targetType": event.target_type,
         "targetId": event.target_id,
@@ -56,4 +57,3 @@ def audit_event_view(event: AuditEvent) -> dict[str, object]:
         "requestId": event.request_id,
         "metadata": event.event_metadata,
     }
-

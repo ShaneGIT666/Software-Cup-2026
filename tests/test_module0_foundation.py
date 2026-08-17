@@ -49,6 +49,24 @@ def test_unhandled_v1_exception_returns_sanitized_stable_envelope() -> None:
     assert "do-not-leak" not in response.text
 
 
+def test_every_v1_operation_declares_the_sanitized_internal_error_contract() -> None:
+    schema = app.openapi()
+    operations = [
+        operation
+        for path, path_item in schema["paths"].items()
+        if path.startswith("/api/v1")
+        for method, operation in path_item.items()
+        if method in {"get", "post", "put", "patch", "delete"}
+    ]
+
+    assert operations
+    for operation in operations:
+        response = operation["responses"]["500"]
+        assert response["description"] == "服务器内部错误；响应使用脱敏 v1 错误信封并包含 request ID。"
+        schema_ref = response["content"]["application/json"]["schema"]["$ref"]
+        assert schema_ref == "#/components/schemas/V1Response"
+
+
 def test_unhandled_legacy_exception_keeps_legacy_envelope_without_leaking_details() -> None:
     isolated_app = FastAPI()
     isolated_app.add_middleware(RequestContextMiddleware)

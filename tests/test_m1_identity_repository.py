@@ -132,6 +132,22 @@ def test_session_identity_resolution_uses_one_aggregate_statement() -> None:
     assert "user_roles" in sql
 
 
+def test_user_management_queries_exclude_managed_service_accounts() -> None:
+    repository = IdentityRepository()
+    lock_session = Mock()
+    lock_session.scalar.return_value = None
+
+    assert repository.lock_user(lock_session, "service-user") is None
+    lock_sql = str(lock_session.scalar.call_args.args[0].compile(dialect=postgresql.dialect())).lower()
+    assert "users.auth_source !=" in lock_sql
+
+    list_session = Mock()
+    list_session.execute.return_value.all.return_value = []
+    assert repository.list_users(list_session, limit=20) == []
+    list_sql = str(list_session.execute.call_args.args[0].compile(dialect=postgresql.dialect())).lower()
+    assert "users.auth_source !=" in list_sql
+
+
 def test_session_activity_refresh_is_conditional_and_never_shortens_idle_expiry() -> None:
     session = _RecordingSession(_ExecuteResult(rowcount=1))
 

@@ -13,6 +13,17 @@ class RoleCode(str, Enum):
     AUDITOR = "auditor"
 
 
+class ActorKind(str, Enum):
+    INTERACTIVE = "interactive"
+    SERVICE = "service"
+
+
+class ManagedServiceKey(str, Enum):
+    AUTHENTICATION = "authentication"
+    BOOTSTRAP = "bootstrap"
+    WORKER = "worker"
+
+
 class Permission(str, Enum):
     KNOWLEDGE_READ = "knowledge:read"
     WORKFLOW_READ = "workflow:read"
@@ -80,6 +91,25 @@ class CurrentUser:
     roles: frozenset[str]
     permissions: frozenset[str]
     session_id: str
+
+
+@dataclass(frozen=True)
+class AuthenticatedActor:
+    """Auditable principal for an interactive or managed internal write."""
+
+    user_id: str
+    kind: ActorKind
+    initiator_user_id: str | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.kind, ActorKind):
+            raise ValueError("审计主体类型无效")
+        if not self.user_id.strip():
+            raise ValueError("审计主体用户标识不能为空")
+        if self.initiator_user_id is not None and not self.initiator_user_id.strip():
+            raise ValueError("发起用户标识不能为空字符串")
+        if self.kind == ActorKind.INTERACTIVE and self.initiator_user_id is not None:
+            raise ValueError("交互用户不能另行声明发起用户")
 
 
 @dataclass(frozen=True)

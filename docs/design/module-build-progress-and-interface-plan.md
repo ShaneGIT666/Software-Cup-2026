@@ -15,8 +15,8 @@
 
 | 模块 | 状态对象 | 实现状态 | 资产与证据限定 | 未关闭问题 |
 | --- | --- | --- | --- | --- |
-| M0 | 当前公共底座代码 | 单元已验证 | `core/`、`db/`、`api/v1/`、迁移 `0001/0002/0005` 及进程内/契约测试 | OpenAPI 通用 500、真实 PostgreSQL 在线升降级/中断恢复、真实代理链/跨域浏览器和生产部署验收；M4 claim 端口未搭建 |
-| M1 | 本地账户与审计代码 | 单元已验证 | `domains/identity/`、`domains/audit/`、三个 v1 路由、迁移 `0003/0004`、identity readiness 和进程内单元/API 测试 | AUTH-13 服务用户/生产激活前 bootstrap、真实 PostgreSQL 触发器/锁/并发/API 集成、前端接入和旧表面物理退役 |
+| M0 | 当前公共底座代码 | 单元已验证 | `core/`、`db/`、`api/v1/`、迁移 `0001/0002/0005`、通用 500 OpenAPI 及进程内/契约测试 | 真实 PostgreSQL 在线升降级/中断恢复、真实代理链/跨域浏览器和生产部署验收；M4 claim 端口未搭建 |
+| M1 | 本地账户、受管主体与审计代码 | 单元已验证 | `domains/identity/`、`domains/audit/`、三个 v1 路由、迁移 `0003/0004/0006`、identity readiness 和进程内单元/API 测试 | 真实 PostgreSQL 触发器/服务种子/生命周期锁/并发/API 集成、前端接入和旧表面物理退役 |
 | M2 | 目标文档、知识与案例模块 | 已设计 | 旧 `knowledge.py`、JSON 和旧 `/api` 只作为原型资产 | 无目标领域表/Repository/v1 路由；修订、案例、审核、受控下载和 Worker 未搭建 |
 | M3 | 目标设备与作业模块 | 已设计 | 旧种子流程及关联展示只作为原型资产 | 无设备/流程领域表、版本审核、CSV 导入或可靠匹配端口 |
 | M4 | 目标 Worker 与索引模块 | 已设计 | M0 `OutboxWriter` 已单元验证，但不属于 M4 消费端实现 | 无 claim/lease/retry/恢复、索引世代、缓存/图谱失效 |
@@ -48,7 +48,7 @@ readiness 公共输出只允许 M0 `ReadinessDetails` 登记的字段和值，�
 4. 账号桶与来源桶限流模型已经由 `0004` 表达；未来确有结构变化时先重新检查 migration head，再创建新的后继迁移，不得重复建表或修改 `0004`。
 5. `http_contracts.py`、`http_responses.py` 和预留路由 `auth.py`、`users.py`、`audit.py` 已新增并通过进程内测试。
 
-公开给 M2/M3/M5 的普通业务端口仍仅限 `CurrentUser`、`require_permissions()`、`ensure_not_self_review()` 和 `AuditWriter`；`AuditWriter.append()` 只返回不可变 `AuditAppendResult(event_id)`，不泄露 ORM。Repository、ORM、Cookie、节流实现均为 M1 私有。AUTH-13 所需受管服务用户和生产激活前 bootstrap 尚未实现，不得由领域模块自行补第二套主体。OpenAPI 已声明 Session Cookie、CSRF header、匿名登录面和权限扩展，但通用 500 响应仍待 M0 补齐后才能作为完整 M6 生成契约。
+公开给 M2/M3/M5 的普通业务端口仍限于 `CurrentUser`、`AuthenticatedActor`、`require_permissions()`、`ensure_not_self_review()` 和 `AuditWriter`；`AuditWriter.append()` 只返回不可变 `AuditAppendResult(event_id)`，不泄露 ORM。Repository、ORM、Cookie、节流和生命周期实现均为 M1 私有。AUTH-13 的 M1 受管服务用户、登录失败主体、生产激活前 bootstrap/activation 边界和非空审计 actor 已单元验证；OpenAPI 也已声明通用 500。真实 PostgreSQL 验收完成前，领域模块仍只使用这些契约的 Mock，不得自行补第二套主体。
 
 ### 3.3 M2：文档、知识与案例版本
 
@@ -112,10 +112,10 @@ readiness 公共输出只允许 M0 `ReadinessDetails` 登记的字段和值，�
 
 ## 5. 下一步顺序
 
-1. D1.1 文档基线已经收口；D1.2 先补 OpenAPI 通用 500、AUTH-13 受管服务用户/生产激活前 bootstrap 契约及相应测试。
-2. D2 使用 PostgreSQL 16 专用 `_test` 数据库执行 `upgrade head`、触发器、事务、锁/并发、回滚和中断恢复验收，并记录当次实际 revision。
+1. D1.1 文档基线和 D1.2 OpenAPI 500/受管主体/激活边界已经达到“单元已验证”；迁移 `20260817_0006` 仅完成离线 SQL检查。
+2. 下一步 D2 使用 PostgreSQL 16 专用 `_test` 数据库执行 `upgrade head`、服务种子/回填/非空约束、触发器、生命周期锁、事务、并发、回滚和中断恢复验收，并记录当次实际 revision。
 3. D2 通过前，M2/M3/M5 只使用版本化身份/审计/outbox Mock 开发纯领域逻辑；通过后才接入真实身份和生产写事务。
 4. M2/M3 先冻结领域事件与只读端口，M5 再冻结其实际异步事件（若有）；M4 只接入事件目录中已冻结的生产者契约，M5 只接入已冻结的上游只读端口。
 5. M6 在 OpenAPI 错误契约补齐后联调；M7 最后执行 Windows/Ubuntu、恢复、安全和完整 E2E 验收。
 
-M0/M1 的实际部署检查、readiness 扩展、旧表面隔离、Windows 工件和后续模块接入门槛详见 `m0-m1-deployment-readiness-plan.md`。其中 D1 公共端口对应代码为“单元已验证”，D1.2、D2～D4 尚未完成；不得据此提升 M0/M1 为“集成已验证”或“已完成”。
+M0/M1 的实际部署检查、readiness 扩展、旧表面隔离、Windows 工件和后续模块接入门槛详见 `m0-m1-deployment-readiness-plan.md`。其中 D1/D1.2 对应代码为“单元已验证”，D2～D4 尚未完成；不得据此提升 M0/M1 为“集成已验证”或“已完成”。

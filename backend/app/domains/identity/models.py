@@ -16,11 +16,16 @@ def _uuid() -> str:
 class User(Base):
     __tablename__ = "users"
     __table_args__ = (
-        CheckConstraint("auth_source IN ('local', 'oidc')", name="ck_users_auth_source"),
+        CheckConstraint("auth_source IN ('local', 'oidc', 'service')", name="ck_users_auth_source"),
         CheckConstraint(
             "(auth_source = 'local' AND password_hash IS NOT NULL) OR "
-            "(auth_source = 'oidc' AND password_hash IS NULL)",
+            "(auth_source IN ('oidc', 'service') AND password_hash IS NULL)",
             name="ck_users_password_by_auth_source",
+        ),
+        CheckConstraint(
+            "(auth_source = 'service' AND service_key IS NOT NULL) OR "
+            "(auth_source <> 'service' AND service_key IS NULL)",
+            name="ck_users_service_key_by_auth_source",
         ),
     )
 
@@ -30,6 +35,7 @@ class User(Base):
     display_name: Mapped[str] = mapped_column(String(128), nullable=False)
     password_hash: Mapped[str | None] = mapped_column(String(512), nullable=True)
     auth_source: Mapped[str] = mapped_column(String(16), nullable=False, default="local")
+    service_key: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True, index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
     auth_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     must_change_password: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
@@ -39,6 +45,35 @@ class User(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
     )
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+
+
+class IdentityInstanceState(Base):
+    __tablename__ = "identity_instance_state"
+    __table_args__ = (
+        CheckConstraint("id = 'identity'", name="ck_identity_instance_state_singleton"),
+        CheckConstraint(
+            "lifecycle IN ('uninitialized', 'bootstrapped', 'active')",
+            name="ck_identity_instance_state_lifecycle",
+        ),
+        CheckConstraint("version >= 1", name="ck_identity_instance_state_version"),
+        CheckConstraint(
+            "(lifecycle = 'active' AND activated_at IS NOT NULL AND activated_by_user_id IS NOT NULL) OR "
+            "(lifecycle <> 'active' AND activated_at IS NULL AND activated_by_user_id IS NULL)",
+            name="ck_identity_instance_state_activation_fields",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default="identity")
+    lifecycle: Mapped[str] = mapped_column(String(32), nullable=False, default="uninitialized")
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    activated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    activated_by_user_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="RESTRICT"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
 
 
 class Role(Base):

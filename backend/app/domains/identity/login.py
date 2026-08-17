@@ -8,6 +8,7 @@ from ...db.session import new_session
 from ..audit.contracts import AuditEventInput
 from ..audit.writer import AuditWriter
 from .repository import IdentityRepository, LoginThrottleRepository, login_throttle_digests
+from .service_accounts import AUTHENTICATION_SERVICE
 from .service import CreatedSession, IdentityService
 
 
@@ -85,6 +86,7 @@ class LoginUseCase:
                         target_id=verification.subject_hmac,
                         result="denied",
                         request_id=request_id,
+                        actor_user_id=AUTHENTICATION_SERVICE.user_id,
                         metadata={"sourceHmac": verification.source_hmac},
                     ),
                 )
@@ -106,10 +108,13 @@ class LoginUseCase:
                         target_id=verification.subject_hmac,
                         result="denied",
                         request_id=request_id,
+                        actor_user_id=AUTHENTICATION_SERVICE.user_id,
                         metadata={"sourceHmac": verification.source_hmac, "reason": "security_state_changed"},
                     ),
                 )
                 return LoginAttemptResult(created_session=None, locked=False)
+            if verification.user_id is None:
+                raise RuntimeError("认证成功结果缺少用户标识")
             self.audit.append(
                 session,
                 AuditEventInput(
