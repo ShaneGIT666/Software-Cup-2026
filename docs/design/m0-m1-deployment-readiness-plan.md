@@ -1,9 +1,9 @@
 # M0/M1 部署复核与后续无冲突接入方案
 
-> 复核日期：2026-08-14<br>
+> 复核日期：2026-08-17<br>
 > 文档状态：D1 公共端口代码已搭建并通过进程内/离线验证；D2～D4 真实依赖与部署验收未完成<br>
 > 主责模块：M7；协作模块：M0、M1  
-> 关联记录：`2026-08-13-010-module-progress-audit`、`2026-08-13-011-m1-local-identity-http`、`2026-08-13-012-m0-m1-deployment-audit`、`2026-08-14-013-m0-m1-public-integration-gates`
+> 关联记录：`2026-08-13-010-module-progress-audit`、`2026-08-13-011-m1-local-identity-http`、`2026-08-13-012-m0-m1-deployment-audit`、`2026-08-14-013-m0-m1-public-integration-gates`、`2026-08-17-016-stage0-contract-alignment`
 
 ## 1. 目的与判定口径
 
@@ -20,7 +20,7 @@
 
 | 范围 | 当前判定 | 说明 |
 | --- | --- | --- |
-| M0 代码装配 | 代码已搭建、进程内已验证 | 在既有公共契约上新增 M0-owned readiness、生产不变量、旧表面集中保护、版本化 outbox 写端口和 `0005` 迁移 |
+| M0 代码装配 | 代码已搭建、进程内已验证 | 在既有公共契约上已增加严格环境枚举、脱敏 500、CORS `ETag`、强类型 M0-owned readiness、生产不变量、旧表面集中保护、版本化 outbox 写端口和 `0005` 迁移 |
 | M1 代码装配 | 代码已搭建、进程内已验证 | 本地登录、会话/CSRF、用户/角色、审计、双桶限流、bootstrap、identity readiness 和带安全扩展的 OpenAPI 已装配 |
 | 本机兼容运行 | 可启动，不等于 M0/M1 部署 | Uvicorn、旧 JSON API 和构建后的前端可运行；M1 登录因数据库/密钥未配置而失败关闭 |
 | M0/M1 真实数据库 | 未部署、未验证 | 本机无 PostgreSQL 服务、`psql`、Docker 和 `M1_TEST_POSTGRES_URL`；3 项 M1 PostgreSQL 测试跳过 |
@@ -33,7 +33,7 @@
 
 ### 2.2 本轮实测证据
 
-- 后端完整回归：`250 passed, 25 skipped`；其中 M1 真实 PostgreSQL 3 项和外部手册 22 项跳过，skip 不计为成功。
+- 后端完整回归：`259 passed, 25 skipped`；其中 M1 真实 PostgreSQL 3 项和外部手册 22 项跳过，skip 不计为成功。
 - 前端生产构建成功并生成 `frontend/dist`；存在约 1.05 MB 单块 JavaScript 警告，属于 M6 后续拆包问题，不阻止本轮兼容烟测。
 - Alembic 保持单一 head `20260814_0005`；离线 `upgrade 20260814_0005 --sql` 成功并包含 outbox 字段回填/约束/索引；未执行真实数据库在线升降级。
 - 两种包导入路径均能发现 15 个 `/api/v1` 路由操作（14 个唯一路径）：2 个健康操作和 13 个 M1 操作。
@@ -178,10 +178,18 @@ M0 新增 `core/readiness.py`：
 
 ```python
 @dataclass(frozen=True)
+class ReadinessDetails:
+    configured: bool | None = None
+    dialect: str | None = None
+    mode: str | None = None
+    latency_ms: int | None = None
+    violations: tuple[str, ...] = ()
+
+@dataclass(frozen=True)
 class ReadinessProbe:
     healthy: bool
     reason: str = ""       # 只能是脱敏摘要
-    details: Mapping[str, object] = field(default_factory=dict)
+    details: ReadinessDetails = field(default_factory=ReadinessDetails)
 
 class ReadinessContributor(Protocol):
     def check(self, settings: AppSettings) -> ReadinessProbe: ...
@@ -192,12 +200,15 @@ M0 拥有固定可选发现列表，例如：
 ```text
 domains.identity.readiness   M1
 domains.documents.readiness  M2
+domains.knowledge.readiness  M2
+domains.devices.readiness    M3
+domains.workflows.readiness  M3
 workers.readiness            M4
 indexing.readiness           M4
 domains.rag.readiness        M5
 ```
 
-领域只新增自己的 `readiness.py` 并返回脱敏结果；它不能返回或降低 `required`，必需策略由 M0 `ReadinessRegistration` 独占。`system.py` 只调用 M0 聚合器，不导入任何领域模块。未交付的非必需模块安全跳过；生产必需但缺失的模块报告不健康；已存在模块内部导入错误必须直接失败，规则与路由/模型发现一致。
+领域只新增自己的 `readiness.py` 并返回脱敏结果；详情只能使用 M0 `ReadinessDetails` 白名单，不得返回任意映射、连接串、URL、文件路径、密钥、原始异常或堆栈。它不能返回或降低 `required`，必需策略由 M0 `ReadinessRegistration` 独占。`system.py` 只调用 M0 聚合器，不导入任何领域模块。未交付的非必需模块安全跳过；生产必需但缺失的模块报告不健康；已存在模块内部导入错误必须直接失败，规则与路由/模型发现一致。
 
 ### 6.3 生产不变量
 
@@ -211,7 +222,7 @@ domains.rag.readiness        M5
 - 旧兼容表面必须关闭；受控数据目录必须位于程序目录之外且可写。
 - 任一 required contributor 不健康时统一返回 `DEPENDENCY_UNAVAILABLE/503` 和“关键依赖未就绪”，不错误声称只有数据库故障。
 
-`live` 只表示进程存活，不检查外部依赖；`ready` 决定代理和 Service 是否接收业务流量。
+`APP_ENV` 仅允许 `development|test|production`，未知值失败关闭。`live` 只表示进程存活，不检查外部依赖；规范路径 `/api/v1/health/ready` 决定代理和 Service 是否接收业务流量，Windows/Linux 包装层不得实现另一套预检规则。
 
 ## 7. 旧原型表面隔离设计
 
@@ -297,7 +308,7 @@ D0 当前代码/进程内基线
 
 ### D0：当前已具备但未完成
 
-- 当前基线为 `0005` 单一 head、15 个 v1 操作（14 个唯一路径）和 `250 passed, 25 skipped`。
+- 当前基线为 `0005` 单一 head、15 个 v1 操作（14 个唯一路径）和 `259 passed, 25 skipped`。
 - 允许 M2/M3/M6 使用版本化 Mock 并行开发。
 
 ### D1：先消除共享冲突（代码级已验证）

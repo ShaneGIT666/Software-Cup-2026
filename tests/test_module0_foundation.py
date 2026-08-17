@@ -1,15 +1,77 @@
 from __future__ import annotations
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy.exc import TimeoutError as SQLAlchemyTimeoutError
 from unittest.mock import Mock
 
 from backend.app.core.config import get_settings
+from backend.app.core.error_codes import ErrorCode
 from backend.app.core.errors import AppError
+from backend.app.core.request_context import RequestContextMiddleware
 from backend.app.db import session as session_module
 from backend.app.db.session import database_status, dispose_engine
-from backend.app.main import app
+from backend.app.main import app, unhandled_exception_handler
+
+
+@pytest.mark.parametrize("value", ["prodution", "", "   "])
+def test_unknown_or_empty_app_environment_fails_closed(monkeypatch, value: str) -> None:
+    monkeypatch.setenv("APP_ENV", value)
+
+    with pytest.raises(ValueError, match="APP_ENV"):
+        get_settings()
+
+
+def test_unhandled_v1_exception_returns_sanitized_stable_envelope() -> None:
+    isolated_app = FastAPI()
+    isolated_app.add_middleware(RequestContextMiddleware)
+    isolated_app.add_exception_handler(Exception, unhandled_exception_handler)
+
+    @isolated_app.get("/api/v1/explode")
+    def explode() -> None:
+        raise RuntimeError("database password=do-not-leak")
+
+    response = TestClient(isolated_app, raise_server_exceptions=False).get(
+        "/api/v1/explode",
+        headers={"X-Request-ID": "foundation-test-500"},
+    )
+
+    assert response.status_code == 500
+    assert response.headers["X-Request-ID"] == "foundation-test-500"
+    payload = response.json()
+    assert payload["error"] == {
+        "code": ErrorCode.INTERNAL_ERROR,
+        "message": "服务器内部错误",
+        "details": None,
+    }
+    assert payload["meta"]["requestId"] == "foundation-test-500"
+    assert "do-not-leak" not in response.text
+
+
+def test_unhandled_legacy_exception_keeps_legacy_envelope_without_leaking_details() -> None:
+    isolated_app = FastAPI()
+    isolated_app.add_middleware(RequestContextMiddleware)
+    isolated_app.add_exception_handler(Exception, unhandled_exception_handler)
+
+    @isolated_app.get("/api/explode")
+    def explode() -> None:
+        raise RuntimeError("legacy token=do-not-leak")
+
+    response = TestClient(isolated_app, raise_server_exceptions=False).get(
+        "/api/explode",
+        headers={"X-Request-ID": "legacy-test-500"},
+    )
+
+    assert response.status_code == 500
+    assert response.headers["X-Request-ID"] == "legacy-test-500"
+    assert response.json() == {
+        "success": False,
+        "data": None,
+        "message": "服务器内部错误",
+        "requestId": "legacy-test-500",
+    }
+    assert "do-not-leak" not in response.text
 
 
 def test_v1_live_returns_stable_envelope_and_request_id() -> None:

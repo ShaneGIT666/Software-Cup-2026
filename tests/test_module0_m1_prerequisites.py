@@ -11,7 +11,7 @@ from backend.app.api.v1.responses import v1_page, v1_success
 from backend.app.core.client_address import ClientAddressResolver
 from backend.app.core.config import AppSettings, get_settings
 from backend.app.core.concurrency import etag_for_version, parse_if_match, require_matching_version
-from backend.app.core.cors import CORS_ALLOWED_HEADERS, cors_middleware_options
+from backend.app.core.cors import CORS_ALLOWED_HEADERS, CORS_EXPOSE_HEADERS, cors_middleware_options
 from backend.app.core.error_codes import ErrorCode
 from backend.app.core.errors import AppError
 from backend.app.core.pagination import decode_cursor, encode_cursor
@@ -41,6 +41,17 @@ def test_development_default_cors_is_local_and_explicit(monkeypatch) -> None:
     assert "*" not in policy["allow_methods"]
     assert "*" not in policy["allow_headers"]
     assert {"Idempotency-Key", "If-Match", "X-CSRF-Token"}.issubset(CORS_ALLOWED_HEADERS)
+    assert CORS_EXPOSE_HEADERS == ("X-Request-ID", "ETag")
+
+
+def test_cors_response_exposes_etag_to_the_browser() -> None:
+    response = TestClient(app).get(
+        "/api/v1/health/live",
+        headers={"Origin": "http://localhost:5173"},
+    )
+
+    exposed = {item.strip() for item in response.headers["Access-Control-Expose-Headers"].split(",")}
+    assert {"X-Request-ID", "ETag"}.issubset(exposed)
 
 
 def test_cors_middleware_accepts_only_the_configured_development_origin() -> None:

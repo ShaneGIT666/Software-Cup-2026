@@ -1,22 +1,22 @@
 # 模块代码搭建进度与待建接口计划
 
-> 审查日期：2026-08-14<br>
+> 审查日期：2026-08-17<br>
 > 状态：当前代码审查基线；不构成功能完成或发布结论。<br>
 > 主责：M7 状态与验证治理；协作：M0～M6。<br>
 > 依据：SRS 第 1、14 节，M0 公共契约，M1 设计方案、M0/M1 部署接入方案及修改日志 001～013。
 
 ## 1. 状态判定规则
 
-本计划区分“代码已搭建”“单元已验证”“集成已验证”和“已完成”。只有目标环境真实依赖、公开接口闭环、安全/并发场景和需求验收全部通过，且没有未关闭冲突时，才能标为“已完成”。离线 Alembic SQL、SQL 编译、Mock、FastAPI `TestClient` 或单个函数测试只作为对应层级证据。
+本计划只使用“未开始”“已设计”“代码已搭建”“单元已验证”“集成已验证”和“已完成”六级实现状态。“原型代码存在”只是仓库资产限定语，“待改造”是优先级限定语，“可选”是范围限定语，均不代替实现状态。只有目标环境真实依赖、公开接口闭环、安全/并发场景和需求验收全部通过，且没有未关闭冲突时，才能标为“已完成”。离线 Alembic SQL、SQL 编译、Mock、FastAPI `TestClient` 或单个函数测试只属于进程内/单元证据，不能支持“集成已验证”。
 
 ## 2. 当前代码状态
 
 | 模块 | 代码证据 | 当前判定 | 未关闭问题 |
 | --- | --- | --- | --- |
-| M0 | `core/`、`db/`、`api/v1/`、迁移 `0001/0002/0005`；readiness、旧表面 guard、短事务、DB 503、可信客户端地址、outbox 和契约测试 | 公共代码已搭建，进程内 HTTP/异常路径及离线迁移已验证；模块未完成 | 无真实 PostgreSQL 在线升降级/中断恢复、真实代理链和生产部署验收；M4 claim 端口未搭建 |
+| M0 | `core/`、`db/`、`api/v1/`、迁移 `0001/0002/0005`；严格环境枚举、脱敏 500、CORS `ETag`、强类型 readiness、旧表面 guard、短事务、DB 503、可信客户端地址、outbox 和契约测试 | 公共代码已搭建，进程内 HTTP/异常路径及离线迁移已验证；模块未完成 | 无真实 PostgreSQL 在线升降级/中断恢复、真实代理链/跨域浏览器和生产部署验收；M4 claim 端口未搭建 |
 | M1 | `domains/identity/`、`domains/audit/`、三个 v1 路由、迁移 `0003/0004`、identity readiness、OpenAPI 安全扩展、`test_m1_*` | 本地身份/用户/审计代码已搭建，进程内单元/API 已验证；功能未完成 | 无真实 PostgreSQL 在线迁移、触发器、锁/并发/API 集成；前端未接入；旧表面仅由生产 guard 隔离、尚未物理退役 |
-| M2 | 旧 `knowledge.py`/JSON 数据和旧 `/api` 路由 | 仅原型存在；目标模块未开始 | 无目标领域表/Repository/v1 路由；修订、审核、受控下载和 Worker 均不满足目标规则 |
-| M3 | 旧种子流程及关联展示 | 仅原型存在；目标模块未开始 | 无设备/流程领域表、版本审核、CSV 导入或可靠匹配端口 |
+| M2 | 旧 `knowledge.py`/JSON 数据和旧 `/api` 路由 | 目标模块未开始；原型代码存在 | 无目标领域表/Repository/v1 路由；修订、审核、受控下载和 Worker 均不满足目标规则 |
+| M3 | 旧种子流程及关联展示 | 目标模块未开始；原型代码存在 | 无设备/流程领域表、版本审核、CSV 导入或可靠匹配端口 |
 | M4 | M0 `outbox_events` 表、`OutboxEventInput/Writer` 和 `0005` | 生产者写端口代码存在；Worker/索引模块未开始 | 无 claim/lease/retry/恢复、索引世代、缓存/图谱失效；M4 不能直接操作 M0 私有 ORM |
 | M5 | 旧 `retrieval/`、`rag.py` 和旧 `/api` | 原型部分可运行；目标模块未开始 | 无授权只读端口、effective-only 数据源、v1 API、可靠证据约束和生产安全降级闭环 |
 | M6 | 单页 Vue `App.vue`、旧 `api.ts` | 原型可构建路径存在；目标重构未开始 | 无 router/store/login/权限守卫/v1 客户端；仍传入 reviewer；E2E 很薄 |
@@ -33,6 +33,8 @@
 | `backend/app/core/readiness.py`、`legacy_surface.py` | 已搭建 M0-owned 必需策略、可选 contributor 聚合和旧表面集中保护 | M1/M2/M4/M5、M7 | 领域只新增 `readiness.py` 且无权降低 required；不逐路由复制 guard |
 | `backend/app/db/outbox.py`、迁移 `20260814_0005` | 已搭建版本化 `OutboxWriter`；`OutboxClaimPort` 待建 | M2/M3 写事务、M4 消费者 | Writer 不 commit/返回 ORM；M4 不直接导入/更新 `db.models.OutboxEvent` |
 | `tests/test_module0_foundation.py`、`test_module0_m1_prerequisites.py`、`test_module0_readiness.py`、`test_module0_outbox.py` | 已覆盖错误映射、事务所有权、代理欺骗、生产不变量、发现策略、旧表面和 Writer 契约 | 全模块 | 使用 M0 测试文件，未与 `test_m1_*` 重复实现 |
+
+readiness 公共输出只允许 M0 `ReadinessDetails` 登记的脱敏字段，规范生产预检路径为 `/api/v1/health/ready`。预留 contributor 必须覆盖 identity、documents、knowledge、devices、workflows、workers、indexing 和 rag；模块未交付时由 M0 根据环境决定跳过或失败关闭。
 
 ### 3.2 M1：身份与审计
 

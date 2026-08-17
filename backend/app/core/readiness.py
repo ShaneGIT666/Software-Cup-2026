@@ -1,12 +1,93 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from importlib import import_module
-from typing import Mapping, Protocol
+from typing import Protocol
 from urllib.parse import urlparse
 
 from ..db.session import database_status
 from .config import AppSettings
+
+
+_WINDOWS_ABSOLUTE_PATH_PATTERN = re.compile(r"(?i)(?:^|\s)[a-z]:[\\/]|\\\\")
+_UNIX_ABSOLUTE_PATH_PATTERN = re.compile(r"(?:^|\s)/(?:etc|home|opt|proc|root|run|srv|tmp|usr|var)(?:/|\s|$)")
+_SENSITIVE_REASON_MARKERS = (
+    "http://",
+    "https://",
+    "file://",
+    "postgresql://",
+    "postgresql+",
+    "traceback",
+    "password",
+    "secret",
+    "token",
+    "api_key",
+    "api-key",
+)
+_GENERIC_UNHEALTHY_REASON = "依赖状态不可用"
+_ALLOWED_DIALECTS = frozenset({"postgresql", "postgresql+psycopg", "postgresql+psycopg2"})
+_ALLOWED_MODES = frozenset({"local", "oidc"})
+_ALLOWED_VIOLATIONS = frozenset({"idempotency_secret", "trusted_https_origins", "legacy_surface"})
+
+
+def _public_reason(reason: str) -> str:
+    if not isinstance(reason, str):
+        raise TypeError("readiness reason 必须是字符串")
+    value = reason.strip()
+    if not value:
+        return ""
+    folded = value.casefold()
+    if (
+        len(value) > 160
+        or any(character in value for character in ("\r", "\n", "\x00"))
+        or "=" in value
+        or any(marker in folded for marker in _SENSITIVE_REASON_MARKERS)
+        or _WINDOWS_ABSOLUTE_PATH_PATTERN.search(value)
+        or _UNIX_ABSOLUTE_PATH_PATTERN.search(value)
+    ):
+        return _GENERIC_UNHEALTHY_REASON
+    return value
+
+
+@dataclass(frozen=True)
+class ReadinessDetails:
+    """M0-owned allowlist for public readiness details."""
+
+    configured: bool | None = None
+    dialect: str | None = None
+    mode: str | None = None
+    latency_ms: int | None = None
+    violations: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.configured is not None and not isinstance(self.configured, bool):
+            raise TypeError("readiness configured 必须是布尔值")
+        if self.configured is None and self.dialect is not None:
+            raise ValueError("readiness dialect 只能与 configured 一起返回")
+        if self.dialect is not None and self.dialect not in _ALLOWED_DIALECTS:
+            raise ValueError("readiness dialect 不在 M0 白名单中")
+        if self.mode is not None and self.mode not in _ALLOWED_MODES:
+            raise ValueError("readiness mode 不在 M0 白名单中")
+        if self.latency_ms is not None and (
+            isinstance(self.latency_ms, bool) or not isinstance(self.latency_ms, int) or self.latency_ms < 0
+        ):
+            raise ValueError("readiness latency_ms 必须是非负整数")
+        if not isinstance(self.violations, tuple) or any(item not in _ALLOWED_VIOLATIONS for item in self.violations):
+            raise ValueError("readiness violations 不在 M0 白名单中")
+
+    def to_dict(self) -> dict[str, object]:
+        data: dict[str, object] = {}
+        if self.configured is not None:
+            data["configured"] = self.configured
+            data["dialect"] = self.dialect
+        if self.mode is not None:
+            data["mode"] = self.mode
+        if self.latency_ms is not None:
+            data["latencyMs"] = self.latency_ms
+        if self.violations:
+            data["violations"] = self.violations
+        return data
 
 
 @dataclass(frozen=True)
@@ -15,7 +96,14 @@ class ReadinessProbe:
 
     healthy: bool
     reason: str = ""
-    details: Mapping[str, object] = field(default_factory=dict)
+    details: ReadinessDetails = field(default_factory=ReadinessDetails)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.healthy, bool):
+            raise TypeError("readiness healthy 必须是布尔值")
+        if not isinstance(self.details, ReadinessDetails):
+            raise TypeError("readiness details 必须使用 ReadinessDetails")
+        object.__setattr__(self, "reason", _public_reason(self.reason))
 
 
 class ReadinessContributor(Protocol):
@@ -43,10 +131,15 @@ class ReadinessCheck:
     required: bool
     healthy: bool
     reason: str = ""
-    details: Mapping[str, object] = field(default_factory=dict)
+    details: ReadinessDetails = field(default_factory=ReadinessDetails)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.details, ReadinessDetails):
+            raise TypeError("readiness details 必须使用 ReadinessDetails")
+        object.__setattr__(self, "reason", _public_reason(self.reason))
 
     def to_dict(self) -> dict[str, object]:
-        data = dict(self.details)
+        data = self.details.to_dict()
         data.update(
             {
                 "required": self.required,
@@ -82,6 +175,9 @@ READINESS_REGISTRATIONS = (
         required_when_database_required=True,
     ),
     ReadinessRegistration(name="documents", module_suffix="domains.documents.readiness", required_in_production=True),
+    ReadinessRegistration(name="knowledge", module_suffix="domains.knowledge.readiness", required_in_production=True),
+    ReadinessRegistration(name="devices", module_suffix="domains.devices.readiness", required_in_production=True),
+    ReadinessRegistration(name="workflows", module_suffix="domains.workflows.readiness", required_in_production=True),
     ReadinessRegistration(name="workers", module_suffix="workers.readiness", required_in_production=True),
     ReadinessRegistration(name="indexing", module_suffix="indexing.readiness", required_in_production=True),
     ReadinessRegistration(name="rag", module_suffix="domains.rag.readiness", required_in_production=True),
@@ -93,7 +189,9 @@ def _is_missing_module(exc: ModuleNotFoundError, module_name: str) -> bool:
     return module_name == missing_name or module_name.startswith(f"{missing_name}.")
 
 
-def _foundation_probe(settings: AppSettings) -> ReadinessProbe:
+def evaluate_foundation_readiness(settings: AppSettings) -> ReadinessProbe:
+    """Return the shared production preflight result for foundation settings."""
+
     if settings.environment != "production":
         return ReadinessProbe(healthy=True)
 
@@ -107,7 +205,7 @@ def _foundation_probe(settings: AppSettings) -> ReadinessProbe:
     return ReadinessProbe(
         healthy=not violations,
         reason="" if not violations else "生产基础配置未就绪",
-        details={"violations": tuple(violations)},
+        details=ReadinessDetails(violations=tuple(violations)),
     )
 
 
@@ -118,7 +216,7 @@ def _database_check(settings: AppSettings) -> ReadinessCheck:
         required=settings.database_is_required,
         healthy=status.healthy,
         reason=status.reason,
-        details={"configured": status.configured, "dialect": status.dialect},
+        details=ReadinessDetails(configured=status.configured, dialect=status.dialect),
     )
 
 
@@ -138,7 +236,7 @@ def _load_contributor(registration: ReadinessRegistration) -> ReadinessContribut
 
 
 def evaluate_readiness(settings: AppSettings) -> ReadinessEvaluation:
-    foundation_probe = _foundation_probe(settings)
+    foundation_probe = evaluate_foundation_readiness(settings)
     checks: list[ReadinessCheck] = [
         _database_check(settings),
         ReadinessCheck(

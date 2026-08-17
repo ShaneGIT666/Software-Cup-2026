@@ -6,6 +6,9 @@ from ipaddress import ip_network
 from urllib.parse import urlparse
 
 
+VALID_ENVIRONMENTS = frozenset({"development", "test", "production"})
+
+
 def env_flag(name: str, default: bool = False) -> bool:
     value = os.getenv(name)
     if value is None:
@@ -124,7 +127,10 @@ class AppSettings:
 
 
 def get_settings() -> AppSettings:
-    environment = os.getenv("APP_ENV", "development").strip().lower() or "development"
+    raw_environment = os.getenv("APP_ENV")
+    environment = "development" if raw_environment is None else raw_environment.strip().lower()
+    if environment not in VALID_ENVIRONMENTS:
+        raise ValueError("APP_ENV 只能是 development、test 或 production")
     auth_mode = os.getenv("APP_AUTH_MODE", "local").strip().lower() or "local"
     if auth_mode not in {"local", "oidc"}:
         raise ValueError("APP_AUTH_MODE 只能是 local 或 oidc")

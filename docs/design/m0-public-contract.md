@@ -49,7 +49,7 @@ M0 提供 `encode_cursor()`/`decode_cursor()`。游标使用 `v1.` 版本前缀�
 
 并发修改统一使用强 ETag：响应 ETag 和请求 `If-Match` 均为 `"v<正整数>"`，例如 `"v3"`。M0 提供 `etag_for_version()`、`parse_if_match()` 和 `require_matching_version()`；缺少条件返回 `PRECONDITION_REQUIRED`/428，格式非法返回 `INVALID_PRECONDITION`/400，版本过期返回 `VERSION_CONFLICT`/412。不接受裸整数、弱 ETag、`*` 或多 ETag 列表。
 
-M0 当前冻结以下公共错误码：`HTTP_ERROR`、`VALIDATION_ERROR`、`DEPENDENCY_UNAVAILABLE`、`AUTHENTICATION_REQUIRED`、`FORBIDDEN`、`IDEMPOTENCY_KEY_REQUIRED`、`IDEMPOTENCY_CONFLICT`、`REQUEST_IN_PROGRESS`、`VERSION_CONFLICT`、`INVALID_CURSOR`、`PRECONDITION_REQUIRED`、`INVALID_PRECONDITION`、`TRUSTED_ORIGIN_REQUIRED`。
+M0 当前冻结以下公共错误码：`HTTP_ERROR`、`VALIDATION_ERROR`、`INTERNAL_ERROR`、`DEPENDENCY_UNAVAILABLE`、`AUTHENTICATION_REQUIRED`、`FORBIDDEN`、`IDEMPOTENCY_KEY_REQUIRED`、`IDEMPOTENCY_CONFLICT`、`REQUEST_IN_PROGRESS`、`VERSION_CONFLICT`、`INVALID_CURSOR`、`PRECONDITION_REQUIRED`、`INVALID_PRECONDITION`、`TRUSTED_ORIGIN_REQUIRED`。未捕获异常的 v1 响应只返回 `INTERNAL_ERROR/500`、固定脱敏消息和 request ID；原始异常仅记录到服务端日志，不得进入响应体。
 
 M1 身份与审计错误码已登记为：`INVALID_CREDENTIALS`、`ACCOUNT_LOCKED`、`ACCOUNT_DISABLED`、`SESSION_EXPIRED`、`CSRF_INVALID`、`SELF_REVIEW_FORBIDDEN`、`LAST_ADMIN_PROTECTED`、`PASSWORD_POLICY_VIOLATION`、`AUTH_MODE_UNAVAILABLE`。匿名登录对不存在用户、密码错误和已锁定账户统一返回 `INVALID_CREDENTIALS`，不得利用其他错误码泄露账户是否存在；领域模块不得改变这些代码的含义。
 
@@ -61,7 +61,7 @@ M1 身份与审计错误码已登记为：`INVALID_CREDENTIALS`、`ACCOUNT_LOCKE
 APP_TRUSTED_ORIGINS=https://repair.example.com,https://repair-admin.example.com
 ```
 
-开发/测试未设置时，M0 仅允许 `http://localhost:5173` 和 `http://127.0.0.1:5173`。生产未设置时以空列表启动，浏览器跨源请求将被拒绝；部署不得将其视为有效生产配置。所有版本共用一个凭据 CORS 策略，允许的方法和请求头为显式列表，禁止 `*`。
+开发/测试未设置时，M0 仅允许 `http://localhost:5173` 和 `http://127.0.0.1:5173`。生产未设置时以空列表启动，浏览器跨源请求将被拒绝；部署不得将其视为有效生产配置。所有版本共用一个凭据 CORS 策略，允许的方法和请求头为显式列表，禁止 `*`；响应必须显式暴露 `X-Request-ID` 和 `ETag`，但真实跨域浏览器验收仍是“集成已验证”的独立证据。
 
 Cookie 会话由 M1 实现，但必须复用该来源列表；M1 不得自行添加第二套 CORS 中间件。
 
@@ -118,9 +118,13 @@ M0 已新增 `core/client_address.py` 的 `ClientAddressResolver` 和 `APP_TRUST
 
 ### 7.1 Readiness contributor
 
-`core/readiness.py` 由 M0 统一聚合数据库、基础配置和可选领域检查。领域 contributor 只能返回 `ReadinessProbe(healthy, reason, details)`，不得声明自身是否为必需依赖；`required` 策略只由 M0 的 `ReadinessRegistration` 决定，避免领域模块通过返回 `required=false` 降低生产门槛。
+`core/readiness.py` 由 M0 统一聚合数据库、基础配置和可选领域检查。领域 contributor 只能返回 `ReadinessProbe(healthy, reason, details)`，其中 `details` 必须是 M0 定义的 `ReadinessDetails`，只允许 `configured`、`dialect`、`mode`、`latencyMs` 和 `violations` 等已登记脱敏字段。任意映射、连接串、URL、文件路径、密钥、异常文本或堆栈不得返回。`reason` 只允许短的脱敏摘要；M0 聚合器对可疑文本统一替换为通用描述。
 
-后续模块只新增预留位置中的 `readiness.py`，不得修改 `api/v1/system.py`。未交付的可选模块在开发环境安全跳过；已存在模块的内部导入错误必须暴露。生产环境中数据库及已登记的目标产品关键模块不可被配置降为可选，任一必需检查失败时 `/api/v1/health/ready` 返回脱敏的 `DEPENDENCY_UNAVAILABLE/503`。
+领域 contributor 不得声明自身是否为必需依赖；`required` 策略只由 M0 的 `ReadinessRegistration` 决定，避免领域模块通过返回 `required=false` 降低生产门槛。预留登记表完整覆盖 `identity`、`documents`、`knowledge`、`devices`、`workflows`、`workers`、`indexing` 和 `rag`。
+
+后续模块只新增预留位置中的 `readiness.py`，不得修改 `api/v1/system.py`。未交付的可选模块在开发环境安全跳过；已存在模块的内部导入错误必须暴露。生产环境中数据库及已登记的目标产品关键模块不可被配置降为可选，任一必需检查失败时规范路径 `/api/v1/health/ready` 返回脱敏的 `DEPENDENCY_UNAVAILABLE/503`。`live` 仅表示进程存活；`ready` 是 API、Windows Service、Linux 适配层和代理共用的唯一生产预检契约。
+
+`APP_ENV` 只允许 `development|test|production`，未知值必须在设置装配时失败关闭，不得以开发默认继续启动。
 
 ### 7.2 旧表面保护
 
@@ -144,3 +148,15 @@ OutboxWriter.append(session, event) -> OutboxAppendResult(event_id: str)
 ```
 
 `OutboxWriter` 只向调用方拥有的事务追加记录，不 commit/rollback，也不返回 ORM 实体。迁移 `20260814_0005` 为共享表增加 `version_id`、`request_id`、`occurred_at`；历史原型行使用明确的 `legacy:<id>` 回填，不能伪装成真实业务版本或请求。M2/M3 只从 `app.db` 公共导出导入写端口；M4 的 claim/lease 端口尚未搭建，不得通过导入 `db.models.OutboxEvent` 提前实现消费者。
+
+outbox 范围按以下矩阵执行：
+
+| 写操作类型 | 同事务要求 | outbox 要求 |
+| --- | --- | --- |
+| M2/M3 可对外观察且已登记消费者的关键领域状态变更 | 业务状态 + 审计 + 必要幂等记录 | 必须追加版本化事件 |
+| M1 用户、角色、密码等安全状态变更 | 安全状态 + 审计 + 必要幂等记录 | 仅在已冻结版本化消费者契约时追加；当前无此契约 |
+| 登录尝试、限流、会话签发/续期/注销 | 独立短事务；按安全事件策略写审计 | 不发布业务 outbox |
+| 首次 bootstrap | 受控系统主体 + 安全状态 + 审计 + CLI 操作标识 | 在无已登记消费者时不发布 |
+| Worker heartbeat/lease/retry 等运行维护 | 任务上下文 + 运行日志/指标 | 不发布业务 outbox；显式领域结果事件除外 |
+
+新增事件前必须同时冻结事件名、版本、生产者、消费者、payload 白名单、幂等与回滚语义，并更新 SRS、本契约和事务测试。

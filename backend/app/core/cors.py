@@ -18,7 +18,7 @@ CORS_ALLOWED_HEADERS = (
     "X-CSRF-Token",
     "X-Request-ID",
 )
-CORS_EXPOSE_HEADERS = ("X-Request-ID",)
+CORS_EXPOSE_HEADERS = ("X-Request-ID", "ETag")
 
 
 def cors_middleware_options(settings: AppSettings) -> dict[str, Any]:

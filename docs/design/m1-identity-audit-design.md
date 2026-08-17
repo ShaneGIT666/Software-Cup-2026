@@ -4,13 +4,13 @@
 > 主责模块：M1；协作模块：M0、M7。<br>
 > 关联记录：`2026-08-13-002-auth-entry-exception`、`2026-08-13-003-m0-m1-prerequisites`、`2026-08-13-004-m1-design`、`2026-08-13-005-m1-contract-gates`、`2026-08-13-006-m1-core-foundation`、`2026-08-13-007-m1-completion-audit`、`2026-08-13-008-m0-http-concurrency-contract`、`2026-08-13-009-m1-identity-persistence`、`2026-08-13-010-module-progress-audit`、`2026-08-13-011-m1-local-identity-http`、`2026-08-14-013-m0-m1-public-integration-gates`。
 
-实施进度：P0 的独立短事务、单查询授权快照、签发前安全状态复验、独立账号/来源限流、数据库 503 和可信客户端地址已经搭建；P1/P2 的认证、用户、角色、审计 HTTP 路由、Cookie/no-store 帮助、管理服务与 bootstrap CLI 也已有代码。M1 另提供只报告健康状态的 identity readiness，必需策略仍由 M0 掌握；`AuditWriter` 不再返回 ORM，OpenAPI 已声明 Cookie、CSRF、匿名面和权限。全量回归为 `250 passed, 25 skipped`，M1 的 3 项真实 PostgreSQL 验收因未配置专用 `_test` 数据库而跳过。在线迁移、不可变触发器、行锁/并发、回滚、旧表面物理退役及前端联调仍未验证，因此只能记录为“代码已搭建、进程内已验证，功能未完成”，详见第 10、11 节。
+实施进度：P0 的独立短事务、单查询授权快照、签发前安全状态复验、独立账号/来源限流、数据库 503 和可信客户端地址已经搭建；P1/P2 的认证、用户、角色、审计 HTTP 路由、Cookie/no-store 帮助、管理服务与 bootstrap CLI 也已有代码。M1 另提供只报告健康状态的 identity readiness，必需策略仍由 M0 掌握；`AuditWriter` 不再返回 ORM，OpenAPI 已声明 Cookie、CSRF、匿名面和权限。阶段 1 工作区全量回归为 `259 passed, 25 skipped`，M1 的 3 项真实 PostgreSQL 验收因未配置专用 `_test` 数据库而跳过。在线迁移、不可变触发器、行锁/并发、回滚、bootstrap 受控系统主体、旧表面物理退役及前端联调仍未验证，因此只能记录为“代码已搭建、进程内已验证，功能未完成”，详见第 10、11 节。
 
 ## 1. 目标与实施边界
 
 M1 为后续业务模块提供本地账户、服务器会话、RBAC、当前用户上下文、职责分离和不可变审计事件。第一阶段只实现 `APP_AUTH_MODE=local`；OIDC 仅定义扩展接口，不在本次本地账户交付中接入第三方 SDK 或回调。
 
-M1 的目标需求范围为 AUTH-01～AUTH-10、FR-IAM-01～FR-IAM-05、DATA-02～DATA-05、API-01～API-04、NFR-SEC-02/04/07、NFR-OBS-01～OBS-03；当前实现并未全部满足这些需求。它不迁移旧 `/api` 的业务功能，也不负责 M2/M3 的知识审核、文档、附件或工作流数据。
+M1 的目标需求范围为 AUTH-01～AUTH-12、FR-IAM-01～FR-IAM-05、DATA-02～DATA-08 中与身份/审计相关的条款、API-01～API-07 中与 M1 HTTP 表面相关的条款、NFR-SEC-02/04/07、NFR-OBS-01～OBS-03；当前实现并未全部满足这些需求。其中 AUTH-11/12 和 DATA-08 已有进程内代码证据，但仍缺真实 PostgreSQL/代理验收。M1 不迁移旧 `/api` 的业务功能，也不负责 M2/M3 的知识审核、文档、附件或工作流数据。
 
 ```text
 浏览器
@@ -165,7 +165,7 @@ APP_AUTH_LOCK_SECONDS=900
 - 对 Cookie 认证的所有状态变更接口要求 `X-CSRF-Token`。CSRF token 由服务器使用 `APP_AUTH_SECRET` 和当前原始会话令牌按独立 HMAC purpose 确定性派生，数据库只保存其摘要；因此 `GET /auth/csrf` 可在页面刷新后重新计算，而无需保存明文。比较必须使用常量时间函数。
 - M0 CORS 白名单只作为浏览器响应策略；M1 登录及所有 Cookie 写请求还必须在执行业务前验证 `Origin`/受控 `Referer` 与 `APP_TRUSTED_ORIGINS`。匿名登录没有既有 CSRF token，因此尤其不能只依赖 CORS。生产浏览器来源必须显式配置；无 Origin 的非浏览器客户端若有需求，应另行定义非 Cookie 认证方式，不得静默绕过来源检查。
 - 改密、账号禁用、角色变更和管理员重设密码递增 `auth_version`，撤销受影响会话；本人改密保留当前会话并推进其安全版本，同时撤销其他会话。`must_change_password` 为真时，服务端权限依赖只允许本人信息、CSRF、改密和登出，不能仅依赖前端限制。
-- 初始管理员通过本地 CLI 创建，要求空用户库、显式用户名和密码输入；不提供公共注册、默认密码或 HTTP bootstrap。
+- 初始管理员通过本地 CLI 创建，要求空用户库、显式用户名和密码输入；不提供公共注册、默认密码或 HTTP bootstrap。目标审计契约要求受控系统主体和每次 CLI 操作的独立标识；当前代码仍以创建后用户作为 actor 并使用固定 `bootstrap-cli` request ID，该差距属于后续 M1 安全修正，不得宣称 bootstrap 审计契约已完成。
 
 ### 5.3 OIDC 扩展（M1.1）
 
@@ -218,7 +218,9 @@ class AuditWriter:
     def append(self, session, event: AuditEventInput) -> AuditAppendResult: ...
 ```
 
-M2/M3 的关键写操作在一个事务中写入领域状态、调用 `AuditWriter.append()`、写 M0 outbox，再提交。操作者、审核者、提交者均由服务器端 ID 确定；不得接受客户端 `reviewer`、`actorId`、角色或权限字段。
+M2/M3 中已在事件目录登记下游消费者的关键领域写操作，在一个事务中写入领域状态、调用 `AuditWriter.append()`、写 M0 outbox 与必要幂等记录，再提交。操作者、审核者、提交者均由服务器端 ID 确定；不得接受客户端 `reviewer`、`actorId`、角色或权限字段。
+
+M1 用户/角色/密码等安全状态变更必须与审计、会话失效和必要幂等记录同事务；当前没有冻结任何 M1 安全事件的 outbox 消费者契约，因此不得为满足形式而发布事件。登录尝试、限流计数、会话签发/活动续期/注销不发布业务 outbox。bootstrap 使用受控系统主体和独立 CLI 操作标识写入审计，在无已登记消费者时不写 outbox。
 
 `AuditWriter.append()` 返回不可变 `AuditAppendResult(event_id)`，不返回 `AuditEvent` ORM；消费者不得根据 ORM 状态或私有字段建立业务逻辑。其通用敏感键脱敏只是最后一道防线，不替代事件级白名单 DTO。M1 登录事件不得把原始用户名、IP、Cookie、令牌或密码放入 `target_id`/`metadata`，只允许通用目标标识及带独立 purpose 的 HMAC 主体/来源摘要；M2/M3 为每类安全事件定义允许的 metadata 字段，禁止把任意请求体直接传给 `AuditEventInput`。
 

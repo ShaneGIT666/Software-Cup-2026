@@ -18,9 +18,10 @@ from .api.v1.router import api_v1_router
 from .core.config import get_settings
 from .core.cache_control import SensitiveResponseCacheMiddleware
 from .core.cors import cors_middleware_options
+from .core.error_codes import ErrorCode
 from .core.errors import AppError
 from .core.legacy_surface import LegacySurfaceMiddleware
-from .core.request_context import RequestContextMiddleware, request_id_from_request
+from .core.request_context import REQUEST_ID_HEADER, RequestContextMiddleware, request_id_from_request
 from .data_store import PROJECT_ROOT, knowledge_dir, upload_dir
 from .knowledge import (
     analyze_document_assets,
@@ -229,6 +230,28 @@ async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
             details=exc.details,
         )
     return error_response(exc.status_code, exc.message, request_id_from_request(request))
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    request_id = request_id_from_request(request)
+    logger.error(
+        "Unhandled request error: request_id=%s path=%s",
+        request_id,
+        request.url.path,
+        exc_info=(type(exc), exc, exc.__traceback__),
+    )
+    if request.url.path.startswith("/api/v1"):
+        response = v1_error(
+            request,
+            status_code=500,
+            code=ErrorCode.INTERNAL_ERROR,
+            message="服务器内部错误",
+        )
+    else:
+        response = error_response(500, "服务器内部错误", request_id)
+    response.headers[REQUEST_ID_HEADER] = request_id
+    return response
 
 
 @app.get("/api/health", response_model=ApiResponse)

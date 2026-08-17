@@ -17,5 +17,7 @@
 | `2026-08-14-013-m0-m1-public-integration-gates` | 2026-08-14 | M0 | 变更已结束 | 修正 M0/M1 公共接入门槛并冻结后续模块边界 | [记录](2026-08-14-013-m0-m1-public-integration-gates.md) |
 | `2026-08-14-014-readme-baseline-alignment` | 2026-08-14 | M7 | 变更已结束 | 对齐根 README 与当前产品、开发和部署基线 | [记录](2026-08-14-014-readme-baseline-alignment.md) |
 | `2026-08-14-015-historical-document-baseline-boundary` | 2026-08-14 | M7 | 变更已结束 | 收紧历史文档与现行基线、状态和阅读优先级边界 | [记录](2026-08-14-015-historical-document-baseline-boundary.md) |
+| `2026-08-17-016-stage0-contract-alignment` | 2026-08-17 | M7 | 变更已结束 | 统一现行状态、readiness、outbox 和 M1 追踪契约 | [记录](2026-08-17-016-stage0-contract-alignment.md) |
+| `2026-08-17-017-m0-foundation-hardening` | 2026-08-17 | M0 | 变更已结束 | 加固 M0 环境、脱敏异常、CORS 和 readiness | [记录](2026-08-17-017-m0-foundation-hardening.md) |
 
 历史日志正文中的“已完成”只表示对应修改记录已结束，不代表需求功能完成；索引已统一改用“变更已结束”，第 010 号起日志正文使用“记录状态 + 功能验证状态”双字段。新增记录前先检查变更标识、受影响模块和关联记录，避免为同一目标重复建档或产生相互矛盾的设计。
