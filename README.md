@@ -15,12 +15,12 @@
 
 1. 产品范围、功能要求和验收标准以 [`docs/requirements/software-requirements-spec.md`](docs/requirements/software-requirements-spec.md) 为准。
 2. 当前模块状态、验证证据和未关闭问题只以 [`docs/requirements/current-traceability-matrix.md`](docs/requirements/current-traceability-matrix.md) 为准；修改日志保存带日期的执行事实，模块计划和本 README 不维护第二套当前状态。
-3. 公共 API、分页、并发、幂等和数据库接入契约以 [`docs/design/m0-public-contract.md`](docs/design/m0-public-contract.md) 为准。
+3. 所有现行架构、模块、公共 API、数据、事件、部署与后续开发设计只在[统一软件设计与后续开发方案](docs/design/follow-up-development-plan.md)对应章节维护；公共 HTTP/事务契约从其 [M0 公共契约](docs/design/follow-up-development-plan.md#m0-public-contract)章节进入。不得另建新的设计文档文件。
 4. 后端本地运行和组件边界参考 [`backend/README.md`](backend/README.md)；其中日期化状态不得覆盖现行追踪矩阵。
-5. 版本化事件、生产者/消费者和 outbox 适用范围以 [`docs/design/event-catalog.md`](docs/design/event-catalog.md) 为准。
+5. 版本化事件、生产者/消费者和 outbox 适用范围以统一方案的[领域事件目录](docs/design/follow-up-development-plan.md#event-catalog)为准。
 6. 本地变更历史和带日期的执行证据以 [`docs/change-log/INDEX.md`](docs/change-log/INDEX.md) 及相关模块的最新记录为准；日志中的待续事项必须回写现行追踪矩阵后，才构成当前未关闭问题。
 7. `docs/architecture/`、`docs/deployment/`、`docs/ppt-assets/`、`docs/product/`、`docs/project-management/`、`docs/research/`、`docs/submission/`、`docs/testing/` 和 `docs/superpowers/specs/` 当前均作为历史材料保存，不代表现行产品状态、开发顺序或交付承诺。
-8. `docs/design/api-contract-draft.md`、`docs/design/data-model-draft.md`、`docs/design/software-design-doc.md`，SRS 和现行追踪矩阵以外的早期 `docs/requirements/` 材料，以及根目录 `PRODUCT.md`、`findings.md`、`progress.md`、`task_plan.md` 同样属于历史快照。
+8. 此前分散的 API、数据、M0/M1、事件、部署和模块进度设计草案已经整合后删除，只能从 Git 历史追溯，不得恢复为现行设计文件；SRS 和现行追踪矩阵以外的早期 `docs/requirements/` 材料，以及根目录 `PRODUCT.md`、`findings.md`、`progress.md`、`task_plan.md` 同样属于历史快照。
 9. 脚本的稳定用途分类和证据边界只在 [`scripts/README.md`](scripts/README.md) 维护；脚本名本身不构成状态或验收证据。
 10. `frontend/README.md`、`data/external-test/README.md` 和 `data/evaluation/reports/README.md` 是当前辅助说明，但不得覆盖本节前述现行基线；`data/evaluation/reports/` 中带日期的生成报告按其目录 README 作为历史回归资产解释。
 11. 标有“历史快照（非现行基线）”的文件只用于追溯当时事实；其中的“当前”“最终”“正式”“已完成”“必须”“一键部署”等词不具有现行效力，命令、测试数量和部署结论必须重新验证后才能引用。
@@ -422,7 +422,7 @@ Idempotency-Key
 
 ### 11.5 生产事务
 
-生产写操作按用途分类，不得为了形式统一向所有内部状态更新发布 outbox。会改变可对外观察业务事实、且对应事件满足[事件目录](docs/design/event-catalog.md)“生产启用门禁”的关键领域写操作，必须在启用环境的同一数据库事务中提交：
+生产写操作按用途分类，不得为了形式统一向所有内部状态更新发布 outbox。会改变可对外观察业务事实、且对应事件满足[领域事件生产启用门禁](docs/design/follow-up-development-plan.md#event-production-enablement-gate)的关键领域写操作，必须在启用环境的同一数据库事务中提交：
 
 - 业务状态。
 - 审计事件。
@@ -469,7 +469,7 @@ Idempotency-Key
 - 客户端不得通过传入 `actor`、`reviewer`、用户 ID、角色或权限范围决定服务端授权。
 - 登录成功后的会话与安全审计写入归属到刚完成认证的用户；登录失败记账由认证子系统的固定受管服务用户执行。实现与数据库证据只查现行需求追踪矩阵。
 - bootstrap 只允许在实例进入生产激活状态前，通过受控本地 CLI 在空交互用户库执行，并由固定 bootstrap 服务用户记账；bootstrap 创建必须改密的首次管理员。activation 契约接受任一有效、已完成强制改密且持有 `system_admin` 角色的本地账户；正常首次引导中通常就是首次管理员。独立 activation CLI 成功后 bootstrap 永久拒绝再次执行。
-- 首次部署必须遵循 SRS 第 10.1 节和 [M0/M1 部署就绪方案](docs/design/m0-m1-deployment-readiness-plan.md)的受限 provisioning 阶段：`bootstrapped` 期间 `ready=503` 是预期状态，只允许可信管理来源访问完成登录、CSRF、本人改密和登出所需的最小身份接口；激活且 `ready=200` 后才开放普通业务流量。未通过该流程验收时不得声称首次部署闭环已完成。
+- 首次部署必须遵循 SRS 第 10.1 节和统一方案的[受限 provisioning](docs/design/follow-up-development-plan.md#restricted-provisioning)阶段：`bootstrapped` 期间 `ready=503` 是预期状态，只允许可信管理来源访问完成登录、CSRF、本人改密和登出所需的最小身份接口；激活且 `ready=200` 后才开放普通业务流量。未通过该流程验收时不得声称首次部署闭环已完成。
 - 异步任务必须保留发起用户、原始请求 ID、任务 ID 和业务对象标识。
 - 无法归属到普通业务用户的内部写入必须归属到受认证的服务用户，并记录事件类型、任务或请求 ID、来源、目标对象和执行结果。
 - 服务用户不得伪装成普通用户，也不得使用前端提供的身份信息代替服务端认证结果。
@@ -621,7 +621,7 @@ YYYY-MM-DD-NNN-简短主题.md
 4. 确认是否已有相同目标的进行中或已结束记录。
 5. 确认不会重复实现已有公共端口、数据结构或安全机制。
 
-文档更新遵循单一事实源：需求语义更新 SRS，动态完成状态更新[当前追踪矩阵](docs/requirements/current-traceability-matrix.md)，具体事件更新[事件目录](docs/design/event-catalog.md)，执行证据更新变更日志。除对应事实源的语义或结构确实变化外，不为同一实现进度反复修改多个说明文档。
+文档更新遵循单一事实源：需求语义更新 SRS，动态完成状态更新[当前追踪矩阵](docs/requirements/current-traceability-matrix.md)，所有设计及具体事件原位更新[统一软件设计与后续开发方案](docs/design/follow-up-development-plan.md)，执行证据更新变更日志。除对应事实源的语义或结构确实变化外，不为同一实现进度反复修改多个说明文档，也不创建新的设计文件。
 
 其他强制规则：
 
@@ -745,7 +745,7 @@ uninstall.ps1
 
 ## 19. 开发顺序入口
 
-动态优先级、下一门禁和未关闭阻断只在现行需求追踪矩阵维护；稳定的模块依赖与接入顺序见 [`docs/design/module-build-progress-and-interface-plan.md`](docs/design/module-build-progress-and-interface-plan.md)。README 不保存会随进度重排的任务清单。
+动态完成状态和未关闭阻断只在现行需求追踪矩阵维护；尚未完成的依赖顺序和交付门禁只在统一方案的[后续开发路线](docs/design/follow-up-development-plan.md#remaining-roadmap)原位维护。README 不保存会随进度重排的任务清单。
 
 在现行追踪矩阵尚有阻止发布的 MUST 或未关闭冲突时，项目不得宣称生产可用，也不得用于无人监督的现场检修决策。
 

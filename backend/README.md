@@ -1,6 +1,6 @@
 # Backend
 
-> 本文件只维护后端开发入口、组件边界和代码证据说明。产品需求与验收语义只以 [SRS](../docs/requirements/software-requirements-spec.md) 为准，当前实现状态、验证证据和未关闭问题只以[现行需求追踪矩阵](../docs/requirements/current-traceability-matrix.md)为准，公共 API/事务契约只以 [M0 公共契约](../docs/design/m0-public-contract.md)为准。
+> 本文件只维护后端开发入口、组件边界和代码证据说明。产品需求与验收语义只以 [SRS](../docs/requirements/software-requirements-spec.md) 为准，当前实现状态、验证证据和未关闭问题只以[现行需求追踪矩阵](../docs/requirements/current-traceability-matrix.md)为准，公共 API/事务契约只以统一方案的 [M0 公共契约](../docs/design/follow-up-development-plan.md#m0-public-contract)章节为准。
 
 FastAPI 后端正在从演示原型迁移为模块化单体。旧业务接口保留在 `/api`，用于前端与测试兼容；所有新增生产接口使用 `/api/v1`。
 
@@ -22,7 +22,7 @@ M1 已有本地账户、会话/CSRF、独立账号/来源限流、同一授权�
 
 M1 及后续领域模块只能新增自己的 `domains/<domain>/`、`api/v1/<domain>.py`、迁移和测试文件。v1 根路由与 readiness 分别从 M0 的固定注册表加载领域路由/contributor；readiness 预留 identity、documents、knowledge、devices、workflows、workers、indexing 和 rag。模块发现可选不等于生产依赖可选；八类目标模块在生产环境均由 M0 标记为必需。领域 contributor 只返回 M0 `ReadinessDetails` 白名单中的脱敏状态，无权设置 `required` 或扩展白名单值。领域团队不得直接编辑 `main.py`、`api/v1/router.py`、`api/v1/system.py`、`db/models.py` 或 `alembic/env.py`，不得复制旧表面 guard、日志边界或 `OutboxWriter`。M4 只能从 `core/ports` 消费 ClaimPort，禁止从 `db` 包获取该端口或直接访问 outbox ORM。
 
-`APP_TRUSTED_ORIGINS` 使用逗号分隔的完整浏览器 Origin。开发和测试未设置时仅允许本机 Vite 来源；生产必须配置明确 HTTPS 来源，且不接受 `*`、路径、查询参数或凭据。关键 v1 写操作通过 `Idempotency-Key` 使用共享 `idempotency_records`；启用前必须从部署密钥存储设置 `APP_IDEMPOTENCY_SECRET`，请求指纹使用 HMAC，列表接口统一返回 `data.items` 与 `meta.nextCursor`。详见 [M0 公共契约](../docs/design/m0-public-contract.md)。
+`APP_TRUSTED_ORIGINS` 使用逗号分隔的完整浏览器 Origin。开发和测试未设置时仅允许本机 Vite 来源；生产必须配置明确 HTTPS 来源，且不接受 `*`、路径、查询参数或凭据。关键 v1 写操作通过 `Idempotency-Key` 使用共享 `idempotency_records`；启用前必须从部署密钥存储设置 `APP_IDEMPOTENCY_SECRET`，请求指纹使用 HMAC，列表接口统一返回 `data.items` 与 `meta.nextCursor`。详见统一方案的 [M0 公共契约](../docs/design/follow-up-development-plan.md#m0-public-contract)章节。
 
 ## Windows 本地运行
 
@@ -49,7 +49,7 @@ M1 本地账户基础依赖已包含 `argon2-cffi`。开发环境配置示例见
 
 从 `backend/` 目录执行时，将模块路径改为 `app.domains.identity.bootstrap` 和 `app.domains.identity.activation`。bootstrap 仅允许在无交互用户且实例状态为 `uninitialized` 时执行，并以受管 bootstrap 服务用户记账；它创建必须改密的首次管理员并把实例推进到 `bootstrapped`。activation 只接受有效、已完成强制改密且持有 `system_admin` 角色的本地账户；数据模型不另行绑定 bootstrap 创建者。成功后实例进入 `active`；生产 readiness 在此前保持不健康。实现状态与数据库证据只查现行需求追踪矩阵。
 
-首次生产部署还必须执行 [SRS 第 10.1 节](../docs/requirements/software-requirements-spec.md)和 [M0/M1 部署就绪方案](../docs/design/m0-m1-deployment-readiness-plan.md)规定的受限 provisioning 阶段。`bootstrapped` 期间 `ready=503` 是预期状态，必须保留只供本机或明确可信管理来源完成登录、CSRF、本人改密和登出的最小身份路径；只有 activation 完成且 `ready=200` 后才开放普通业务流量。部署工件状态只查现行需求追踪矩阵。迁移期旧前端需要 `/api` 时保持 `APP_LEGACY_SURFACE_MODE=enabled`；仅本机直连可选 `loopback`；生产只允许 `disabled`。
+首次生产部署还必须执行 [SRS 第 10.1 节](../docs/requirements/software-requirements-spec.md)和统一方案规定的[受限 provisioning](../docs/design/follow-up-development-plan.md#restricted-provisioning)阶段。`bootstrapped` 期间 `ready=503` 是预期状态，必须保留只供本机或明确可信管理来源完成登录、CSRF、本人改密和登出的最小身份路径；只有 activation 完成且 `ready=200` 后才开放普通业务流量。部署工件状态只查现行需求追踪矩阵。迁移期旧前端需要 `/api` 时保持 `APP_LEGACY_SURFACE_MODE=enabled`；仅本机直连可选 `loopback`；生产只允许 `disabled`。
 
 健康检查：
 
