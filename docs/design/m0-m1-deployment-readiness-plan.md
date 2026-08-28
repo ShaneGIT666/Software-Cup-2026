@@ -414,8 +414,8 @@ D0 2026-08-17 / 7016029 历史代码里程碑
 1. M7 建立一次性或明确独占、显式 opt-in、名称以 `*_test` 结尾的 PostgreSQL 16 数据库和最小权限账户；
 2. 运行 `alembic heads` 并记录执行时实际 revision，在线空库 `upgrade head`、受控 downgrade/再 upgrade，核对实际迁移链、outbox、限流和审计触发器；
 3. M1 执行 bootstrap、HTTP改临时密码、activation、受限provisioning、API、锁/并发、事务回滚和数据库中断/恢复测试；
-4. 显式5xx/异常日志脱敏和`AuthenticatedActor`审计桥接可以与D2环境准备并行，但必须在M2/M3/M5真实生产写路由联调前关闭；
+4. M0 的显式 5xx、普通日志和具体 DTO P0 回归必须持续通过；`AuthenticatedActor` 审计桥接可以与 D2 环境准备并行，但必须在 M2/M3/M5 真实生产写路由联调前关闭；
 5. D2和P0均通过后，M2/M3/M5才接入真实身份/审计端口，并且只为满足事件目录生产启用门禁的事件在对应环境调用outbox写端口；此前继续使用公开契约Mock；
 6. M7持续实现Windows Service/Caddy/provisioning/备份恢复和Windows/Ubuntu CI；M6可并行开发Mock页面，但真实发布验收遵守D4全产品门槛。
 
-后续模块不得重复创建 readiness 聚合器、旧路由守卫或 outbox 写端口，也不得修改任何已经登记或应用的历史 revision。M4 的 `OutboxClaimPort` 是尚未搭建的新端口，需由 M0 另行冻结。
+后续模块不得重复创建 readiness 聚合器、旧路由守卫或 outbox 写端口，也不得修改任何已经登记或应用的历史 revision。M0 已在无 ORM 的 `core/ports` 冻结 `OutboxClaimPort`；M0 后续拥有持久化适配器，M4 只经该端口实现 Worker，不得直接访问 M0 outbox ORM。

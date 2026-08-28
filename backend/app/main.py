@@ -21,7 +21,10 @@ from .core.cors import cors_middleware_options
 from .core.error_codes import ErrorCode
 from .core.errors import AppError
 from .core.legacy_surface import LegacySurfaceMiddleware
+from .core.log_sanitization import install_ordinary_log_sanitization
 from .core.request_context import REQUEST_ID_HEADER, RequestContextMiddleware, request_id_from_request
+from .core.server_error_sanitization import INTERNAL_ERROR_MESSAGE, normalize_v1_server_error
+from .core.validation_sanitization import VALIDATION_ERROR_MESSAGE, public_validation_issues
 from .data_store import PROJECT_ROOT, knowledge_dir, upload_dir
 from .knowledge import (
     analyze_document_assets,
@@ -87,6 +90,7 @@ ALLOWED_UPLOAD_TYPES = {
     "webp": {"image/webp"},
     "pdf": {"application/pdf"},
 }
+install_ordinary_log_sanitization()
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="设备检修知识检索与作业辅助系统", version="0.1.0")
@@ -196,6 +200,15 @@ def annotate_cross_modal_matches(items: list[dict[str, Any]], signals: dict[str,
 async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
     detail = exc.detail if isinstance(exc.detail, str) else "请求处理失败"
     if request.url.path.startswith("/api/v1"):
+        if exc.status_code >= 500:
+            public_error = normalize_v1_server_error(status_code=exc.status_code, code=ErrorCode.HTTP_ERROR)
+            return v1_error(
+                request,
+                status_code=public_error.status_code,
+                code=public_error.code,
+                message=public_error.message,
+                details=public_error.details,
+            )
         return v1_error(
             request,
             status_code=exc.status_code,
@@ -207,27 +220,37 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
 
 @app.exception_handler(RequestValidationError)
 async def request_validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
-    message = validation_message(exc.errors())
+    errors = list(exc.errors())
     if request.url.path.startswith("/api/v1"):
         return v1_error(
             request,
             status_code=422,
-            code="VALIDATION_ERROR",
-            message=message,
-            details=exc.errors(),
+            code=ErrorCode.VALIDATION_ERROR,
+            message=VALIDATION_ERROR_MESSAGE,
+            details=public_validation_issues(errors),
         )
+    message = validation_message(errors)
     return error_response(422, message, request_id_from_request(request))
 
 
 @app.exception_handler(AppError)
 async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
     if request.url.path.startswith("/api/v1"):
+        if exc.status_code >= 500:
+            public_error = normalize_v1_server_error(status_code=exc.status_code, code=exc.code)
+            return v1_error(
+                request,
+                status_code=public_error.status_code,
+                code=public_error.code,
+                message=public_error.message,
+                details=public_error.details,
+            )
         return v1_error(
             request,
             status_code=exc.status_code,
             code=exc.code,
             message=exc.message,
-            details=exc.details,
+            details=None,
         )
     return error_response(exc.status_code, exc.message, request_id_from_request(request))
 
@@ -235,21 +258,16 @@ async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     request_id = request_id_from_request(request)
-    logger.error(
-        "Unhandled request error: request_id=%s path=%s",
-        request_id,
-        request.url.path,
-        exc_info=(type(exc), exc, exc.__traceback__),
-    )
+    logger.error("event=unhandled_request_error request_id=%s", request_id)
     if request.url.path.startswith("/api/v1"):
         response = v1_error(
             request,
             status_code=500,
             code=ErrorCode.INTERNAL_ERROR,
-            message="服务器内部错误",
+            message=INTERNAL_ERROR_MESSAGE,
         )
     else:
-        response = error_response(500, "服务器内部错误", request_id)
+        response = error_response(500, INTERNAL_ERROR_MESSAGE, request_id)
     response.headers[REQUEST_ID_HEADER] = request_id
     return response
 

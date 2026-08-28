@@ -37,9 +37,10 @@
 | `backend/app/db/session.py` | 已搭建 `new_session()` 独立短事务上下文和统一 DB 请求错误映射 | M1、后续基础设施 | M1 未读取 `_session_factory`/重建 Engine；进程内测试已过，在线 PostgreSQL 待验收 |
 | `backend/app/core/client_address.py` | 已搭建 `ClientAddressResolver.resolve(request, settings) -> str` | M1 登录审计/限流、M7 代理部署 | 默认直连地址；只有显式可信代理解释代理头；M1 未直接读取 `X-Forwarded-For`；真实代理链待验收 |
 | `backend/app/core/readiness.py`、`legacy_surface.py` | 已搭建 M0-owned 必需策略、按环境发现 contributor 和旧表面集中保护 | M1/M2/M3/M4/M5、M7 | 八类目标模块生产必需；领域只新增 `readiness.py` 且无权降低 required 或扩展详情白名单 |
-| `backend/app/db/outbox.py`、迁移 `20260814_0005` | 已搭建版本化 `OutboxWriter`；`OutboxClaimPort` 待建 | 仅供满足事件目录“生产启用门禁”的 M2/M3/M5 写事务；本快照时点尚无此类目标领域事件 | Writer 不 commit/返回 ORM；M4 不直接导入/更新 `db.models.OutboxEvent` |
-| `backend/app/main.py` 的 v1 异常处理器 | P0：统一显式 5xx 为固定 `INTERNAL_ERROR`、固定安全消息和空 details，并对异常日志执行敏感值过滤 | M6、全部 v1 路由 | 不能用 OpenAPI 声明或未捕获异常测试代替显式 `HTTPException`/`AppError` 5xx 回归测试 |
-| `tests/test_module0_foundation.py`、`test_module0_m1_prerequisites.py`、`test_module0_readiness.py`、`test_module0_outbox.py` | 已覆盖未捕获异常映射、事务所有权、代理欺骗、生产不变量、发现策略、旧表面和 Writer 契约 | 全模块 | 显式 5xx 和日志脱敏仍须新增测试；使用 M0 测试文件，未与 `test_m1_*` 重复实现 |
+| `backend/app/db/outbox.py`、迁移 `20260814_0005` | 已搭建版本化 `OutboxWriter` append 端口 | 仅供满足事件目录“生产启用门禁”的 M2/M3/M5 写事务；当前尚无此类目标领域事件 | Writer 不 commit/返回 ORM；M4 不直接导入/更新 `db.models.OutboxEvent` |
+| `backend/app/core/ports/outbox_claim.py` | 冻结 `OutboxClaimPort` 的 claim、lease/heartbeat、success、retry、dead-letter、replay、fencing 与幂等值对象 | M4 Worker 只消费无 ORM 公共端口；M0 后续实现持久化适配 | 端口包不得导入 `app.db`/SQLAlchemy；契约冻结不等于 Worker、数据库适配或事件启用完成 |
+| `backend/app/main.py` 的 v1 异常处理器、`core/log_sanitization.py` | 统一显式 5xx 为固定 `INTERNAL_ERROR`、固定安全消息和空 details，并在结构化字段合并后执行普通日志白名单 | M6、全部 v1 路由 | 新路由必须复用公共 handler/helper；不能用 OpenAPI 声明代替显式 `HTTPException`/`AppError` 5xx 与日志回归测试 |
+| `tests/test_module0_*.py` | 覆盖错误/日志脱敏、具体 v1 DTO/OpenAPI、事务所有权、代理欺骗、生产不变量、发现策略、旧表面、append Writer 与 ClaimPort 契约 | 全模块 | 后续模块复用 M0 测试边界，不在各自测试中复制公共信封、日志或 outbox 端口实现 |
 
 readiness 公共输出只允许 M0 `ReadinessDetails` 登记的字段和值，精确白名单见 M0 公共契约第 7.1 节；规范生产预检路径为 `/api/v1/health/ready`。预留 contributor 覆盖 identity、documents、knowledge、devices、workflows、workers、indexing 和 rag；开发环境可跳过未交付模块，生产环境八类目标模块均为必需。
 
@@ -53,7 +54,7 @@ readiness 公共输出只允许 M0 `ReadinessDetails` 登记的字段和值，�
 4. 账号桶与来源桶限流模型已经由 `0004` 表达；未来确有结构变化时先重新检查 migration head，再创建新的后继迁移，不得重复建表或修改 `0004`。
 5. `http_contracts.py`、`http_responses.py` 和预留路由 `auth.py`、`users.py`、`audit.py` 已新增并通过进程内测试。
 
-普通交互写入使用 `CurrentUser`、`require_permissions()` 和 `ensure_not_self_review()`；内部任务使用 M1 创建的 `AuthenticatedActor`，不得自行构造固定 UUID 或第二套服务主体。当前低层 `AuditWriter.append()` 虽只返回不可变 `AuditAppendResult(event_id)`、不泄露 ORM，但 `AuditEventInput` 仍接收裸 actor/initiator ID 和任意 metadata，因此尚不能作为 M2/M3/M5 的最终生产审计门面。接入真实业务写事务前，M1 必须冻结由 `AuthenticatedActor` 生成审计输入的强类型桥接，并为每类事件提供 metadata 白名单 DTO/构造器和回归测试。Repository、ORM、Cookie、节流和生命周期实现均为 M1 私有。受管服务用户、登录失败主体、bootstrap/activation、非空数据库 actor 和 OpenAPI 通用 500 声明已有记录 019 的单元证据；显式 5xx 运行时脱敏、真实 PostgreSQL 和上述审计桥接仍是独立门槛。
+普通交互写入使用 `CurrentUser`、`require_permissions()` 和 `ensure_not_self_review()`；内部任务使用 M1 创建的 `AuthenticatedActor`，不得自行构造固定 UUID 或第二套服务主体。当前低层 `AuditWriter.append()` 虽只返回不可变 `AuditAppendResult(event_id)`、不泄露 ORM，但 `AuditEventInput` 仍接收裸 actor/initiator ID 和任意 metadata，因此尚不能作为 M2/M3/M5 的最终生产审计门面。接入真实业务写事务前，M1 必须冻结由 `AuthenticatedActor` 生成审计输入的强类型桥接，并为每类事件提供 metadata 白名单 DTO/构造器和回归测试。Repository、ORM、Cookie、节流和生命周期实现均为 M1 私有。受管服务用户、登录失败主体、bootstrap/activation、非空数据库 actor 和 OpenAPI 通用 500 声明已有记录 019 的单元证据；P0 后续错误/DTO证据只查追踪矩阵。真实 PostgreSQL 和上述审计桥接仍是独立门槛。
 
 ### 3.3 M2：文档、知识与案例版本
 
@@ -116,15 +117,15 @@ readiness 公共输出只允许 M0 `ReadinessDetails` 登记的字段和值，�
 - M4 先依事件目录的提议 schema 编写 handler、去重/重放和消费者契约测试；登记实际消费者并与生产者闭合后才能冻结事件。冻结不自动授权生产发布，必须继续满足目录生产启用门禁；任何阶段都不得轮询 M2/M3/M5 表。
 - M5/M6 在真实端口交付前使用版本化 Mock；Mock 不进入生产 Provider、索引或审核数据。
 - M7 只提供环境、脚本和共享夹具，不在测试夹具中复制领域业务实现。
-- 记录 019 时点的 M1 进程内身份事务/快照冲突已关闭，旧入口已有生产 guard 但未物理退役；显式 5xx/日志脱敏、审计强类型桥接和真实 PostgreSQL 并发仍未关闭，M2/M3/M5 生产写路由不得把 M1 标为已验收依赖。
+- 记录 019 时点的 M1 进程内身份事务/快照冲突已关闭，旧入口已有生产 guard 但未物理退役；该时点尚未关闭的显式 5xx/日志脱敏以后续追踪矩阵为准。审计强类型桥接和真实 PostgreSQL 并发仍是 M2/M3/M5 生产写路由的独立前置，不能因 M0 P0 关闭而把 M1 标为已验收依赖。
 
 ## 5. 稳定接入顺序与门禁
 
 1. 记录 018 的 D1.1 只表示其文档治理状态对象为“已设计”且该次记录已经结束，不表示运行时功能完成；记录 019 的 D1.2 只为 OpenAPI 通用 500 声明、M1 受管主体和激活边界提供“单元已验证”证据。迁移 `20260817_0006` 仍只有离线 SQL 证据。
-2. 在真实业务联调前，先关闭显式 `HTTPException`/`AppError` 5xx 与异常日志脱敏 P0，并冻结 `AuthenticatedActor` 到事件级审计输入的强类型桥接；缺陷修复必须增加相应自动化测试。
+2. 真实业务联调必须持续满足 M0 的显式 5xx、普通日志和具体 DTO P0 契约；当前证据只查追踪矩阵。下一独立门禁是冻结 `AuthenticatedActor` 到事件级审计输入的强类型桥接；缺陷修复必须增加相应自动化测试。
 3. D2 在明确独占的一次性 PostgreSQL 16 测试数据库执行实际 head 的在线升级、服务种子/回填/非空约束、触发器、生命周期锁、事务、并发、回滚和中断恢复验收。
 4. D2 与强类型审计门槛关闭前，M2/M3/M5 只使用版本化身份/审计/outbox Mock 开发纯领域逻辑；两项门槛均关闭后才接入真实身份和生产写事务。
-5. M2/M3/M5 先冻结只读端口，并与 M4 共同提议实际需要异步消费的领域事件；M0 冻结 claim 端口后，M4 实现并登记实际消费者。生产者/消费者契约闭合后事件目录才冻结该版本；进一步满足目录生产启用门禁后，才允许对应环境发布。M5 只接入已冻结的上游只读端口。
-6. M6 已可依据现有 OpenAPI 声明开发公共错误类型和版本化 Mock 客户端；真实联调仍等待显式 5xx 修复及对应端点成功 DTO 冻结。M7 必须建立并持续运行 Windows/Ubuntu CI，最终执行恢复、安全、故障、性能和完整 E2E 发布验收。
+5. M2/M3/M5 先冻结只读端口，并与 M4 共同提议实际需要异步消费的领域事件；M0 通过 `core/ports` 提供已冻结的 ClaimPort，M0 实现持久化适配，M4 经端口实现并登记实际消费者。生产者/消费者契约闭合后事件目录才冻结该版本；进一步满足目录生产启用门禁后，才允许对应环境发布。M5 只接入已冻结的上游只读端口。
+6. M6 只依据封闭的 OpenAPI 输入选择并锁定一个 TypeScript 生成器，生成公共错误和具体 success/item 类型及版本化 Mock 客户端，禁止手写第二套 DTO。真实联调仍等待对应领域端点交付。M7 必须建立并持续运行 Windows/Ubuntu CI，最终执行恢复、安全、故障、性能和完整 E2E 发布验收。
 
-M0/M1 的实际部署检查、readiness 扩展、旧表面隔离、Windows 工件和后续模块接入门槛详见 `m0-m1-deployment-readiness-plan.md`。记录 019 只支持其明确状态对象的单元证据；显式 5xx、审计强类型桥接及 D2～D4 仍未关闭，不得据此提升整个 M0/M1 为“集成已验证”或“已完成”。
+M0/M1 的实际部署检查、readiness 扩展、旧表面隔离、Windows 工件和后续模块接入门槛详见 `m0-m1-deployment-readiness-plan.md`。记录 019 只支持其明确状态对象的单元证据；P0 后续证据只查追踪矩阵和新记录。审计强类型桥接及 D2～D4 仍未关闭，不得据此提升整个 M0/M1 为“集成已验证”或“已完成”。

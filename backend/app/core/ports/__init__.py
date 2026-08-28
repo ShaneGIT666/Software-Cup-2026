@@ -1,0 +1,41 @@
+"""Dependency-light public ports shared with later domain modules."""
+
+from .outbox_claim import (
+    OutboxAcknowledgeSuccessInput,
+    OutboxAcknowledgeSuccessResult,
+    OutboxClaimedEvent,
+    OutboxClaimInput,
+    OutboxClaimPort,
+    OutboxClaimResult,
+    OutboxDeadLetterInput,
+    OutboxDeadLetterResult,
+    OutboxFailure,
+    OutboxLease,
+    OutboxLeaseRenewalInput,
+    OutboxLeaseRenewalResult,
+    OutboxOperationStatus,
+    OutboxReplayInput,
+    OutboxReplayResult,
+    OutboxRetryInput,
+    OutboxRetryResult,
+)
+
+__all__ = [
+    "OutboxAcknowledgeSuccessInput",
+    "OutboxAcknowledgeSuccessResult",
+    "OutboxClaimInput",
+    "OutboxClaimPort",
+    "OutboxClaimResult",
+    "OutboxClaimedEvent",
+    "OutboxDeadLetterInput",
+    "OutboxDeadLetterResult",
+    "OutboxFailure",
+    "OutboxLease",
+    "OutboxLeaseRenewalInput",
+    "OutboxLeaseRenewalResult",
+    "OutboxOperationStatus",
+    "OutboxReplayInput",
+    "OutboxReplayResult",
+    "OutboxRetryInput",
+    "OutboxRetryResult",
+]

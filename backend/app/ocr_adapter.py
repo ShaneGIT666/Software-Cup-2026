@@ -150,7 +150,7 @@ def analyze_ocr_document(file_path: Path, source_name: str, suffix: str) -> dict
     except Exception as exc:
         reason = f"{provider} OCR provider 不可用，已降级到 mock OCR：{exc}"
         record_fallback("ocr", reason)
-        logger.warning("OCR fallback: %s", reason)
+        logger.warning("event=ocr_provider_fallback")
         return mock_ocr_result(file_path, source_name, suffix, provider, reason)
 
 

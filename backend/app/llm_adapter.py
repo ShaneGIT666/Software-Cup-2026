@@ -472,7 +472,7 @@ def generate_rag_answer(
     except Exception as exc:
         reason = f"{provider} provider 调用失败，已降级到 mock：{exc}"
         record_fallback("llm", reason)
-        logger.warning("LLM fallback: %s", reason)
+        logger.warning("event=llm_provider_fallback")
         return mock_rag_answer(
             device_model,
             fault_text,

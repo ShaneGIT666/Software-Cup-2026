@@ -296,7 +296,7 @@ def analyze_multimodal_document(
     except Exception as exc:
         reason = f"{provider} 多模态 provider 调用失败，已降级到 mock：{exc}"
         record_fallback("multimodal", reason)
-        logger.warning("Multimodal fallback: %s", reason)
+        logger.warning("event=multimodal_provider_fallback")
         return mock_multimodal_analysis(
             file_path.name,
             source_name,
@@ -402,7 +402,7 @@ def validate_multimodal_provider(request: Any) -> dict[str, Any]:
     except Exception as exc:
         reason = f"{provider} 多模态验收失败：{exc}"
         record_fallback("multimodal", reason)
-        logger.warning("Multimodal validation fallback: %s", reason)
+        logger.warning("event=multimodal_validation_fallback")
         return {
             "remoteOk": False,
             "provider": provider,

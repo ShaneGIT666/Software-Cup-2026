@@ -60,7 +60,17 @@ def _override_admin(use_case: Mock) -> TestClient:
 def test_create_user_preserves_v1_etag_idempotency_and_no_store() -> None:
     use_case = Mock()
     use_case.create_user.return_value = WriteResult(
-        data={"id": "user-2", "version": 1, "roles": ["technician"]},
+        data={
+            "id": "user-2",
+            "username": "alice",
+            "displayName": "Alice",
+            "isActive": True,
+            "roles": ["technician"],
+            "mustChangePassword": True,
+            "version": 1,
+            "createdAt": None,
+            "updatedAt": None,
+        },
         status_code=201,
         version=1,
     )
@@ -94,7 +104,17 @@ def test_create_user_preserves_v1_etag_idempotency_and_no_store() -> None:
 def test_role_update_forwards_if_match_and_server_identity() -> None:
     use_case = Mock()
     use_case.set_roles.return_value = WriteResult(
-        data={"id": "user-2", "version": 3, "roles": ["reviewer"]},
+        data={
+            "id": "user-2",
+            "username": "alice",
+            "displayName": "Alice",
+            "isActive": True,
+            "roles": ["reviewer"],
+            "mustChangePassword": False,
+            "version": 3,
+            "createdAt": None,
+            "updatedAt": None,
+        },
         status_code=200,
         version=3,
     )
@@ -135,4 +155,3 @@ def test_roles_endpoint_uses_frozen_server_matrix() -> None:
     roles = {item["code"]: item["permissions"] for item in response.json()["data"]}
     assert "knowledge:review" not in roles["system_admin"]
     assert roles["auditor"] == ["audit:read", "ops:read"]
-

@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from typing import Any
-
 from fastapi import Request, Response
 from fastapi.routing import APIRoute
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
 from ...core.config import AppSettings
 from ...core.contracts import ResponseMeta, V1Response
@@ -33,11 +32,13 @@ class IdentityNoStoreRoute(APIRoute):
 
 def identity_json_response(
     request: Request,
-    data: Any = None,
+    data: object | None = None,
     *,
     status_code: int = 200,
+    response_model: type[BaseModel] | None = None,
 ) -> JSONResponse:
-    payload = V1Response(data=data, meta=ResponseMeta(requestId=request_id_from_request(request)))
+    model = response_model or V1Response[object | None]
+    payload = model(data=data, meta=ResponseMeta(requestId=request_id_from_request(request)))
     response = JSONResponse(status_code=status_code, content=jsonable_encoder(payload))
     return apply_no_store(response)  # type: ignore[return-value]
 

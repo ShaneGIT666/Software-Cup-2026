@@ -4,17 +4,18 @@ from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 
 from ...core.error_codes import ErrorCode
 from ...core.errors import AppError
 from ...core.pagination import decode_cursor, encode_cursor
-from ...core.contracts import V1PageResponse
 from ...db.session import new_session
 from ...domains.audit.repository import AuditRepository, audit_event_view
 from ...domains.identity.contracts import Permission
 from ...domains.identity.dependencies import require_permissions
 from ...domains.identity.http_responses import IdentityNoStoreRoute
+from .identity_response_models import AuditEventListResponse
 from .responses import v1_page
 
 
@@ -23,7 +24,7 @@ router = APIRouter(tags=["audit"], route_class=IdentityNoStoreRoute)
 
 @router.get(
     "/audit-events",
-    response_model=V1PageResponse,
+    response_model=AuditEventListResponse,
     dependencies=[Depends(require_permissions(Permission.AUDIT_READ))],
     openapi_extra={"x-required-permissions": [Permission.AUDIT_READ.value]},
 )
@@ -62,8 +63,13 @@ def list_audit_events(
     if len(rows) > limit and visible:
         last = visible[-1]
         next_cursor = encode_cursor({"occurredAt": last.occurred_at.isoformat(), "id": last.id})
-    response = v1_page(request, [audit_event_view(event) for event in visible], next_cursor=next_cursor)
+    response = v1_page(
+        request,
+        [audit_event_view(event) for event in visible],
+        next_cursor=next_cursor,
+        response_model=AuditEventListResponse,
+    )
     if not isinstance(response, JSONResponse):
-        response = JSONResponse(content=response.model_dump() if hasattr(response, "model_dump") else response.dict())
+        response = JSONResponse(content=jsonable_encoder(response, exclude_unset=True))
     response.headers["Cache-Control"] = "no-store"
     return response

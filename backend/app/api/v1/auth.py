@@ -6,7 +6,6 @@ from fastapi import APIRouter, Depends, Header, Request
 
 from ...core.client_address import ClientAddressResolver, get_client_address_resolver
 from ...core.config import AppSettings, get_settings
-from ...core.contracts import V1Response
 from ...core.error_codes import ErrorCode
 from ...core.errors import AppError
 from ...core.request_context import request_id_from_request
@@ -33,6 +32,13 @@ from ...domains.identity.http_responses import (
 from ...domains.identity.login import LoginUseCase, get_login_use_case
 from ...domains.identity.sessions import csrf_token_for_session, utc_now
 from ...domains.identity.transactions import SessionIdentityResolver, get_session_identity_resolver
+from .identity_response_models import (
+    CsrfResponse,
+    LoginResponse,
+    LogoutResponse,
+    MeResponse,
+    PasswordChangeResponse,
+)
 
 
 router = APIRouter(prefix="/auth", tags=["identity"], route_class=IdentityNoStoreRoute)
@@ -57,7 +63,7 @@ def _identity_data(resolved: ResolvedIdentity) -> dict[str, object]:
 
 @router.post(
     "/login",
-    response_model=V1Response,
+    response_model=LoginResponse,
     dependencies=[Depends(require_trusted_write_origin)],
     openapi_extra={"x-anonymous": True, "x-trusted-origin-required": True},
 )
@@ -107,14 +113,14 @@ def login(
     )
     data = _identity_data(identity)
     data["csrfToken"] = created.secrets.csrf_token
-    response = identity_json_response(request, data)
+    response = identity_json_response(request, data, response_model=LoginResponse)
     set_session_cookie(response, settings=settings, token=created.secrets.token)
     return response
 
 
 @router.post(
     "/logout",
-    response_model=V1Response,
+    response_model=LogoutResponse,
     dependencies=[Depends(require_trusted_write_origin)],
     openapi_extra={"x-authenticated": True, "x-csrf-required": True, "x-trusted-origin-required": True},
 )
@@ -125,20 +131,20 @@ def logout(
     use_case: Annotated[LogoutUseCase, Depends(get_logout_use_case)],
 ):  # type: ignore[no-untyped-def]
     use_case.execute(current_user=current_user, request_id=request_id_from_request(request), now=utc_now())
-    response = identity_json_response(request, {"loggedOut": True})
+    response = identity_json_response(request, {"loggedOut": True}, response_model=LogoutResponse)
     clear_session_cookie(response, settings=settings)
     return response
 
 
-@router.get("/me", response_model=V1Response, openapi_extra={"x-authenticated": True})
+@router.get("/me", response_model=MeResponse, openapi_extra={"x-authenticated": True})
 def me(
     request: Request,
     resolved: Annotated[ResolvedIdentity, Depends(get_resolved_identity)],
 ):  # type: ignore[no-untyped-def]
-    return identity_json_response(request, _identity_data(resolved))
+    return identity_json_response(request, _identity_data(resolved), response_model=MeResponse)
 
 
-@router.get("/csrf", response_model=V1Response, openapi_extra={"x-authenticated": True})
+@router.get("/csrf", response_model=CsrfResponse, openapi_extra={"x-authenticated": True})
 def csrf(
     request: Request,
     resolved: Annotated[ResolvedIdentity, Depends(get_resolved_identity)],
@@ -148,12 +154,16 @@ def csrf(
     raw_token = getattr(request.state, "m1_identity_token", "")
     if not raw_token:
         raise AppError(401, ErrorCode.AUTHENTICATION_REQUIRED, "当前会话无效或已过期，请重新登录。")
-    return identity_json_response(request, {"csrfToken": csrf_token_for_session(raw_token, secret=settings.auth_secret)})
+    return identity_json_response(
+        request,
+        {"csrfToken": csrf_token_for_session(raw_token, secret=settings.auth_secret)},
+        response_model=CsrfResponse,
+    )
 
 
 @router.put(
     "/password",
-    response_model=V1Response,
+    response_model=PasswordChangeResponse,
     dependencies=[Depends(require_trusted_write_origin)],
     openapi_extra={"x-authenticated": True, "x-csrf-required": True, "x-trusted-origin-required": True},
 )
@@ -183,4 +193,9 @@ def change_password(
         settings=settings,
         now=utc_now(),
     )
-    return identity_json_response(request, dict(result.data), status_code=result.status_code)
+    return identity_json_response(
+        request,
+        dict(result.data),
+        status_code=result.status_code,
+        response_model=PasswordChangeResponse,
+    )

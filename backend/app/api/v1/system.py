@@ -3,16 +3,17 @@ from __future__ import annotations
 from fastapi import APIRouter, Request, status
 
 from ...core.config import get_settings
-from ...core.contracts import V1Response
+from ...core.contracts import ReadinessErrorResponse
 from ...core.readiness import evaluate_readiness
 from .responses import v1_error, v1_success
+from .system_response_models import LiveResponse, ReadyResponse
 
 
 router = APIRouter(tags=["system"])
 
 
-@router.get("/health/live", response_model=V1Response, summary="存活检查")
-def live(request: Request) -> V1Response:
+@router.get("/health/live", response_model=LiveResponse, summary="存活检查")
+def live(request: Request):  # type: ignore[no-untyped-def]
     """Returns success while the API process can receive requests."""
 
     settings = get_settings()
@@ -24,10 +25,17 @@ def live(request: Request) -> V1Response:
             "apiVersion": "v1",
             "environment": settings.environment,
         },
+        response_model=LiveResponse,
     )
 
 
-@router.get("/health/ready", response_model=V1Response, summary="就绪检查", responses={503: {"model": V1Response}})
+@router.get(
+    "/health/ready",
+    response_model=ReadyResponse,
+    response_model_exclude_unset=True,
+    summary="就绪检查",
+    responses={503: {"model": ReadinessErrorResponse}},
+)
 def ready(request: Request):  # type: ignore[no-untyped-def]
     """Aggregate M0-owned foundation and optional domain readiness checks.
 
@@ -47,4 +55,4 @@ def ready(request: Request):  # type: ignore[no-untyped-def]
             message="关键依赖未就绪",
             details=payload,
         )
-    return v1_success(request, payload)
+    return v1_success(request, payload, response_model=ReadyResponse)

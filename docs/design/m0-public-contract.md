@@ -36,6 +36,8 @@ operations  M4
 
 上述 JSON 只说明公共信封形状，不是可供所有操作复用的最终模型。每个 v1 操作必须声明具体的成功 `data` DTO；列表操作还必须声明具体的 item DTO；每个允许非空错误 details 的错误码必须声明封闭 schema。公共 OpenAPI、生成客户端或正式领域响应中不得以 `Any`、任意映射或未约束对象代替具体模型。
 
+M0 提供必须绑定类型参数的 `V1Response[DataT]` 与 `V1PageResponse[ItemT]`，但未绑定的泛型只允许在内部 helper 中使用，不得直接作为路由 `response_model`。当前及后续每个 v1 路由都必须使用命名的具体响应模型；即使路由需要返回 `JSONResponse` 以设置 Cookie、ETag 或缓存头，也必须在序列化前用同一个具体模型校验。所有 v1 DTO 禁止未声明字段，OpenAPI consumer-contract 测试必须递归拒绝空 schema、自由 object 和泛型分页项。
+
 游标分页 v1 响应必须由 `v1_page()` 生成：
 
 ```json
@@ -57,7 +59,14 @@ M0 冻结以下公共错误码：`HTTP_ERROR`、`VALIDATION_ERROR`、`INTERNAL_E
 
 所有未捕获异常、显式 `HTTPException` 5xx 和显式 `AppError` 5xx 都必须经过同一外部脱敏边界。除经公共契约明确登记、使用固定消息与字段白名单的 `DEPENDENCY_UNAVAILABLE/503` 外，v1 5xx 统一返回 `INTERNAL_ERROR/500`、固定用户消息、`details=null` 和 request ID；异常文本、堆栈、连接串、路径及任意内部 details 不得进入响应。所有 v1 操作必须在 OpenAPI 中声明统一 500 信封，但该声明不能替代各显式 5xx 分支的运行时测试。
 
-普通结构化日志只允许记录登记的安全字段，不得直接写入未经清洗的异常文本、请求体、Cookie、令牌、密码、连接串或绝对路径。确需保留诊断堆栈时，必须进入与普通日志分离、受访问控制且有保留策略的诊断通道。响应脱敏和日志脱敏是两个独立验收对象；当前合规状态只见追踪矩阵。
+错误模型按以下边界冻结：
+
+- 未单列的 4xx/业务错误使用 `V1ErrorResponse`，`details` 必须为 `null`；`AppError.details` 是内部属性，不得由公共 handler 透传。
+- 框架请求校验错误使用 `ValidationErrorResponse`，固定消息为“请求参数校验失败”；每项只允许有界 `loc`、固定公共 `msg`、有界 `type` 和可选 `ctx.limit_value`，不得返回请求 `input/body`、原 validator 消息或任意上下文。
+- readiness 的 `DEPENDENCY_UNAVAILABLE/503` 使用 `ReadinessErrorResponse` 和本文第 7.1 节白名单；其他显式 503 不得自行携带 details。
+- 内部错误使用 `InternalErrorResponse`，固定 `INTERNAL_ERROR/500`、固定消息和空 details。
+
+普通结构化日志只允许 `event`、`request_id`、`component`、`operation`、`outcome`、`code`、`method`、`status_code`、`duration_ms`、`count`、`attempt`、`consumer_id`、`event_id`、`diagnostic_id` 这些安全标量扩展字段；其他 `extra` 字段在合并后按拒绝策略脱敏。不得直接写入未经清洗的异常文本、请求体/载荷/headers、Cookie、令牌、密码、连接串或绝对路径；敏感键赋值整条普通日志失败关闭。异常对象必须作为 logger 参数交给集中边界，禁止先用 f-string 或 `str(exc)` 拼入普通消息。确需保留诊断堆栈时，必须进入与普通日志分离、受访问控制且有保留策略的诊断通道。响应脱敏和日志脱敏是两个独立验收对象；当前合规状态只见追踪矩阵。
 
 M1 身份与审计错误码已登记为：`INVALID_CREDENTIALS`、`ACCOUNT_LOCKED`、`ACCOUNT_DISABLED`、`SESSION_EXPIRED`、`CSRF_INVALID`、`SELF_REVIEW_FORBIDDEN`、`LAST_ADMIN_PROTECTED`、`PASSWORD_POLICY_VIOLATION`、`AUTH_MODE_UNAVAILABLE`。匿名登录对不存在用户、密码错误和已锁定账户统一返回 `INVALID_CREDENTIALS`，不得利用其他错误码泄露账户是否存在；领域模块不得改变这些代码的含义。
 
@@ -152,9 +161,11 @@ M2～M5 不得把模块私有状态塞入现有字段。新增字段或允许值
 
 `APP_LEGACY_SURFACE_MODE` 取值为 `enabled|loopback|disabled`。开发默认 `enabled`；生产默认且只允许 `disabled`。M0 中间件统一拦截旧 `/api`（不含 `/api/v1`）、`/uploads` 和 `/knowledge`，因此 M1～M3 不得逐路由复制阻断逻辑。`loopback` 只判断直连客户端地址，不信任转发头。任何遗留静态挂载在物理退役前都必须受此守卫；M2 受控下载迁移完成后移除挂载，具体退役状态只见追踪矩阵。
 
-## 8. 事务 Outbox append 公共写端口
+## 8. 事务 Outbox 公共端口
 
-M0 公开以下不可变 append 输入契约；本节不冻结消费者 claim/lease 端口：
+### 8.1 Append 写端口
+
+M0 公开以下不可变 append 输入契约：
 
 ```python
 OutboxEventInput(
@@ -171,7 +182,31 @@ OutboxWriter.append(session, event) -> OutboxAppendResult(event_id: str)
 
 `OutboxEventInput` 是生产者调用 `append()` 的输入，不包含 `event_id`。Writer 在持久化时生成稳定 `event_id`；持久化记录和投递 envelope 由该 ID 加上输入字段组成，消费者不得要求生产者预先生成或伪造 ID。`OutboxWriter` 只向调用方拥有的事务追加记录，不 commit/rollback，也不返回 ORM 实体。
 
-M2/M3/M5 在事件处于“提议”或仅“已冻结”阶段时可依赖 `app.db` 公共写端口编写生产者契约测试和受控实现，但只有满足事件目录“生产启用门禁”后，才允许对应环境的生产路径实际调用 `append()`。M0 必须另行冻结 claim/lease/retry/replay 输入、返回值和并发语义后，M4 才能实现消费者；M4 不得通过导入或更新 `db.models.OutboxEvent` 绕过公共端口。当前实现状态只见追踪矩阵。
+M2/M3/M5 在事件处于“提议”或仅“已冻结”阶段时可依赖 `app.db` 公共写端口编写生产者契约测试和受控实现，但只有满足事件目录“生产启用门禁”后，才允许对应环境的生产路径实际调用 `append()`。当前实现状态只见追踪矩阵。
+
+### 8.2 Claim、租约与重放端口
+
+M4 只能从无 ORM 副作用的 `app.core.ports` 导入 `OutboxClaimPort` 及其不可变值对象，不得从 `app.db` 导入该端口、接收 SQLAlchemy `Session` 或直接读写 `db.models.OutboxEvent`。冻结的方法为：
+
+```python
+OutboxClaimPort.claim(OutboxClaimInput) -> OutboxClaimResult
+OutboxClaimPort.renew_lease(OutboxLeaseRenewalInput) -> OutboxLeaseRenewalResult
+OutboxClaimPort.acknowledge_success(OutboxAcknowledgeSuccessInput) -> OutboxAcknowledgeSuccessResult
+OutboxClaimPort.schedule_retry(OutboxRetryInput) -> OutboxRetryResult
+OutboxClaimPort.dead_letter(OutboxDeadLetterInput) -> OutboxDeadLetterResult
+OutboxClaimPort.replay(OutboxReplayInput) -> OutboxReplayResult
+```
+
+端口语义如下：
+
+1. `claim` 在一个原子持久化操作中，只把 `(consumer_id, event_id)` 交给一个有效租约；允许一次领取 1～100 项，租期为 1 秒～24 小时。数据存储时钟是到期判断的唯一事实源，调用方时间不得覆盖它。
+2. `OutboxLease` 同时携带 `consumer_id`、`event_id`、`owner_id`、不透明 `lease_token`、单调递增 `fencing_token`、`delivery_attempt`、`replay_generation`、`acquired_at` 和 `expires_at`。续租、成功确认、重试和 dead-letter 必须比较完整租约证据；过期后重领必须生成新 token，并提高 fencing token 与 attempt。
+3. `renew_lease` 是 heartbeat，只能延长当前未过期租约；`acknowledge_success` 是终态；`schedule_retry` 释放租约且不得早于 `available_at` 再次可领取；`dead_letter` 生成当前 dead-letter token，只有携带匹配 token 的显式 `replay` 才能重开。
+4. replay 保留原 `event_id` 和事件信封、增加 `replay_generation`、创建新的投递尝试，绝不再次调用生产者。事件 payload 必须是有限 JSON 值并在领取信封中深度不可变；失败元数据只允许稳定 `code` 与可选 `diagnostic_id`，禁止异常原文。
+5. 所有命令使用 `operation_id`，幂等范围为 `(consumer_id, operation_name, operation_id)`。相同规范输入重试返回已存结果并标记 `idempotent_replay=true`；同 ID 不同输入返回 `idempotency_conflict` 且不改变状态。
+6. 失败结果只使用 `not_found`、`ownership_conflict`、`lease_expired`、`stale_fence`、`invalid_state`、`idempotency_conflict`；被拒绝的命令不得附带已应用状态，也不得修改投递记录。
+
+本节只冻结 M0 公共契约。M0 的持久化适配器、M4 Worker、租约/投递表迁移、真实消费者与恢复验证仍分别按模块计划实施；端口冻结本身不满足事件目录的生产启用门禁。
 
 outbox 范围按以下矩阵执行：
 

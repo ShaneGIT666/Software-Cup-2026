@@ -143,7 +143,7 @@ def embed_texts(texts: list[str]) -> tuple[list[list[float]], str]:
         except Exception as exc:
             reason = f"openai embedding fallback to hash: {exc}"
             record_fallback("embedding", reason)
-            logger.warning(reason)
+            logger.warning("event=embedding_provider_fallback")
     return [hash_embed_text(text) for text in texts], "hash"
 
 
@@ -155,7 +155,7 @@ def chroma_collection(provider: str) -> Any | None:
     except Exception as exc:
         reason = f"Chroma is unavailable: {exc}"
         record_fallback("embedding", reason)
-        logger.warning(reason)
+        logger.warning("event=chroma_import_unavailable")
         return None
 
     try:
@@ -169,7 +169,7 @@ def chroma_collection(provider: str) -> Any | None:
     except Exception as exc:
         reason = f"Chroma collection unavailable for {provider}: {exc}"
         record_fallback("embedding", reason)
-        logger.warning(reason)
+        logger.warning("event=chroma_collection_unavailable")
         return None
 
 
@@ -440,7 +440,7 @@ def delete_document(document_id: str) -> None:
         except Exception as exc:
             reason = f"Chroma delete skipped for {provider}: {exc}"
             record_fallback("embedding", reason)
-            logger.warning(reason)
+            logger.warning("event=chroma_delete_skipped")
 
 
 def cosine_distance(left: list[float], right: list[float]) -> float:
@@ -542,7 +542,7 @@ def search_sqlite_similar_chunks(query_embedding: list[float], provider: str, to
     except sqlite3.Error as exc:
         reason = f"SQLite vector query failed for {provider}: {exc}"
         record_fallback("embedding", reason)
-        logger.warning(reason)
+        logger.warning("event=sqlite_vector_query_failed")
         return []
 
     for chunk_id, document, embedding_json, metadata_json in rows:
@@ -682,7 +682,7 @@ def search_similar_chunks(query: str, top_k: int) -> list[dict[str, Any]]:
     except Exception as exc:
         reason = f"Vector query setup failed: {exc}"
         record_fallback("vector", reason)
-        logger.warning(reason)
+        logger.warning("event=vector_query_setup_failed")
         return []
 
     return search_chroma_similar_chunks(query_embeddings, provider, top_k, collection)
@@ -701,7 +701,7 @@ def search_chroma_similar_chunks(query_embeddings: list[list[float]], provider: 
     except Exception as exc:
         reason = f"Chroma query failed for {provider}: {exc}"
         record_fallback("embedding", reason)
-        logger.warning(reason)
+        logger.warning("event=chroma_query_failed")
         return []
 
     ids = result.get("ids", [[]])[0]

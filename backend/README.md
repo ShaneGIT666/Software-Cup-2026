@@ -4,20 +4,23 @@
 
 FastAPI 后端正在从演示原型迁移为模块化单体。旧业务接口保留在 `/api`，用于前端与测试兼容；所有新增生产接口使用 `/api/v1`。
 
-## 模块 0：记录 019 代码证据快照（非动态状态）
+## 模块 0：当前代码入口（动态状态仍只查追踪矩阵）
 
-- `core/`：严格 `APP_` 前缀配置、请求 ID、稳定 v1 信封、未捕获异常响应体的 `INTERNAL_ERROR/500` 脱敏和公共错误模型。
+- `core/`：严格 `APP_` 前缀配置、请求 ID、稳定 v1 信封、显式/未捕获 5xx 与验证错误脱敏、普通日志末端白名单，以及具体/封闭公共错误模型。
 - `core/`：受控 CORS/浏览器来源及 `ETag` 暴露、可信代理客户端地址、M0-owned 强类型 readiness、旧表面集中保护、敏感身份响应 `no-store`、列表分页信封和公共错误码契约。
-- `db/`：SQLAlchemy 2、PostgreSQL 连接/就绪状态、独立短事务、脱敏数据库 503、共享元数据根、事务 outbox 写端口和关键写操作的幂等记录服务。
+- `core/ports/`：无 ORM 副作用的 `OutboxClaimPort`，冻结 claim、lease/heartbeat、success、retry、dead-letter、replay、fencing 和 operation-id 幂等语义；不包含数据库适配器或 Worker。
+- `db/`：SQLAlchemy 2、PostgreSQL 连接/就绪状态、独立短事务、脱敏数据库 503、共享元数据根、事务 outbox append 写端口和关键写操作的幂等记录服务。
 - `alembic/`：基础、幂等、M1 身份、`0005` outbox 契约及 `0006` 受管服务身份/实例生命周期迁移；领域模型通过 M0 的发现入口登记到 `Base.metadata`。
 - `/api/v1/health/live`：进程存活检查。
 - `/api/v1/health/ready`：规范生产预检路径，聚合基础配置、数据库和领域 contributor；生产环境即使设置 `APP_DATABASE_REQUIRED=false` 也不能把 PostgreSQL 或关键模块降为可选。
 
-M0 已为全部 v1 操作声明通用 `500/V1Response` OpenAPI 错误模型，但这不等于所有运行时 5xx 路径都已脱敏。显式 `HTTPException`/`AppError` 5xx 响应及服务端日志脱敏仍是 P0 缺口；现有成功响应的 `data/items` 仍可为 `Any`，不是 M6 生成强类型客户端的最终契约。
+当前 15 个 v1 操作均声明命名的具体 success DTO，用户/审计分页绑定具体 item DTO；通用 default、422、500 与 readiness 503 使用封闭错误模型。返回 `JSONResponse` 的身份/分页 helper 会先用同一个具体 DTO 校验。OpenAPI consumer-contract 测试拒绝空 schema、自由 object 和泛型分页项；M6 后续只从该输入选择一个生成器产生 TypeScript 类型，禁止手写重复接口。
+
+v1 显式/未捕获 5xx 已统一脱敏，只有固定 `DEPENDENCY_UNAVAILABLE/503` 是登记例外；普通 4xx 不透传内部 details，校验错误只返回白名单字段。普通日志在结构化 `extra` 合并后执行集中白名单和失败关闭，异常对象不得先拼接进消息。真实代理、服务管理器、日志采集/保留与 PostgreSQL 行为仍以追踪矩阵中的后续集成门禁为准。
 
 M1 已有本地账户、会话/CSRF、独立账号/来源限流、同一授权快照、事务外 Argon2 校验与签发前复验、用户/角色管理、审计查询、固定受管服务身份、bootstrap 与 activation CLI 代码。`/api/v1/auth/*`、`/users*`、`/roles`、`/audit-events` 已由预留注册表自动装配，OpenAPI 可识别 Session Cookie、CSRF header、匿名登录、权限要求和全部 v1 操作的通用 500 错误结构；`AuditWriter` 只返回不可变结果，不暴露 ORM。记录 019 覆盖范围的实现状态为“单元已验证”。`AuthenticatedActor` 值对象已存在，但 typed actor 到 `AuditWriter` 输入的强类型传播和事件级 metadata 白名单尚未闭环，后续生产写链不得绕过该门槛。`0006` 只完成离线 SQL 生成检查，真实 PostgreSQL 16 在线迁移、触发器、锁/并发和回滚测试仍未执行，前端也未接入。旧 `/api` 与静态挂载仍物理存在，但 `APP_LEGACY_SURFACE_MODE=disabled` 可在应用层统一拒绝；生产环境只允许该模式。
 
-M1 及后续领域模块只能新增自己的 `domains/<domain>/`、`api/v1/<domain>.py`、迁移和测试文件。v1 根路由与 readiness 分别从 M0 的固定注册表加载领域路由/contributor；readiness 预留 identity、documents、knowledge、devices、workflows、workers、indexing 和 rag。模块发现可选不等于生产依赖可选；八类目标模块在生产环境均由 M0 标记为必需。领域 contributor 只返回 M0 `ReadinessDetails` 白名单中的脱敏状态，无权设置 `required` 或扩展白名单值。领域团队不得直接编辑 `main.py`、`api/v1/router.py`、`api/v1/system.py`、`db/models.py` 或 `alembic/env.py`，不得复制旧表面 guard 或 `OutboxWriter`。
+M1 及后续领域模块只能新增自己的 `domains/<domain>/`、`api/v1/<domain>.py`、迁移和测试文件。v1 根路由与 readiness 分别从 M0 的固定注册表加载领域路由/contributor；readiness 预留 identity、documents、knowledge、devices、workflows、workers、indexing 和 rag。模块发现可选不等于生产依赖可选；八类目标模块在生产环境均由 M0 标记为必需。领域 contributor 只返回 M0 `ReadinessDetails` 白名单中的脱敏状态，无权设置 `required` 或扩展白名单值。领域团队不得直接编辑 `main.py`、`api/v1/router.py`、`api/v1/system.py`、`db/models.py` 或 `alembic/env.py`，不得复制旧表面 guard、日志边界或 `OutboxWriter`。M4 只能从 `core/ports` 消费 ClaimPort，禁止从 `db` 包获取该端口或直接访问 outbox ORM。
 
 `APP_TRUSTED_ORIGINS` 使用逗号分隔的完整浏览器 Origin。开发和测试未设置时仅允许本机 Vite 来源；生产必须配置明确 HTTPS 来源，且不接受 `*`、路径、查询参数或凭据。关键 v1 写操作通过 `Idempotency-Key` 使用共享 `idempotency_records`；启用前必须从部署密钥存储设置 `APP_IDEMPOTENCY_SECRET`，请求指纹使用 HMAC，列表接口统一返回 `data.items` 与 `meta.nextCursor`。详见 [M0 公共契约](../docs/design/m0-public-contract.md)。
 
@@ -79,7 +82,7 @@ GET http://127.0.0.1:8000/api/v1/health/ready
 ## 验证
 
 ```powershell
-.\backend\.venv\Scripts\python.exe -m pytest tests\test_module0_foundation.py tests\test_configuration_contract.py -q
+.\backend\.venv\Scripts\python.exe -m pytest tests\test_module0_error_sanitization.py tests\test_module0_v1_response_contracts.py tests\test_module0_outbox_claim.py -q
 ```
 
 测试数量、skip、执行环境、提交与迁移 head 不在本文件复制；带日期证据只查修改日志，当前可采信状态与未关闭问题只查现行需求追踪矩阵。

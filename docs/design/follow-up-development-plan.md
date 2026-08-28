@@ -1,6 +1,7 @@
 # 后续开发实施方案
 
 > 方案日期：2026-08-28  
+> 路线更新：2026-08-29（P0 契约边界落地后重排后续工作）<br>
 > 文档性质：实施路线图，不维护动态实现状态，不改变需求、公共契约或领域事件。  
 > 状态与证据唯一入口：[现行需求追踪矩阵](../requirements/current-traceability-matrix.md)。需求语义以 [SRS](../requirements/software-requirements-spec.md) 为准；公共边界以 [M0 公共契约](m0-public-contract.md)、[M1 身份与审计设计](m1-identity-audit-design.md) 和[领域事件目录](event-catalog.md)为准。
 
@@ -35,7 +36,7 @@
 
 ```mermaid
 flowchart LR
-    G0["G0：M0 P0 安全与 DTO 契约"] --> G1["G1：M1 PostgreSQL 16 与审计门面"]
+    G0["G0：M0 P0 安全、DTO 与 ClaimPort 契约"] --> G1["G1：M1 PostgreSQL 16 与审计门面"]
     G0 --> M2Mock["M2：领域/DTO/Mock"]
     G0 --> M3Mock["M3：领域/DTO/Mock"]
     G0 --> M5Mock["M5：只读 Mock 与证据规则"]
@@ -44,8 +45,7 @@ flowchart LR
     G1 --> M3["M3：真实事务、设备/流程审核"]
     M2Mock --> M2
     M3Mock --> M3
-    G0 --> Claim["M0：冻结 OutboxClaimPort"]
-    Claim --> M4["M4：Worker、索引世代、恢复"]
+    G0 --> M4["M4：实现 ClaimPort 适配器、Worker、索引世代与恢复"]
     M2 --> Events["事件 schema、实际消费者、契约测试"]
     M3 --> Events
     Events --> M4
@@ -71,9 +71,11 @@ M2/M3/M5/M6 的 Mock 代码可在 G0/G1 期间并行开展；真实身份、审�
 
 **目的**：使 v1 端点成为后续模块唯一可依赖的安全公共面。
 
+**实施结果**：本阶段代码范围已于 2026-08-29 按变更记录 `2026-08-29-023-m0-p0-contract-closure` 落地；以下条目继续作为后续模块不得回退的公共约束，验证等级与未关闭集成风险以现行追踪矩阵为唯一准据。
+
 1. 统一处理显式 `HTTPException`、`AppError` 和未捕获异常：除经批准的脱敏 `503` 外，外部 5xx 固定为 `INTERNAL_ERROR`、固定消息、空 `details` 和 request ID。
 2. 建立普通日志的集中脱敏策略，拒绝异常原文、请求体、Cookie、令牌、密钥、连接串、绝对路径和未受控堆栈。
-3. 为已存在的每个 v1 操作定义具体 success DTO、分页 item DTO、错误 details schema；用 OpenAPI 快照和前端类型测试消除最终契约中的 `Any`。
+3. 为已存在的每个 v1 操作定义具体 success DTO、分页 item DTO、错误 details schema；用 OpenAPI consumer-contract 测试消除生成输入中的 `Any`、空 schema 和自由 object。为避免与 M6 重复维护类型源，P0 不手写第二套 TypeScript DTO；实际生成器、生成产物和前端类型消费测试由 M6 基于该唯一 OpenAPI 输入交付。
 4. 冻结 `OutboxClaimPort` 的 claim、lease、heartbeat、retry、dead-letter、replay、并发和幂等语义；只提供 M0 公共端口，不实现 M4 业务逻辑。
 
 **测试/退出条件**：新增能在旧实现失败的 5xx、日志和 DTO 回归测试；所有 v1 操作的 OpenAPI 可生成具体类型；不提升 M0 整体状态，直到真实依赖验收完成。
@@ -160,14 +162,15 @@ M2/M3/M5/M6 的 Mock 代码可在 G0/G1 期间并行开展；真实身份、审�
 5. 验证命令、环境、结果、skip 和回滚方式。
 6. 一条新增的 `docs/change-log/` 记录及索引登记；动态状态只更新追踪矩阵，事件生命周期只更新事件目录。
 
-## 6. 首个实施迭代的排期顺序
+## 6. P0 后的下一实施迭代
 
-不假设团队规模或日期，首个迭代按以下顺序拆分可独立合并的工作包：
+P0 的当前功能状态和验证证据只见现行追踪矩阵；本节不复制动态状态。后续迭代按以下顺序拆分可独立合并的工作包：
 
-1. **M0-P0**：显式 5xx、普通日志脱敏、v1 DTO 与回归测试。
-2. **M1-P0**：typed actor 审计桥接、metadata DTO、reviewer capacity、权限补齐、服务主体 readiness。
-3. **M7-D2**：建立 PostgreSQL 16 集成环境并完成 M1 在线迁移/身份事务验收。
-4. **M2/M3 并行**：仅提交各自 contracts、领域模型、Mock Repository/Service 与测试，不接真实写路由。
-5. **M0/M4 协作**：冻结 ClaimPort 与事件样例，M4 实现可测试的 claim/retry/replay，不直接访问领域私表。
+1. **M1-P1**：typed actor 审计桥接、metadata DTO、reviewer capacity、权限补齐、服务主体 readiness。
+2. **M7-D2**：建立显式 opt-in 的 PostgreSQL 16 集成环境并完成 M1 在线迁移、触发器、身份事务、并发与恢复验收。
+3. **M2/M3 并行**：在 P1 真实写门禁关闭前，仅提交各自 contracts、领域模型、Mock Repository/Service 与测试，不接真实写路由或创建冲突迁移。
+4. **M0/M4 协作**：M0 为已冻结的 `app.core.ports.OutboxClaimPort` 实现持久化适配，M4 只经该端口实现 Worker 编排；共同补 PostgreSQL 原子 claim、数据库时钟、fencing、retry/dead-letter/replay 和重启恢复，M4 不访问 M0 或领域私表。
+5. **M5/M6 Mock 消费者**：M5 只消费 M2/M3 effective read port Mock；M6 选择并锁定一个 OpenAPI TypeScript 生成器，以生成产物和严格类型测试接入现有具体 DTO，禁止手写重复接口。
+6. **M7 持续门禁**：把 P0 安全/DTO/端口测试纳入双平台 CI，并准备代理、服务、备份恢复和发布验收工件。
 
-完成这一迭代后，才安全具备 M2/M3 迁移真实领域事实、M4 承担可靠异步任务，以及 M5/M6 切换真实依赖的基础。
+完成这一迭代后，才安全具备 M2/M3 迁移真实领域事实、M4 承担可靠异步任务，以及 M5/M6 从 Mock 切换真实依赖的基础。ClaimPort 契约已冻结不等于数据库适配器、Worker 或事件生产启用完成；这些状态不得提前提升。

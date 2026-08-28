@@ -4,11 +4,11 @@ from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, Query, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 
 from ...core.config import AppSettings, get_settings
 from ...core.concurrency import etag_for_version
-from ...core.contracts import V1PageResponse, V1Response
 from ...core.error_codes import ErrorCode
 from ...core.errors import AppError
 from ...core.pagination import decode_cursor, encode_cursor
@@ -28,6 +28,7 @@ from ...domains.identity.http_contracts import (
 from ...domains.identity.http_responses import IdentityNoStoreRoute, identity_json_response
 from ...domains.identity.repository import IdentityRepository
 from ...domains.identity.sessions import utc_now
+from .identity_response_models import RolesResponse, UserListResponse, UserResponse
 from .responses import v1_page
 
 
@@ -51,7 +52,7 @@ def _idempotency_hash(
 
 
 def _etag_response(request: Request, data: object, *, version: int | None, status_code: int = 200):  # type: ignore[no-untyped-def]
-    response = identity_json_response(request, data, status_code=status_code)
+    response = identity_json_response(request, data, status_code=status_code, response_model=UserResponse)
     if version is not None:
         response.headers["ETag"] = etag_for_version(version)
     return response
@@ -59,7 +60,7 @@ def _etag_response(request: Request, data: object, *, version: int | None, statu
 
 @router.get(
     "/users",
-    response_model=V1PageResponse,
+    response_model=UserListResponse,
     dependencies=[Depends(require_permissions(Permission.IAM_USERS_READ))],
     openapi_extra={"x-required-permissions": [Permission.IAM_USERS_READ.value]},
 )
@@ -93,16 +94,21 @@ def list_users(
     if has_more and visible:
         last_user = visible[-1][0]
         next_cursor = encode_cursor({"createdAt": last_user.created_at.isoformat(), "id": last_user.id})
-    response = v1_page(request, [user_view(user, roles) for user, roles in visible], next_cursor=next_cursor)
+    response = v1_page(
+        request,
+        [user_view(user, roles) for user, roles in visible],
+        next_cursor=next_cursor,
+        response_model=UserListResponse,
+    )
     if not isinstance(response, JSONResponse):
-        response = JSONResponse(content=response.model_dump() if hasattr(response, "model_dump") else response.dict())
+        response = JSONResponse(content=jsonable_encoder(response, exclude_unset=True))
     response.headers["Cache-Control"] = "no-store"
     return response
 
 
 @router.post(
     "/users",
-    response_model=V1Response,
+    response_model=UserResponse,
     status_code=201,
     dependencies=[Depends(require_trusted_write_origin)],
     openapi_extra={
@@ -137,7 +143,7 @@ def create_user(
 
 @router.patch(
     "/users/{user_id}",
-    response_model=V1Response,
+    response_model=UserResponse,
     dependencies=[Depends(require_trusted_write_origin)],
     openapi_extra={
         "x-required-permissions": [Permission.IAM_USERS_WRITE.value],
@@ -166,7 +172,7 @@ def update_user(
 
 @router.patch(
     "/users/{user_id}/status",
-    response_model=V1Response,
+    response_model=UserResponse,
     dependencies=[Depends(require_trusted_write_origin)],
     openapi_extra={
         "x-required-permissions": [Permission.IAM_USERS_WRITE.value],
@@ -204,7 +210,7 @@ def set_user_status(
 
 @router.put(
     "/users/{user_id}/roles",
-    response_model=V1Response,
+    response_model=UserResponse,
     dependencies=[Depends(require_trusted_write_origin)],
     openapi_extra={
         "x-required-permissions": [Permission.IAM_ROLES_WRITE.value],
@@ -242,7 +248,7 @@ def set_user_roles(
 
 @router.put(
     "/users/{user_id}/password",
-    response_model=V1Response,
+    response_model=UserResponse,
     dependencies=[Depends(require_trusted_write_origin)],
     openapi_extra={
         "x-required-permissions": [Permission.IAM_USERS_WRITE.value],
@@ -280,9 +286,9 @@ def reset_user_password(
 
 @router.get(
     "/roles",
-    response_model=V1Response,
+    response_model=RolesResponse,
     dependencies=[Depends(require_permissions(Permission.IAM_USERS_READ))],
     openapi_extra={"x-required-permissions": [Permission.IAM_USERS_READ.value]},
 )
 def list_roles(request: Request):  # type: ignore[no-untyped-def]
-    return identity_json_response(request, role_views())
+    return identity_json_response(request, role_views(), response_model=RolesResponse)

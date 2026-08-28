@@ -698,7 +698,7 @@ def build_asset_analysis_chunks(
         except Exception as exc:
             reason = f"asset text LLM fallback failed for {asset['assetName']}: {exc}"
             record_fallback("llm", reason)
-            logger.warning(reason)
+            logger.warning("event=asset_text_llm_fallback_failed")
             errors.append(reason)
             return chunks, fallback_count + 1, "; ".join(errors)
 
@@ -820,7 +820,7 @@ def analyze_document_assets(document_id: str, provider: str | None = None) -> di
                 errors.append(error)
         except Exception as exc:
             reason = f"asset analysis failed for {asset['assetName']}: {exc}"
-            logger.warning(reason)
+            logger.warning("event=asset_analysis_failed")
             errors.append(reason)
             fallback_count += 1
 
