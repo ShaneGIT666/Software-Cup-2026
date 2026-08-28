@@ -23,5 +23,6 @@
 | `2026-08-17-019-d1-2-production-contract-closure` | 2026-08-17 | M1 | 变更已结束 | 单元验证 v1 通用 500 OpenAPI 声明及 M1 受管主体/激活子边界；运行时外推见 020 更正 | [记录](2026-08-17-019-d1-2-production-contract-closure.md) |
 | `2026-08-17-020-current-contract-document-correction` | 2026-08-17 | M7 | 变更已结束 | 按代码证据修正现行契约、追踪矩阵和文档冲突 | [记录](2026-08-17-020-current-contract-document-correction.md) |
 | `2026-08-17-021-document-source-and-event-enablement-closure` | 2026-08-17 | M7 | 变更已结束 | 收口单一文档来源、历史边界和事件生产启用门禁 | [记录](2026-08-17-021-document-source-and-event-enablement-closure.md) |
+| `2026-08-28-022-follow-up-development-plan` | 2026-08-28 | M7 | 变更已结束 | 基于当前代码和现行契约形成 M0～M7 后续实施路线图 | [记录](2026-08-28-022-follow-up-development-plan.md) |
 
 历史日志正文中的“已完成”只表示对应修改记录已结束，不代表需求功能完成；索引已统一改用“变更已结束”，第 010 号起日志正文使用“记录状态 + 功能验证状态”双字段，第 018 号起新增“状态对象 + 规范来源影响 + 状态与证据”。新增记录前先检查变更标识、受影响模块和关联记录，避免为同一目标重复建档或产生相互矛盾的设计。
